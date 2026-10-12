@@ -47,6 +47,7 @@ ROWS = [
     ('00000000000017', 'Delivery', D + '08:18:00', 'Shopee SHPE', 'Test Customer S', '855123456717'),  # leading zeros kept
     ('00000000000017', 'Arrived ', D + '07:18:00', 'Shopee SHPE', 'Test Customer S', '855123456717'),  # scan type text is only stored, never interpreted
     ('S000000018', 'arrived', D + '07:19:00', 'Shopee SHPE', 'Test Customer T', '855123456718'),  # letter code
+    ('s000000018', 'Delivery', D + '08:19:00', 'Shopee SHPE', 'Test Customer T', '855123456718'),  # same key, other case: one parcel, spelling flagged
 ]
 
 
@@ -147,18 +148,31 @@ if __name__ == '__main__':
     # Self-check: the expected review for scan-record-mixed (docs/import-rules.md, "Test fixtures").
     import re
     eligible = [r for r in records if r['Send Outlet'].strip(' \t' + NBSP).lower() == 'shopee shpe']
+    excluded = [r for r in records if r not in eligible]
+    key = lambda code: code.strip().upper()  # matching key: case-insensitive, nothing else removed
     parcels = {}
     for r in eligible:
-        parcels.setdefault(r['scan order number'], []).append(r)
+        parcels.setdefault(key(r['scan order number']), []).append(r)
     norm_name = lambda s: ' '.join(s.split()).lower()
     def norm_phone(s):
         d = re.sub(r'\D', '', s); d = d[3:] if d.startswith('855') else d
         return d if d.startswith('0') else '0' + d
     conflicts = sorted(k for k, v in parcels.items()
                        if len({(norm_name(r['consignee name']), norm_phone(r['consignee mobile'])) for r in v}) > 1)
-    assert (len(records), len(eligible), len(records) - len(eligible)) == (27, 17, 10)
-    assert (len(parcels), len(eligible) - len(parcels)) == (10, 7)
+    spelling = sorted(k for k, v in parcels.items() if len({r['scan order number'].strip() for r in v}) > 1)
+    blocked = set(conflicts) | set(spelling)
+    assert (len(records), len(eligible), len(excluded)) == (28, 18, 10)
+    assert len({key(r['scan order number']) for r in excluded}) == 10  # excluded codes are counted, never parcels
+    assert (len(parcels), len(eligible) - len(parcels)) == (10, 8)
     assert conflicts == ['10000000000014', '10000000000015'], conflicts
-    assert {r['scan time'][:10] for r in eligible} == {'2026-10-10'}  # one scan date: no multi-day warning
-    assert '00000000000017' in parcels and 'S000000018' in parcels
-    print('27 rows: 17 Shopee SHPE, 10 excluded; 10 parcels (7 repeat rows collapsed); 2 conflicts; 8 new without staff action')
+    assert spelling == ['S000000018'], spelling
+    assert (len(parcels) - len(blocked), len(blocked)) == (7, 3)  # ready, blocked (empty database)
+    assert {r['scan time'][:10] for r in eligible} == {'2026-10-10'}  # one scan date
+    assert '00000000000017' in parcels
+    # scan-record-two-days: 5 rows, 4 parcels; earliest scan date per parcel decides its date group
+    first = {}
+    for r in two:
+        k = key(r['scan order number']); first[k] = min(first.get(k, r['scan time']), r['scan time'])
+    per_date = sorted((d, sum(v[:10] == d for v in first.values())) for d in {v[:10] for v in first.values()})
+    assert (len(two), len(first), per_date) == (5, 4, [('2026-10-09', 1), ('2026-10-10', 3)]), per_date
+    print('28 rows: 18 Shopee SHPE, 10 excluded (10 codes); 10 parcels (8 repeat rows collapsed); 7 ready, 3 blocked')

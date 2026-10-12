@@ -1,0 +1,44 @@
+# Build output and dependencies
+node_modules/
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Secrets: never commit. Real config lives outside the project (docs/deploy-tailscale.md).
+.env
+.env.*
+branch.env
+*.pem
+*.key
+*.p12
+*.pfx
+certificates/
+
+# Customer data, databases, backups, logs: they live in the data folder outside the project.
+data/
+backups/
+uploads/
+imports/
+logs/
+*.log
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*-wal
+*-shm
+*.xlsx
+*.xls
+*.csv
+# Synthetic test files only (no real customer data) may be committed here.
+!test/fixtures/**
+
+# Local tool state
+.claude/settings.local.json
+.impeccable/
+graphify-out/
+.DS_Store
+Thumbs.db

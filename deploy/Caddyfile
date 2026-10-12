@@ -1,0 +1,58 @@
+# Local HTTPS for the Campus Branch parcel console, by IP address: no domain and no DNS needed.
+# LAN only: nothing here is reachable from the internet, and the certificate comes from Caddy's
+# own local CA, not a public one. Setup and phone trust steps: docs/local-https.md
+#
+# Environment:
+#   BRANCH_IP     the office computer's fixed LAN address, e.g. 192.168.1.20 (required; Caddy refuses to start without it)
+#   APP_UPSTREAM  where the app listens (default 127.0.0.1:3000)
+#   HTTP_PORT / HTTPS_PORT  only if 80/443 are taken. Both are passed to the app on every request,
+#                 so the Settings QR code and the setup page follow a port change by themselves.
+# The app serves root.crt itself (src/app/branch-ca.crt); give the APP, not Caddy, CADDY_CA_DIR
+# if Caddy runs as a different account (e.g. a Windows service).
+
+{
+	http_port {$HTTP_PORT:80}
+	https_port {$HTTPS_PORT:443}
+}
+
+https://{$BRANCH_IP:BRANCH_IP-is-not-set:0} {
+	# Signed by Caddy's local CA for the IP address itself. Never asks a public CA.
+	tls internal
+
+	encode gzip
+	header {
+		# The scan page may use the camera; nothing else, and no other site embedding this one.
+		Permissions-Policy "camera=(self), microphone=(), geolocation=()"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		# No Strict-Transport-Security on purpose: phone setup must stay reachable over plain http.
+	}
+
+	# The app itself listens on 127.0.0.1 only (npm run start:lan), so this proxy is the one way in.
+	reverse_proxy {$APP_UPSTREAM:127.0.0.1:3000} {
+		# The plain-http port, for the setup address in the Settings QR code (src/lib/branch-address.ts).
+		header_up X-Branch-Http-Port {$HTTP_PORT:80}
+	}
+}
+
+# Plain http serves only what a phone needs before it trusts the certificate:
+# the setup page (and its scripts) and the public root certificate. Everything else goes to https.
+http://{$BRANCH_IP:BRANCH_IP-is-not-set:0} {
+	@setup path /setup /branch-ca.crt /api/branch-address /_next/* /favicon.ico
+	handle @setup {
+		reverse_proxy {$APP_UPSTREAM:127.0.0.1:3000} {
+			# The https port, so the setup page knows where the console is.
+			header_up X-Branch-Https-Port {$HTTPS_PORT:443}
+		}
+	}
+
+	# Typing just the address: the setup page sends phones that are already set up straight on.
+	handle / {
+		redir * /setup?auto=1
+	}
+
+	handle {
+		redir https://{host}:{$HTTPS_PORT:443}{uri} permanent
+	}
+}

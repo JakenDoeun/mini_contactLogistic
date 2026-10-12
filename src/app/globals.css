@@ -1,0 +1,62 @@
+@import 'tailwindcss';
+
+/* Periwinkle on navy over warm neutrals. Periwinkle marks actions, focus and selection only; green, amber, red are status;
+   the muted indigo "info" pair labels preview and simulated states so they never borrow a status colour. */
+@theme inline {
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --color-background: #f5f3ef;
+  --color-card: #ffffff;
+  --color-foreground: #1b2033;
+  --color-muted-foreground: #5e5950;
+  --color-border: #e5e0d7;
+  --color-input: #8c867b;
+  --color-ring: #4f5bd5;
+  --color-primary: #4f5bd5;
+  --color-primary-hover: #4049b8;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #ece8e1;
+  --color-accent: #eceefb;
+  --color-sidebar: #14213a;
+  --color-sidebar-foreground: #aeb8cc;
+  --color-success: #276a41;
+  --color-success-tint: #e6f2ea;
+  --color-warning: #94580a;
+  --color-warning-tint: #fbf1df;
+  --color-destructive: #b42d2d;
+  --color-destructive-tint: #fbe8e8;
+  --color-info: #474c93;
+  --color-info-tint: #ecebf7;
+  /* Row-level washes: lighter than the tints so a status badge still reads on top. */
+  --color-warning-wash: #fdf7ec;
+  --color-destructive-wash: #fdf2f2;
+  --color-selection: #d9dcf6;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: 14px;
+  }
+  * {
+    @apply border-border;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+  ::selection {
+    @apply bg-selection text-foreground;
+  }
+  input,
+  textarea {
+    caret-color: var(--color-primary);
+  }
+  /* Mono is used for data only, so its numerals line up in columns. */
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+}

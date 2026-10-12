@@ -9,7 +9,8 @@ Plan: Campus Branch backend plan, Revision 3 (Phase 0). This file records what w
 | Rollback baseline | Done |
 | `.gitignore`, ignore tests, pre-commit hook, baseline commit | Done (`088e5c3`) |
 | Baseline tests, type check, production build, screenshots | Done |
-| Node 24.21.0 | Installed and verified side by side; **not yet the default** |
+| Node 24.21.0 | **Default since 2026-10-12**; 24.14.0 kept for rollback |
+| Real export headers, Shopee filter spec, synthetic fixtures | Done (`docs/import-rules.md`, `test/fixtures/`) |
 | Next.js security review of 15.5.27 | Done; one finding, see below |
 | Next.js 16 upgrade | **Blocked** until the 2026-10-14 advisories are published and checked |
 | Phase 1 | Not started; needs every Phase 0 acceptance item |
@@ -44,15 +45,15 @@ imported milliseconds apart swap their name order. The Next.js 16 comparison ign
 
 Builds ran in clones on the ext4 disk, never in the project folder, so the dev server's `.next` was untouched.
 
-## Node 24.21.0 (prepared, not switched)
+## Node 24.21.0 (default)
 
 - Installed with nvm: `nvm install 24.21.0`; nvm verified the download checksum ("Checksums matched!"). npm 11.19.0.
 - The nvm default was `lts/*`, which follows the newest installed LTS and would have switched silently on install (and could jump
   to Node 26 after 2026-10-28). It is now pinned: `nvm alias default 24.14.0`.
-- **Switch when ready** (no app running, then restart the dev server):
-  `nvm alias default 24.21.0` and open a new terminal; `node --version` shows v24.21.0.
+- **Switched 2026-10-12** (app not running): `nvm alias default 24.21.0`. A new login shell shows node v24.21.0, npm 11.19.0.
+  In the project on 24.21.0: `npm test` 46 / 46 pass, `tsc --noEmit` clean. Restart the dev server from a new terminal.
 - **Roll back**: `nvm alias default 24.14.0` (24.14.0 stays installed). To restore the old floating behaviour: `nvm alias default lts/*`.
-- `.node-version` and `engines` are added with the switch, not before, so the current 24.14.0 setup keeps working.
+- `.node-version` and `engines` are still not added; they come with the Next.js 16 upgrade (step 4 below).
 
 ## Security review of the installed Next.js 15.5.27 (2026-10-12)
 
@@ -70,5 +71,5 @@ Waiting for the official 2026-10-14 security update. When it is out:
 1. Read the release notes and every advisory; record advisory IDs and fixed versions here.
 2. Check whether 15.5.27 is affected; if so, patch it first (the running app).
 3. Pick the newest stable 16.x outside every advisory range; check its PostCSS is past 8.5.22; pin it exactly.
-4. Switch to Node 24.21.0, add `.node-version`/`engines`, TypeScript 6.0.3, `@types/node` 24.19.2.
+4. Add `.node-version`/`engines` (Node 24.21.0 is already the default), TypeScript 6.0.3, `@types/node` 24.19.2.
 5. Clean-clone `npm ci`, tests, `tsc`, `next build`, page checks and screenshot comparison against the baseline; rollback check.

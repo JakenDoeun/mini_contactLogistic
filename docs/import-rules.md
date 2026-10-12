@@ -2,6 +2,10 @@
 
 Required for every import (plan Revision 3, Phase 4). Implemented in Phase 4; this is the specification its tests check.
 
+**MUST (Phase 4):** the server filters every import to rows whose `Send Outlet` is `Shopee SHPE` (rule below). If the file has
+no `Send Outlet` column, or has it twice, the import check fails and nothing is imported. There is no fallback that imports all
+rows, no setting that turns the filter off, and no client-side filtering in its place.
+
 ## Rule `send-outlet-shopee-shpe/v1`
 
 - **Column**: the header that, trimmed and compared without regard to capitals, equals `Send Outlet`.
@@ -53,7 +57,45 @@ refuses, history status `no_eligible_rows`, zero parcels created.
 - Same mixed file uploaded and found in the watched folder: identical counts; history holds counts and rule ID.
 - Phase 4 gate: a mixed-outlet sample imports only its Shopee rows before any real export is imported.
 
-## To confirm with a real export
+## Real export: `Scan_record.xls` (checked 2026-10-12)
 
-Before Phase 4, one de-identified sample export (a few rows, names and phones replaced) would confirm the exact `Send Outlet`
-header text, how `Shopee SHPE` appears in it, and the arrival-date column. Sample files go in `test/fixtures/` only when synthetic.
+The company-provided export was read in place; it contains real customer names and phones, so it is **not** committed
+(`*.xls` is ignored outside `test/fixtures/`). Findings:
+
+- **Format**: XLSX content (zip, Excel 2007+) saved with an `.xls` name. The importer must detect the format from the file's
+  bytes, not its extension. One sheet (`Sheet1`), header in row 1, 114 data rows.
+- **Headers** (A–Z, exact): `scan order number`, `Data Source`, `scanTypeDesc`, `scan time`, `scan person`, `scan site`,
+  `Up/Next Site`, `Receiver/Dispatch Member`, `Upload Time`, `Send Outlet`, `Destination Outlet`, `number of pieces`, `weight`,
+  `netWeight`, `payment on arrival`, `collected payment`, `item type`, `consignee name`, `consignee mobile`, `consignee address`,
+  `␠Remarks` (leading space), `signMan`, `isRefundDesc`, `problemReason`, `customerCodeDesc`, `customerCode`.
+- **Send Outlet**: column J, header exactly `Send Outlet`. `Shopee SHPE` appears exactly so (no extra spaces) on 89 rows; other
+  values: `Taobao ZTO PP transit warehouse` 13, `ZTO Guangzhou International Warehouse` 6, `Siem Reap Province SRP-01` 4, blank 2
+  (both `Whole package to piece scanning` rows, which also have no consignee). `customerCodeDesc` carries the same value, but the
+  rule uses `Send Outlet` only.
+- **Cells are text** (number format 49), except the numeric columns L–P. Codes and phones must be read as text.
+- **Dates**: no column is named "arrival date". `scan time` and `Upload Time` are both text `YYYY-MM-DD HH:MM:SS`. Proposed
+  arrival date: the date part of `scan time` (to confirm).
+- **Tracking code**: `scan order number` (to confirm): 14 digits, or a letter plus 9 digits on split rows.
+- **Repeated scan rows**: the same parcel appears once per scan. The 89 Shopee rows hold 60 parcels: 29 have an `arrived` and a
+  `Delivery` row, 31 only `Delivery`; name and phone are identical across a parcel's rows. Counting these as "repeated within the
+  file" would flag half the parcels, so Phase 4 needs a decision (proposed: one parcel per code, repeat scans of the same code with
+  the same consignee are not errors; differing consignee → error).
+- **Phones** (`consignee mobile`): Shopee rows are 12 digits (`855` + 9) or 11 digits (`855` + 8); other rows also show
+  `855-0…`, `+855-…` and 9-digit local forms. All Shopee phones pass the existing `normalizePhone` rule.
+- Settings defaults `trackingColumn: 'Tracking code'` and `phoneColumn: 'Phone'` do not match this export; Phase 4 changes them.
+
+## Test fixtures
+
+`test/fixtures/scan-record-mixed.*` are synthetic (fake names, phones, codes; real outlet names only), with the 26 real headers
+in order. Regenerate with `python3 test/fixtures/make-scan-record.py`.
+
+| File | Format |
+|---|---|
+| `scan-record-mixed.csv` | CSV, UTF-8 |
+| `scan-record-mixed.xlsx` | XLSX, text cells as in the real export |
+| `scan-record-mixed-xlsx-named.xls` | the same XLSX with an `.xls` name, like the real export |
+| `scan-record-mixed-biff.xls` | legacy Excel 97 `.xls` (LibreOffice), same content |
+
+Expected for every format: 15 rows; 6 `Shopee SHPE` (exact, ` shopee shpe `, `SHOPEE SHPE`, NBSP-padded, and one code with an
+`arrived` and a `Delivery` row); 9 excluded (three real other outlets, blank outlet on a split row, `Shopee`, `Shopee SHPE Extra`,
+`Shopee  SHPE`, `Other Outlet`, and a Taobao row reusing Shopee code `10000000000002`); 5 distinct Shopee codes.

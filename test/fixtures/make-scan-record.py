@@ -17,23 +17,36 @@ HEADERS = ['scan order number', 'Data Source', 'scanTypeDesc', 'scan time', 'sca
 NUMERIC = {'number of pieces', 'weight', 'netWeight', 'payment on arrival', 'collected payment'}
 NBSP = ' '
 
-# (code, scan type, time, Send Outlet, name, phone)
+# (code, scan type, scan time, Send Outlet, name, phone)
+D = '2026-10-10 '
 ROWS = [
-    ('10000000000001', 'Delivery', '08:01:10', 'Shopee SHPE', 'Test Customer A', '855123456701'),
-    ('10000000000001', 'arrived', '07:15:00', 'Shopee SHPE', 'Test Customer A', '855123456701'),  # repeat in file
-    ('10000000000002', 'Delivery', '08:02:20', ' shopee shpe ', 'Test Customer B', '85512345670'),
-    ('10000000000003', 'Delivery', '08:03:30', 'SHOPEE SHPE', 'Test Customer C', '855-0123456703'),
-    ('10000000000004', 'Delivery', '08:04:40', NBSP + 'Shopee SHPE' + NBSP, 'Test Customer D', '+855-12345670'),
-    ('10000000000005', 'Delivery', '08:05:50', 'Shopee SHPE', 'Test Customer E', '012345670'),
-    ('10000000000006', 'Delivery', '08:06:00', 'Taobao ZTO PP transit warehouse', 'Test Customer F', '855123456706'),
-    ('10000000000007', 'Delivery', '08:07:00', 'ZTO Guangzhou International Warehouse', 'Test Customer G', '855123456707'),
-    ('10000000000008', 'Delivery', '08:08:00', 'Siem Reap Province SRP-01', 'Test Customer H', '855123456708'),
-    ('X000000001', 'Whole package to piece scanning', '08:09:00', '', '', ''),  # blank outlet, split row
-    ('10000000000009', 'Delivery', '08:10:00', 'Shopee', 'Test Customer J', '855123456709'),
-    ('10000000000010', 'Delivery', '08:11:00', 'Shopee SHPE Extra', 'Test Customer K', '855123456710'),
-    ('10000000000011', 'Delivery', '08:12:00', 'Shopee  SHPE', 'Test Customer L', '855123456711'),
-    ('10000000000012', 'Delivery', '08:13:00', 'Other Outlet', 'Test Customer M', '855123456712'),
-    ('10000000000002', 'Delivery', '08:14:00', 'Taobao ZTO PP transit warehouse', 'Test Customer N', '855123456713'),  # non-Shopee, shares a Shopee code
+    ('10000000000001', 'Delivery', D + '08:01:10', 'Shopee SHPE', 'Test Customer A', '855123456701'),
+    ('10000000000001', 'arrived', D + '07:15:00', 'Shopee SHPE', 'Test Customer A', '855123456701'),  # repeat event, same parcel
+    ('10000000000002', 'Delivery', D + '08:02:20', ' shopee shpe ', 'Test Customer B', '85512345670'),  # no arrived event
+    ('10000000000003', 'Delivery', D + '08:03:30', 'SHOPEE SHPE', 'Test Customer C', '855-0123456703'),  # no arrived event
+    ('10000000000004', 'Delivery', D + '08:04:40', NBSP + 'Shopee SHPE' + NBSP, 'Test Customer D', '+855-12345670'),  # no arrived event
+    ('10000000000005', 'Delivery', D + '08:05:50', 'Shopee SHPE', 'Test Customer E', '012345670'),
+    ('10000000000005', 'arrived', D + '07:30:00', 'Shopee SHPE', 'Test Customer E', '012345670'),
+    ('10000000000005', 'arrived', '2026-10-09 23:50:00', 'Shopee SHPE', 'Test Customer E', '012345670'),  # earliest arrival
+    ('10000000000006', 'Delivery', D + '08:06:00', 'Taobao ZTO PP transit warehouse', 'Test Customer F', '855123456706'),
+    ('10000000000007', 'Delivery', D + '08:07:00', 'ZTO Guangzhou International Warehouse', 'Test Customer G', '855123456707'),
+    ('10000000000008', 'arrived', D + '07:08:00', 'Siem Reap Province SRP-01', 'Test Customer H', '855123456708'),
+    ('X000000001', 'Whole package to piece scanning', D + '08:09:00', '', '', ''),  # split row, blank outlet
+    ('X000000002', 'Whole package to piece scanning', D + '08:09:30', '', '', ''),  # second split row, own code
+    ('10000000000009', 'Delivery', D + '08:10:00', 'Shopee', 'Test Customer J', '855123456709'),
+    ('10000000000010', 'Delivery', D + '08:11:00', 'Shopee SHPE Extra', 'Test Customer K', '855123456710'),
+    ('10000000000011', 'Delivery', D + '08:12:00', 'Shopee  SHPE', 'Test Customer L', '855123456711'),
+    ('10000000000012', 'Delivery', D + '08:13:00', 'Other Outlet', 'Test Customer M', '855123456712'),
+    ('10000000000002', 'Delivery', D + '08:14:00', 'Taobao ZTO PP transit warehouse', 'Test Customer N', '855123456713'),  # non-Shopee, shares a Shopee code
+    ('10000000000014', 'Delivery', D + '08:15:00', 'Shopee SHPE', 'Test Customer O', '855123456714'),
+    ('10000000000014', 'arrived', D + '07:15:00', 'Shopee SHPE', 'Test Customer O', '855123456799'),  # phone conflict
+    ('10000000000015', 'Delivery', D + '08:16:00', 'Shopee SHPE', 'Test Customer P', '855123456715'),
+    ('10000000000015', 'arrived', D + '07:16:00', 'Shopee SHPE', 'Test Customer R', '855123456715'),  # name conflict
+    ('10000000000016', 'Delivery', D + '08:17:00', 'Shopee SHPE', ' test customer q ', '855-0123456716'),
+    ('10000000000016', 'arrived', D + '07:17:00', 'Shopee SHPE', 'Test Customer Q', '855123456716'),  # same after normalising: no conflict
+    ('00000000000017', 'Delivery', D + '08:18:00', 'Shopee SHPE', 'Test Customer S', '855123456717'),  # leading zeros kept
+    ('00000000000017', 'Arrived ', D + '07:18:00', 'Shopee SHPE', 'Test Customer S', '855123456717'),  # event value: trim, any case
+    ('S000000018', 'arrived', D + '07:19:00', 'Shopee SHPE', 'Test Customer T', '855123456718'),  # letter code, arrived only
 ]
 
 
@@ -41,8 +54,8 @@ def record(code, scan_type, time, outlet, name, phone):
     split = scan_type.startswith('Whole')
     r = dict.fromkeys(HEADERS, '')
     r.update({'scan order number': code, 'Data Source': 'Test-Device', 'scanTypeDesc': scan_type,
-              'scan time': f'2026-10-10 {time}', 'scan person': 'Test Staff', 'scan site': 'Test Branch TB-01',
-              'Receiver/Dispatch Member': 'Test Staff', 'Upload Time': f'2026-10-10 {time}',
+              'scan time': time, 'scan person': 'Test Staff', 'scan site': 'Test Branch TB-01',
+              'Receiver/Dispatch Member': 'Test Staff', 'Upload Time': '2026-10-10 09:00:00',
               'number of pieces': '' if split else '1', 'weight': '0.5'})
     if not split:
         r.update({'Up/Next Site': 'Test Hub', 'Send Outlet': outlet, 'Destination Outlet': 'Test Branch TB-01',
@@ -53,20 +66,19 @@ def record(code, scan_type, time, outlet, name, phone):
 
 
 def col(i):
-    return chr(ord('A') + i)  # 26 columns, A-Z
+    return chr(ord('A') + i) if i < 26 else 'A' + chr(ord('A') + i - 26)  # up to 52 columns
 
 
-def xlsx_bytes(records):
+def xlsx_bytes(headers, grid):
     strings, index = [], {}
     def sid(s):
         if s not in index:
             index[s] = len(strings); strings.append(s)
         return index[s]
     rows_xml = []
-    for n, row in enumerate([dict(zip(HEADERS, HEADERS))] + records, start=1):
+    for n, row in enumerate([headers] + grid, start=1):
         cells = []
-        for i, h in enumerate(HEADERS):
-            v = row[h]
+        for i, (h, v) in enumerate(zip(headers, row)):
             if v == '':
                 continue
             ref = f'{col(i)}{n}'
@@ -107,17 +119,44 @@ def xlsx_bytes(records):
     return buf.getvalue()
 
 
+def write(out, stem, headers, rows):
+    with open(out / f'{stem}.csv', 'w', newline='', encoding='utf-8') as f:
+        w = csv.writer(f); w.writerow(headers); w.writerows(rows)
+    (out / f'{stem}.xlsx').write_bytes(xlsx_bytes(headers, rows))
+
+
 if __name__ == '__main__':
     out = Path(__file__).parent
     records = [record(*r) for r in ROWS]
-    with open(out / 'scan-record-mixed.csv', 'w', newline='', encoding='utf-8') as f:
-        w = csv.DictWriter(f, HEADERS); w.writeheader(); w.writerows(records)
-    data = xlsx_bytes(records)
-    (out / 'scan-record-mixed.xlsx').write_bytes(data)
-    (out / 'scan-record-mixed-xlsx-named.xls').write_bytes(data)  # like the real export: XLSX content, .xls name
+    grid = [[r[h] for h in HEADERS] for r in records]
+    write(out, 'scan-record-mixed', HEADERS, grid)
+    (out / 'scan-record-mixed-xlsx-named.xls').write_bytes(xlsx_bytes(HEADERS, grid))  # like the real export: XLSX content, .xls name
 
-    # Self-check against the rule in docs/import-rules.md
+    # Header problems: each must fail the check with nothing imported, except the case/space variant, which must pass.
+    j, c = HEADERS.index('Send Outlet'), HEADERS.index('scanTypeDesc')
+    write(out, 'headers-no-send-outlet', HEADERS[:j] + HEADERS[j + 1:], [r[:j] + r[j + 1:] for r in grid])
+    write(out, 'headers-two-send-outlet', HEADERS + ['Send Outlet'], [r + ['Shopee SHPE'] for r in grid])
+    write(out, 'headers-no-scan-type', HEADERS[:c] + HEADERS[c + 1:], [r[:c] + r[c + 1:] for r in grid])
+    write(out, 'headers-case-and-spaces', [' SEND OUTLET ' if h == 'Send Outlet' else h for h in HEADERS], grid)
+
+    # Self-check: the expected review for scan-record-mixed (docs/import-rules.md, "Test fixtures").
+    import re
     eligible = [r for r in records if r['Send Outlet'].strip(' \t' + NBSP).lower() == 'shopee shpe']
-    codes = [r['scan order number'] for r in eligible]
-    assert (len(records), len(eligible), len(records) - len(eligible), len(set(codes))) == (15, 6, 9, 5)
-    print('15 rows: 6 Shopee SHPE, 9 excluded, 5 unique Shopee codes (1 repeated in file)')
+    parcels = {}
+    for r in eligible:
+        parcels.setdefault(r['scan order number'], []).append(r)
+    norm_name = lambda s: ' '.join(s.split()).lower()
+    def norm_phone(s):
+        d = re.sub(r'\D', '', s); d = d[3:] if d.startswith('855') else d
+        return d if d.startswith('0') else '0' + d
+    arrival = {k: min((r['scan time'] for r in v if r['scanTypeDesc'].strip().lower() == 'arrived'), default=None)
+               for k, v in parcels.items()}
+    conflicts = sorted(k for k, v in parcels.items()
+                       if len({(norm_name(r['consignee name']), norm_phone(r['consignee mobile'])) for r in v}) > 1)
+    missing = sorted(k for k, a in arrival.items() if a is None)
+    assert (len(records), len(eligible), len(records) - len(eligible)) == (27, 17, 10)
+    assert (len(parcels), len(eligible) - len(parcels)) == (10, 7)
+    assert conflicts == ['10000000000014', '10000000000015'], conflicts
+    assert missing == ['10000000000002', '10000000000003', '10000000000004'], missing
+    assert arrival['10000000000005'] == '2026-10-09 23:50:00' and '00000000000017' in parcels and 'S000000018' in parcels
+    print('27 rows: 17 Shopee SHPE, 10 excluded; 10 parcels (7 repeat rows collapsed); 2 conflicts; 3 missing arrival; 5 ready')

@@ -62,7 +62,8 @@ consolidated into one parcel record each.
 
 - **Stored and shown**: the tracking code exactly as in the file after trimming surrounding whitespace. Letters and their case,
   internal spaces and leading zeros are kept; the code is never converted to a number.
-- **Matching key**: the stored code upper-cased, nothing else changed (internal spaces and leading zeros stay). The key is used
+- **Matching key**: the stored code with ASCII letters `a–z` upper-cased and nothing else changed (internal spaces, leading
+  zeros, punctuation and other characters stay; `AB 12` stays `AB 12`). The key is used
   for grouping rows into parcels, duplicate detection against the database, and lookups (Scan Parcel, search). It is unique in
   the database, so codes differing only by letter case never become two parcels.
 - **Ambiguous spelling**: rows of one parcel in the same file whose codes differ only by case (`S000000018`, `s000000018`) form
@@ -74,7 +75,10 @@ consolidated into one parcel record each.
 `scan time` and `Upload Time` carry no time zone. They are read as **Asia/Phnom_Penh** local time (UTC+7, no daylight saving);
 this assumption is recorded with each import. The original cell text is stored unchanged; a parsed UTC timestamp is stored beside
 it when the text is a valid `YYYY-MM-DD HH:MM:SS`. A row's scan date is the date part of its source text. Unparseable values keep
-their text, get no parsed time and no scan date, and are listed in the review.
+their text, get no parsed time and no scan date, and are listed in the review. Valid means exactly `YYYY-MM-DD HH:MM:SS` naming a
+real date and time (`2026-02-30 10:00:00` and `2026-10-10 25:00:00` are not); other formats, numeric spreadsheet date serials
+and empty cells are unreadable. An unreadable value is never used as an event time, for ordering, for the earliest scan date
+or for the scan-date-differs-from-today check. Storage: `docs/phase1-schema.md` (`parcel_scan_events`).
 
 ## Rule `arrival-batch-date/v1`
 

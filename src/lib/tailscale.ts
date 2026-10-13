@@ -60,7 +60,8 @@ const CLI = () => process.env.TAILSCALE_CLI || 'tailscale'; // Windows: on PATH 
 
 function run(args: string[]): Promise<{ ok: true; out: string } | { ok: false; missing: boolean }> {
   return new Promise((resolve) => {
-    execFile(CLI(), args, { timeout: 3000, windowsHide: true }, (err, out) => {
+    // Runs the external tailscale CLI, not a project file, so Turbopack need not trace the project.
+    execFile(/*turbopackIgnore: true*/ CLI(), args, { timeout: 3000, windowsHide: true }, (err, out) => {
       if (err) resolve({ ok: false, missing: (err as NodeJS.ErrnoException).code === 'ENOENT' });
       else resolve({ ok: true, out });
     });

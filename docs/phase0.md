@@ -76,3 +76,24 @@ tailnet. On or after 2026-10-14:
 3. Pick the newest stable 16.x outside every advisory range; check its PostCSS is past 8.5.22; pin it exactly.
 4. Add `.node-version`/`engines` (Node 24.21.0 is already the default), TypeScript 6.0.3, `@types/node` 24.19.2.
 5. Clean-clone `npm ci`, tests, `tsc`, `next build`, page checks and screenshot comparison against the baseline; rollback check.
+
+## Next.js 16.4.0 candidate (branch `phase0-upgrade`, 2026-10-13)
+
+Clones on the ext4 disk; Next 15 (`main`) on 127.0.0.1:3101 and the candidate on 127.0.0.1:3102, compared side by side.
+
+| Check | Result |
+|---|---|
+| Lockfile | Changed only `next`, `@next/env`, `@swc/helpers`, Next's PostCSS (8.4.31 → 8.5.23), `typescript`, `@types/node`, `undici-types`, `@next/swc-*`/`@img/*` binaries; added `baseline-browser-mapping` |
+| `npm test` | 79 / 79 (46 existing + 33 database) |
+| `tsc --noEmit` (TypeScript 6.0.3) | clean after `"types": ["node"]` |
+| `next build` (Turbopack) | ok, 13 routes; the one warning (project tracing from the `tailscale` CLI call) fixed with `turbopackIgnore` |
+| `npm audit --omit=dev` | 0 vulnerabilities (15.5.27: 1 high, 1 moderate, PostCSS) |
+| `npm audit` incl. dev | 4 moderate, esbuild via drizzle-kit (accepted, decision 35) |
+| 7 pages × 1366/1024/390/360 px | 28 / 28 HTTP 200, no console errors, no sideways scrolling |
+| Screenshot diff vs Next 15 | Same apart from known sample-data noise; the Dashboard "SMS waiting at the gateway" line is on screen ~1.1 s after load in both builds (sampled every 200 ms), Next 16 hydrates ~250 ms later, so screenshots catch it at different moments |
+| Camera scanner, fake camera, localhost | Preview plays 1920×1080 on both builds, no errors |
+| `next dev` while `next build` runs | dev uses `.next/dev` and kept serving; the "build in a copy" rule can go after the merge |
+
+Still open: the 2026-10-14 advisory review (IDs, check 16.4.0 and 15.5.27), production server on 127.0.0.1:3000 behind
+Tailscale Serve with the seven Settings checks, and the camera on the Tailscale address. The 14-day wait in the version
+policy is waived for 16.4.0 (published 2026-10-06) because it fixes the PostCSS advisories that affect 15.5.27.

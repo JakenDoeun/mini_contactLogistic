@@ -1,0 +1,2 @@
+# SHA-256 of every committed migration. A committed migration is never edited: add a new one instead.
+93533fb20ef4495c6c668b606c8a23c77410ea198ecd19e4b4b93ded0aa16ba9  0000_initial.sql

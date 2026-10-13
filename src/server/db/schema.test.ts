@@ -1,0 +1,180 @@
+import test, { after, before } from 'node:test';
+import assert from 'node:assert/strict';
+import { getTableConfig } from 'drizzle-orm/sqlite-core';
+import type { Db } from './connection.ts';
+import { ALL_TABLES } from './schema.ts';
+import { createTestDb } from './test-db.ts';
+import { parseScanTime, trackingKey } from './values.ts';
+
+let db: Db;
+let cleanup: () => void;
+before(async () => ({ db, cleanup } = await createTestDb()));
+after(() => cleanup());
+
+const AT = '2026-10-12T01:00:00.000Z';
+let seq = 0;
+
+/** A valid import row (status `checked` unless overridden); returns its id. */
+function addImport(fields: Record<string, unknown> = {}): number {
+  const row: Record<string, unknown> = {
+    source: 'manual', original_filename: 'scan-record-mixed.xlsx', stored_path: '/tmp/x', sha256: `h${++seq}`, size_bytes: 10,
+    file_format: 'xlsx', status: 'checked', rules: '[]', headers_found: '{}', scan_dates: '{}', rows_total: 3, rows_shopee: 2,
+    rows_excluded: 1, excluded_codes: 1, rows_collapsed: 0, parcels_unique: 2, db_duplicates: 0, left_out: 0, blocked: 0,
+    ready: 2, parcels_added: 0, checked_at: AT, ...fields,
+  };
+  const cols = Object.keys(row);
+  const sql = `INSERT INTO imports (${cols.join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`;
+  return Number(db.prepare(sql).run(row).lastInsertRowid);
+}
+const confirmed = { status: 'imported', confirmed_at: AT, arrival_batch_date: '2026-10-12', date_choice: 'single_scan_date', parcels_added: 2 };
+
+function addParcel(code: string, importId: number, fields: Record<string, unknown> = {}): number {
+  const row = {
+    tracking_code: code, tracking_key: trackingKey(code), recipient_name: 'Test Customer', import_phone_raw: '012345670',
+    phone_raw: '012345670', phone_normalized: '012345670', phone_edited: 0, arrival_date: '2026-10-12', first_import_id: importId,
+    created_at: AT, updated_at: AT, ...fields,
+  };
+  const cols = Object.keys(row);
+  return Number(db.prepare(`INSERT INTO parcels (${cols.join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`).run(row).lastInsertRowid);
+}
+
+const rejects = (fn: () => unknown, pattern: RegExp) => assert.throws(fn, pattern);
+
+test('the Drizzle schema and the migrated database have the same 18 tables and columns', () => {
+  assert.equal(ALL_TABLES.length, 18);
+  for (const table of ALL_TABLES) {
+    const config = getTableConfig(table);
+    const dbColumns = (db.pragma(`table_info(${config.name})`) as { name: string }[]).map((c) => c.name).sort();
+    assert.deepEqual(dbColumns, config.columns.map((c) => c.name).sort(), config.name);
+  }
+});
+
+test('foreign keys are enforced in normal use', () => {
+  rejects(() => addParcel('FK000000001', 999_999), /FOREIGN KEY/);
+});
+
+test('import counts must add up and status rules hold', () => {
+  rejects(() => addImport({ rows_total: 5 }), /CHECK constraint failed: imports_rows_identity/);
+  rejects(() => addImport({ rows_collapsed: 1 }), /imports_collapsed_identity/);
+  rejects(() => addImport({ ready: 1 }), /imports_parcels_identity/);
+  rejects(() => addImport({ parcels_added: 2 }), /imports_status_rules/); // checked never has inserted parcels
+  rejects(() => addImport({ ...confirmed, confirmed_at: null }), /imports_status_rules/);
+  rejects(() => addImport({ ...confirmed, arrival_batch_date: null }), /imports_status_rules/);
+  rejects(() => addImport({ ...confirmed, parcels_added: 1 }), /imports_status_rules/);
+  rejects(() => addImport({ status: 'failed' }), /imports_status_rules/); // failed needs its reason
+  rejects(() => addImport({ status: 'cancelled', confirmed_at: AT }), /imports_status_rules/);
+  rejects(() => addImport({ date_choice: 'only_scan_date' }), /imports_chosen_scan_date/);
+  rejects(() => addImport({ status: 'bogus' }), /imports_status/);
+  addImport({ status: 'failed', error_code: 'missing_send_outlet', rows_total: 0, rows_shopee: 0, rows_excluded: 0, excluded_codes: 0, parcels_unique: 0, ready: 0 });
+  addImport({ ...confirmed, date_choice: 'only_scan_date', chosen_scan_date: '2026-10-10' });
+});
+
+test('import status changes: only checked -> imported, failed or cancelled', () => {
+  const id = addImport();
+  rejects(() => db.prepare("UPDATE imports SET status = 'no_eligible_rows' WHERE id = ?").run(id), /only checked/);
+  db.prepare("UPDATE imports SET status = 'imported', confirmed_at = ?, arrival_batch_date = '2026-10-12', date_choice = 'single_scan_date', parcels_added = 2 WHERE id = ?").run(AT, id);
+  rejects(() => db.prepare("UPDATE imports SET status = 'checked', confirmed_at = NULL, parcels_added = 0 WHERE id = ?").run(id), /only checked/);
+  rejects(() => db.prepare("UPDATE imports SET status = 'cancelled', confirmed_at = NULL, parcels_added = 0 WHERE id = ?").run(id), /only checked/);
+  const failed = addImport();
+  db.prepare("UPDATE imports SET status = 'failed', error_code = 'confirm_failed' WHERE id = ?").run(failed);
+  rejects(() => db.prepare("UPDATE imports SET status = 'checked' WHERE id = ?").run(failed), /only checked/);
+});
+
+test('tracking key: case-insensitive only, internal spaces and leading zeros kept', () => {
+  const imp = addImport();
+  addParcel('S000000018', imp);
+  rejects(() => addParcel('s000000018', imp), /UNIQUE constraint failed: parcels.tracking_key/);
+  addParcel('00000000000017', imp);
+  addParcel('AB 12', imp);
+  addParcel('AB12', imp); // a different parcel: the space is part of the code
+  rejects(() => addParcel('ab 13', imp, { tracking_key: 'AB13' }), /parcels_tracking_key_rule/);
+  rejects(() => addParcel(' AB 14', imp, { tracking_key: ' AB 14' }), /parcels_tracking_code_nonempty/);
+  const stored = db.prepare("SELECT tracking_code, tracking_key FROM parcels WHERE tracking_key IN ('S000000018', '00000000000017', 'AB 12') ORDER BY id").all();
+  assert.deepEqual(stored, [
+    { tracking_code: 'S000000018', tracking_key: 'S000000018' },
+    { tracking_code: '00000000000017', tracking_key: '00000000000017' },
+    { tracking_code: 'AB 12', tracking_key: 'AB 12' },
+  ]);
+  for (const sample of ['s000000018', 'ab 12', '0001x', 'éß ǆ ab']) {
+    assert.equal((db.prepare('SELECT upper(?) AS u').get(sample) as { u: string }).u, trackingKey(sample), sample);
+  }
+});
+
+test('phones: import phone never changes, an edited phone is marked and the mark is never reset', () => {
+  const imp = addImport();
+  const id = addParcel('PH000000001', imp);
+  rejects(() => db.prepare("UPDATE parcels SET phone_raw = '099999999' WHERE id = ?").run(id), /parcels_phone_unedited/);
+  rejects(() => db.prepare("UPDATE parcels SET import_phone_raw = '099999999' WHERE id = ?").run(id), /import_phone_raw never changes/);
+  db.prepare("UPDATE parcels SET phone_raw = '099999999', phone_normalized = '099999999', phone_edited = 1 WHERE id = ?").run(id);
+  rejects(() => db.prepare('UPDATE parcels SET phone_edited = 0 WHERE id = ?').run(id), /never reset/);
+});
+
+test('append-only tables cannot be changed or deleted', () => {
+  const imp = addImport();
+  const parcel = addParcel('AO000000001', imp);
+  const change = db.prepare("INSERT INTO parcel_phone_changes (parcel_id, old_raw, new_raw, changed_at) VALUES (?, 'a', 'b', ?)").run(parcel, AT).lastInsertRowid;
+  rejects(() => db.prepare("UPDATE parcel_phone_changes SET new_raw = 'c' WHERE id = ?").run(change), /append-only/);
+  rejects(() => db.prepare('DELETE FROM parcel_phone_changes WHERE id = ?').run(change), /append-only/);
+  const audit = db.prepare("INSERT INTO audit_log (at, action, entity, entity_ids, outcome) VALUES (?, 'x.y', 'x', '[1]', 'ok')").run(AT).lastInsertRowid;
+  rejects(() => db.prepare("UPDATE audit_log SET outcome = 'failed' WHERE id = ?").run(audit), /append-only/);
+  rejects(() => db.prepare('DELETE FROM audit_log WHERE id = ?').run(audit), /append-only/);
+  rejects(() => db.prepare("INSERT INTO audit_log (at, action, entity, entity_ids, outcome, detail) VALUES (?, 'x.y', 'x', '[1]', 'ok', '[1]')").run(AT), /audit_log_detail_json/);
+  const note = db.prepare("INSERT INTO notifications (phone_normalized, arrival_date, message_text, reason, created_at) VALUES ('012345670', '2026-10-12', 'm', 'initial', ?)").run(AT).lastInsertRowid;
+  db.prepare('INSERT INTO notification_parcels (notification_id, parcel_id) VALUES (?, ?)').run(note, parcel);
+  rejects(() => db.prepare('DELETE FROM notification_parcels WHERE notification_id = ?').run(note), /append-only/);
+  rejects(() => db.prepare('DELETE FROM notifications WHERE id = ?').run(note), /append-only/);
+  const contact = db.prepare("INSERT INTO contact_attempts (channel, outcome, created_at) VALUES ('call', 'reached', ?)").run(AT).lastInsertRowid;
+  db.prepare('INSERT INTO contact_attempt_parcels (contact_attempt_id, parcel_id) VALUES (?, ?)').run(contact, parcel);
+  rejects(() => db.prepare('DELETE FROM contact_attempt_parcels WHERE contact_attempt_id = ?').run(contact), /append-only/);
+  rejects(() => db.prepare('DELETE FROM contact_attempts WHERE id = ?').run(contact), /append-only/);
+  const backup = db.prepare("INSERT INTO backup_runs (at, kind, outcome) VALUES (?, 'local', 'ok')").run(AT).lastInsertRowid;
+  rejects(() => db.prepare('DELETE FROM backup_runs WHERE id = ?').run(backup), /append-only/);
+  rejects(() => db.prepare('DELETE FROM parcels WHERE id = ?').run(parcel), /FOREIGN KEY/);
+});
+
+test('review items: only the resolution changes, only while the import is checked, never deleted', () => {
+  const imp = addImport();
+  const add = (kind: string, blocking: number, key = 'S000000018') =>
+    db.prepare("INSERT INTO import_review_items (import_id, tracking_key, kind, blocking, detail, created_at) VALUES (?, ?, ?, ?, '{}', ?)").run(imp, key, kind, blocking, AT).lastInsertRowid;
+  rejects(() => add('recipient_conflict', 0), /review_items_blocking/);
+  rejects(() => add('db_duplicate', 1), /review_items_blocking/);
+  const item = add('code_spelling', 1);
+  rejects(() => add('code_spelling', 1), /UNIQUE constraint failed/);
+  rejects(() => db.prepare("UPDATE import_review_items SET resolution = 'chosen', resolved_at = ? WHERE id = ?").run(AT, item), /review_items_chosen_present/);
+  rejects(() => db.prepare("UPDATE import_review_items SET resolution = 'left_out' WHERE id = ?").run(item), /review_items_resolved_at/);
+  rejects(() => db.prepare("UPDATE import_review_items SET detail = '{\"x\":1}' WHERE id = ?").run(item), /only the resolution can change/);
+  db.prepare(`UPDATE import_review_items SET resolution = 'chosen', chosen = '{"tracking_code":"S000000018"}', resolved_at = ? WHERE id = ?`).run(AT, item);
+  rejects(() => db.prepare('DELETE FROM import_review_items WHERE id = ?').run(item), /append-only/);
+  db.prepare("UPDATE imports SET status = 'cancelled' WHERE id = ?").run(imp);
+  rejects(() => db.prepare("UPDATE import_review_items SET resolution = 'left_out' WHERE id = ?").run(item), /read-only once/);
+  rejects(() => add('db_duplicate', 0, 'OTHER'), /no longer being reviewed/);
+});
+
+test('scan times: raw text always kept; parsed time and date only for a valid time', () => {
+  const imp = addImport();
+  const parcel = addParcel('SC000000001', imp);
+  let row = 0;
+  const addEvent = (raw: string | null, utc: string | null, date: string | null) =>
+    db.prepare(
+      `INSERT INTO parcel_scan_events (parcel_id, import_id, source_row, tracking_code_raw, scan_type_raw, scan_time_raw, scan_time_utc, scan_date, created_at)
+       VALUES (?, ?, ?, 'SC000000001', 'arrived', ?, ?, ?, ?)`,
+    ).run(parcel, imp, ++row, raw, utc, date, AT).lastInsertRowid;
+
+  const valid = parseScanTime('2026-10-10 07:15:00')!;
+  const ok = addEvent('2026-10-10 07:15:00', valid.utc, valid.date);
+  for (const raw of ['2026-02-30 10:00:00', '2026-10-10 25:00:00', '10/10/2026 07:00', '46305.3', '', null]) {
+    assert.equal(parseScanTime(raw), null);
+    addEvent(raw, null, null); // stored as metadata, never as an event time
+  }
+  // The database refuses a parsed time that does not match a real, canonical raw text.
+  rejects(() => addEvent('2026-02-30 10:00:00', '2026-03-02T03:00:00.000Z', '2026-02-30'), /scan_events_parsed_matches_raw/);
+  rejects(() => addEvent('2026-10-10 25:00:00', '2026-10-10T18:00:00.000Z', '2026-10-10'), /scan_events_parsed_matches_raw/);
+  rejects(() => addEvent('2026-10-10 07:15:00', '2026-10-10T07:15:00.000Z', '2026-10-10'), /scan_events_parsed_matches_raw/); // not converted from UTC+7
+  rejects(() => addEvent('2026-10-10 07:15:00', valid.utc, null), /scan_events_parsed_pair/);
+  rejects(() => addEvent(null, valid.utc, valid.date), /scan_events_parsed_matches_raw/);
+
+  const earliest = db.prepare('SELECT min(scan_time_utc) AS t, min(scan_date) AS d, count(*) AS n FROM parcel_scan_events WHERE parcel_id = ?').get(parcel);
+  assert.deepEqual(earliest, { t: valid.utc, d: '2026-10-10', n: 7 }, 'unreadable rows never become the earliest scan time');
+  rejects(() => db.prepare("UPDATE parcel_scan_events SET scan_type_raw = 'x' WHERE id = ?").run(ok), /append-only/);
+  rejects(() => db.prepare('DELETE FROM parcel_scan_events WHERE id = ?').run(ok), /append-only/);
+});

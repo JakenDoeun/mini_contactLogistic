@@ -1,8 +1,9 @@
 # Phase 1 schema and migration design
 
-Status: **design approved 2026-10-12 (decisions 31–36, with the owner's clarifications). Implementation is not authorised
-and Phase 1 has not started.** Phase 0 (framework upgrade, gated on the 2026-10-14 Next.js advisories) must pass every
-acceptance item, and the owner must then authorise Phase 1 explicitly. Nothing here has been installed, created or run.
+Status: **design approved 2026-10-12 (decisions 31–37). Implementation authorised by the owner on 2026-10-12 ahead of
+Phase 0 (sequencing exception in the backend plan) and implemented on the current toolchain (Node 24.21.0, Next.js 15.5.27,
+TypeScript 5.9.3); awaiting review.** Phase 0 is still pending. No deployment, real customer data or production import is
+authorised. See "Implementation notes" at the end.
 
 Sources: backend plan Revision 3 ("Database schema", "Imports", "Phase 1: Foundation"), `docs/import-rules.md`
 (revision 2026-10-12d), Phase 1 readiness review (2026-10-12).
@@ -413,3 +414,40 @@ Node 24.21.0: the glob finds the same 46 tests). The existing 46 tests must stil
 | 35 | esbuild advisory via drizzle-kit accepted for development with the install-time verification; replaced when drizzle-kit drops `@esbuild-kit` | Approved 2026-10-12 |
 | 36 | Safe migration sequence and the tests above; `npm test` runs `src/**/*.test.ts` | Approved 2026-10-12 |
 | 37 | Phase 3 secrets: service account and `/etc/campus-branch/branch.env` (service account, 0600) created during Phase 3 before the restic password exists; password stored there directly; no temporary user-owned secrets file; does not authorise real imports | Resolved 2026-10-12 |
+
+## Implementation notes (2026-10-12)
+
+Files: `src/server/db/` (`schema.ts`, `connection.ts`, `migrate.ts`, `paths.ts`, `values.ts`, `audit.ts`, `parcels.ts`,
+`seed.ts`, `test-db.ts` and five `*.test.ts`), `drizzle/0000_initial.sql` (generated, plus 18 hand-written triggers),
+`drizzle/meta/`, `drizzle/migrations.sha256`, `drizzle.config.ts`, `scripts/db-migrate.ts`, `scripts/db-seed.ts`,
+`scripts/start-with-db.ts`, `src/lib/mock/sample-parcels.ts` (the existing sample rows, moved unchanged so Node can load them).
+
+Commands: `npm run db:migrate` and `npm run db:seed` (development; `DATA_DIR`, default `~/.local/share/campus-branch`,
+created 0700, refused if group/other can read it or if it is inside the project), `npm run db:generate` (Drizzle Kit; after
+generating, the triggers are re-checked and `drizzle/migrations.sha256` gets a line for the new file only), and
+`node scripts/start-with-db.ts <command…>` (start-up gate: runs the command only if migration and self-test pass). No npm
+script starts the app through the gate yet; how the app is started today is unchanged.
+
+Dependencies (exact pins): `better-sqlite3` 13.0.3 (bundles SQLite 3.53.4), `drizzle-orm` 0.45.4, `drizzle-kit` 0.31.11
+(dev), and `@types/better-sqlite3` 9.6.0 (dev; `better-sqlite3` ships no TypeScript types). npm 11 skipped esbuild's
+install scripts; Drizzle Kit works without them.
+
+Safeguards added while implementing, all consistent with the approved rules:
+
+- CHECK on `imports`: `imported` also needs `date_choice` and `blocked = 0` (Confirm is refused while anything is blocked).
+- Triggers: `import_phone_raw` cannot change; `phone_edited` cannot go back to 0; review items can be inserted or resolved only
+  while their import is `checked`, and only their resolution fields can change.
+- CHECK on `parcel_scan_events`: a parsed time is accepted only if `scan_time_raw` is a canonical, real
+  `YYYY-MM-DD HH:MM:SS`, the parsed UTC time equals it minus 7 hours, and `scan_date` is its date part.
+- CHECK on `parcels`: `tracking_code` has no surrounding spaces.
+- The pre-migration copy is switched from WAL to a single self-contained file before its integrity check; the
+  `backup_runs` row is written inside the migration transaction, so a rolled-back migration leaves no record of success.
+- A brand-new empty database is not copied (nothing to lose); any database with tables is.
+- Pending migrations older than an applied one are refused (`migration_out_of_order`).
+- `assertInTempDir` also refuses paths inside the project, so the guard holds for a checkout under `/tmp`.
+- Audit `detail` keys allowed: `count`, `counts`, `rules`, `status_from`, `status_to`, `settings_keys`, `error_code`,
+  `file_name`, `sha256`, `phone_valid`, `migrations_applied`, `arrival_dates`, `source`.
+
+Storage functions for later phases: `insertNewParcels()` (insert-only, `ON CONFLICT (tracking_key) DO NOTHING`) and
+`editParcelPhone()` (phone, `phone_edited`, phone history and audit entry in one transaction). No import, login, worker or
+SMS code is part of Phase 1.

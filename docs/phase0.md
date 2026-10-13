@@ -2,7 +2,7 @@
 
 Plan: Campus Branch backend plan, Revision 3 (Phase 0). This file records what was actually done and verified.
 
-## Status (2026-10-12)
+## Status (updated 2026-10-13)
 
 | Step | State |
 |---|---|
@@ -12,8 +12,9 @@ Plan: Campus Branch backend plan, Revision 3 (Phase 0). This file records what w
 | Node 24.21.0 | **Default since 2026-10-12**; 24.14.0 kept for rollback |
 | Real export headers, Shopee filter spec, synthetic fixtures | Done (`docs/import-rules.md`, `test/fixtures/`) |
 | Next.js security review of 15.5.27 | Done; one finding, see below |
-| Next.js 16 upgrade | **Blocked** until the 2026-10-14 advisories are published and checked |
-| Phase 1 | Not started; needs every Phase 0 acceptance item |
+| Next.js 16 upgrade | **In preparation** on branch `phase0-upgrade` (owner, 2026-10-13: development does not wait for the advisories; internal network/tailnet only). Versions are final only after the 2026-10-14 advisory review |
+| Phase 1 | **Committed** (`cd62115`), built ahead of Phase 0 under the sequencing exception: 46 + 33 tests pass on a clean clone; must be re-run on the upgraded stack |
+| Phase 2 | Not started; needs every Phase 0 acceptance item and the owner's approval |
 
 ## Rollback baseline
 
@@ -64,9 +65,11 @@ Builds ran in clones on the ext4 disk, never in the project folder, so the dev s
 - Exposure: Next's PostCSS processes only this app's own CSS at build time; the advisories need attacker-controlled CSS. Low practical risk.
 - Decision: no override of Next's pinned PostCSS; the fix is the Next.js 16 upgrade behind the security gate. Must be resolved before real data.
 
-## Blocked: Next.js 16 upgrade
+## Next.js 16 upgrade
 
-Waiting for the official 2026-10-14 security update. When it is out:
+The owner decided on 2026-10-13 not to hold development for the 2026-10-14 security update: the upgrade is prepared
+now with the newest stable release (16.4.0, PostCSS 8.5.23), and the app stays restricted to the local network or
+tailnet. On or after 2026-10-14:
 
 1. Read the release notes and every advisory; record advisory IDs and fixed versions here.
 2. Check whether 15.5.27 is affected; if so, patch it first (the running app).

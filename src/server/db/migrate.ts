@@ -22,7 +22,8 @@ export type MigrationErrorCode =
   | 'migration_failed'
   | 'foreign_key_violation'
   | 'integrity_failed'
-  | 'self_test_failed';
+  | 'self_test_failed'
+  | 'database_missing';
 
 export class MigrationError extends Error {
   readonly code: MigrationErrorCode;
@@ -203,6 +204,31 @@ export async function migrateDatabase(options: MigrateOptions): Promise<MigrateR
     return { applied: appliedCount, backupPath };
   } finally {
     db.close();
+  }
+}
+
+/**
+ * For the app (web routes, worker): open the existing database only if it is fully migrated and passes the self-test.
+ * Read-only check: it never creates, migrates or changes the database, so a start that skipped `db:migrate` (or a
+ * database the runner refused) fails here instead of running on the wrong schema.
+ */
+export function openVerifiedDatabase(dbPath: string, migrationsFolder = MIGRATIONS_FOLDER): Db {
+  const files = readMigrations(migrationsFolder);
+  let db: Db;
+  try {
+    db = openDatabase(dbPath, { mustExist: true });
+  } catch (e) {
+    if ((e as { code?: string }).code === 'SQLITE_CANTOPEN') {
+      throw new MigrationError('database_missing', `no database at ${dbPath}; run npm run db:migrate`, { cause: e });
+    }
+    throw e;
+  }
+  try {
+    selfTest(db, files);
+    return db;
+  } catch (e) {
+    db.close();
+    throw e;
   }
 }
 

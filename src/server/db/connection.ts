@@ -7,9 +7,9 @@ export type Db = Database.Database;
  * Open the branch database for normal use: WAL, foreign keys enforced, 5 s busy timeout.
  * The path must be absolute and outside the project folder.
  */
-export function openDatabase(dbPath: string, options: { readonly?: boolean } = {}): Db {
+export function openDatabase(dbPath: string, options: { readonly?: boolean; mustExist?: boolean } = {}): Db {
   assertOutsideProject(dbPath);
-  const db = new Database(dbPath, { readonly: options.readonly ?? false, fileMustExist: options.readonly ?? false });
+  const db = new Database(dbPath, { readonly: options.readonly ?? false, fileMustExist: (options.readonly || options.mustExist) ?? false });
   try {
     if (!options.readonly) {
       db.pragma('journal_mode = WAL');

@@ -203,7 +203,7 @@ test('login: wrong password refused with no cookie; right password sets a secure
   const setCookie = cookieOf(ok);
   const attrs = setCookie.split(';').map((a) => a.trim());
   assert.match(attrs[0], /^__Host-cb_session=[A-Za-z0-9_-]{43}$/);
-  for (const a of ['HttpOnly', 'Secure', 'SameSite=Lax', 'Path=/']) assert.ok(attrs.some((x) => x.toLowerCase() === a.toLowerCase()), `${a} in ${setCookie}`);
+  for (const a of ['HttpOnly', 'Secure', 'SameSite=Lax', 'Path=/', 'Max-Age=2592000']) assert.ok(attrs.some((x) => x.toLowerCase() === a.toLowerCase()), `${a} in ${setCookie}`);
   assert.equal(/domain=/i.test(setCookie), false);
   assert.equal(ok.headers.get('cache-control'), 'no-store');
 
@@ -230,18 +230,28 @@ test('login: logout ends the session on the server and clears the cookie', async
   assert.equal((await postJson('/api/auth/logout', {}, { cookie })).status, 401);
 });
 
-test('login: idle-expired and absolute-expired sessions are refused; a disabled account loses its sessions', async () => {
+test('login: sessions persist through 6 idle days, end after 7 idle days or 30 days from sign-in; use never extends the deadline', async () => {
   const signIn = async () => `__Host-cb_session=${tokenOf(await postJson('/api/auth/login', { username: 'first.staff', password: PASSWORD }))}`;
+  const DAY = 24 * 3600_000;
+  const persisting = await signIn();
   const idle = await signIn();
   const absolute = await signIn();
   const db = siteDb();
-  const ago = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
   const hash = (c: string) => crypto.createHash('sha256').update(c.split('=')[1]).digest('hex');
-  db.prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?').run(ago(12.01), hash(idle));
-  db.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?').run(ago(0.01), hash(absolute));
+  const deadlineOf = (c: string) => (db.prepare('SELECT expires_at FROM sessions WHERE token_hash = ?').get(hash(c)) as { expires_at: string }).expires_at;
+  const signedInAt = Date.parse((db.prepare('SELECT created_at FROM sessions WHERE token_hash = ?').get(hash(persisting)) as { created_at: string }).created_at);
+  assert.equal(Date.parse(deadlineOf(persisting)) - signedInAt, 30 * DAY, 'deadline is 30 days after sign-in');
+  const deadlineBefore = deadlineOf(persisting);
+  db.prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?').run(ago(6 * DAY), hash(persisting));
+  db.prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?').run(ago(7 * DAY + 60_000), hash(idle));
+  db.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?').run(ago(60_000), hash(absolute));
+  assert.equal((await send('/api/auth/session', { cookie: persisting })).status, 200, 'six days unused: still signed in');
+  assert.equal((await send('/dashboard', { cookie: persisting })).status, 200);
+  assert.equal(deadlineOf(persisting), deadlineBefore, 'using the session did not move its 30-day deadline');
   db.close();
   assert.equal((await send('/api/auth/session', { cookie: idle })).status, 401);
-  assert.equal((await send('/api/auth/session', { cookie: absolute })).status, 401);
+  assert.equal((await send('/api/auth/session', { cookie: absolute })).status, 401, 'past the 30-day deadline even though used a minute ago');
   assert.equal((await send('/dashboard', { cookie: idle })).status, 307);
 
   const live = await signIn();

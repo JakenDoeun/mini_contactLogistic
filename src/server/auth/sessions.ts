@@ -3,9 +3,10 @@
 import crypto from 'node:crypto';
 import type { Db } from '../db/connection.ts';
 
-// Provisional (plan decision 9 is the owner's): signed out after 12 hours without use, and after 7 days in any case.
-export const SESSION_IDLE_MS = 12 * 3600_000;
-export const SESSION_MAX_MS = 7 * 24 * 3600_000;
+// Plan decision 9 (owner, 2026-10-14): internal, Tailscale-only app, so longer sessions for staff convenience. Signed
+// out after 7 days without use, and 30 days after sign-in in any case; use never moves that 30-day deadline.
+export const SESSION_IDLE_MS = 7 * 24 * 3600_000;
+export const SESSION_MAX_MS = 30 * 24 * 3600_000;
 const TOUCH_MS = 60_000; // last_seen_at is written at most once a minute per session
 
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/; // 32 random bytes, base64url

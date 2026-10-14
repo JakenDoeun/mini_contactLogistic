@@ -45,14 +45,21 @@ fixed with `turbopackIgnore`.
 The integration test finds every `route.ts` under `src/app/api` and requires 401 for each exported method except the
 three public routes, so a new route without `withSession()` fails the suite.
 
-## Provisional values (owner decision, plan decision 9)
+## Session policy (owner decision 2026-10-14, plan decision 9)
 
-| Question | Provisional value | Where to change |
+Campus Branch is an internal application reachable only over the private network (the tailnet, or the office computer
+itself), so sessions are long for staff convenience. Expiry is still enforced by the server on every request.
+
+| Rule | Value | Where |
 |---|---|---|
-| How long a session lasts when idle | 12 hours | `SESSION_IDLE_MS`, `src/server/auth/sessions.ts` |
-| Whether staff phones stay signed in | Yes, up to 7 days if used at least every 12 hours | `SESSION_MAX_MS` (also the cookie's Max-Age) |
+| Idle timeout: signed out after this long without use | **7 days** | `SESSION_IDLE_MS`, `src/server/auth/sessions.ts` |
+| Absolute lifetime: signed out this long after sign-in, however often used | **30 days**; set once at sign-in (`sessions.expires_at`) and never extended by activity | `SESSION_MAX_MS` |
+| Cookie lifetime | Persistent, `Max-Age` = 30 days (2,592,000 s) from sign-in, matching the absolute lifetime; the server refuses the session earlier if it is idle, logged out, revoked or past its deadline | `src/server/auth/cookie.ts` |
+| Revocation | Logout deletes the session row; disabling an account deletes all its sessions | `logOut`, `disableUser` |
 | How many accounts | First account from the first-run screen; any further ones with `npm run user -- add` | — |
 | Password rules | 12–256 characters; usernames 3–32 of `a-z 0-9 . _ -`, case-insensitive | `src/server/auth/password.ts` |
+
+Replaced the earlier provisional values (12 hours idle, 7 days absolute).
 
 ## Security notes
 
@@ -62,15 +69,16 @@ three public routes, so a new route without `withSession()` fails the suite.
 - Unknown usernames cost the same scrypt work as known ones (a real dummy hash) and get the same answer and pause.
 - The audit log never holds the typed username (it may be a mistyped password), the password, the token or the
   first-run code; failed logins record the user's ID only when the account exists.
-- A session ends when idle for 12 hours, after 7 days, on logout, or when its account is disabled; expired rows are
+- A session ends when idle for 7 days, 30 days after sign-in, on logout, or when its account is disabled; expired rows are
   deleted when seen and whenever a new session is created.
 - Origin rule: allowed are exactly the branch address (`BRANCH_URL`, else the Tailscale Serve name) and a loopback
   origin equal to the host the request was sent to.
 
 ## Tests
 
-- `npm test`: 11 auth unit tests and the `safeNextPath` test added. Two rule mutations were checked: removing idle
-  expiry or the pause makes the auth tests fail.
+- `npm test`: 12 auth unit tests (including the pinned session policy and a 30-day run of daily use that never moves
+  the deadline) and the `safeNextPath` test added. Rule mutations checked: removing idle expiry, removing the pause,
+  or letting activity extend `expires_at` each makes the auth tests fail.
 - `npm test`: the `npm run user` command test is in `src/server/db/startup.test.ts`.
 - `npm run test:integration` (builds a temporary copy; about 30 s): 11 tests, covering the server bundle (2) and login
   through `next start` (9). Removing `withSession()` from `/api/branch-status` makes the route test fail.

@@ -93,6 +93,11 @@ test('login: five wrong passwords in a row pause that username for a minute, eve
   assert.deepEqual(await logIn(db, 'ghost', 'wrong password!!', T0), { ok: false, reason: 'paused', retryAfter: 60 });
 });
 
+test('session policy: 7 days idle, 30 days absolute from sign-in (decision 9)', () => {
+  assert.equal(SESSION_IDLE_MS, 7 * 24 * 3600_000);
+  assert.equal(SESSION_MAX_MS, 30 * 24 * 3600_000);
+});
+
 test('sessions: only a hash is stored; idle, absolute and disabled-account expiry; invalid tokens refused', async (t) => {
   const { db, userId } = await withUser(t);
   const token = createSession(db, userId, T0);
@@ -109,10 +114,16 @@ test('sessions: only a hash is stored; idle, absolute and disabled-account expir
   const idle = createSession(db, userId, T0);
   assert.equal(findSession(db, idle, later(SESSION_IDLE_MS)), null);
   assert.equal(findSession(db, idle, T0), null, 'deleted, not just hidden');
-  // Absolute limit even when used all the time.
+  // Persists across days of regular use, but the absolute deadline never moves: it ends 30 days after sign-in.
   const busy = createSession(db, userId, T0);
-  for (let h = 11; h < SESSION_MAX_MS / 3600_000; h += 11) assert.ok(findSession(db, busy, later(h * 3600_000)), `hour ${h}`);
-  assert.equal(findSession(db, busy, later(SESSION_MAX_MS)), null);
+  const deadline = () => (db.prepare('SELECT expires_at FROM sessions WHERE user_id = ? ORDER BY created_at').all(userId) as { expires_at: string }[]);
+  const expiresAt = new Date(T0.getTime() + SESSION_MAX_MS).toISOString();
+  for (let d = 1; d < 30; d++) {
+    assert.ok(findSession(db, busy, later(d * 24 * 3600_000)), `day ${d}`);
+    assert.ok(deadline().every((r) => r.expires_at === expiresAt), `day ${d}: use did not extend the deadline`);
+  }
+  assert.ok(findSession(db, busy, later(SESSION_MAX_MS - 1000)), 'still valid one second before the deadline');
+  assert.equal(findSession(db, busy, later(SESSION_MAX_MS)), null, 'ends at 30 days even though it was used the day before');
   // Logout ends exactly that session.
   const a = createSession(db, userId, T0);
   const b = createSession(db, userId, T0);
@@ -142,7 +153,7 @@ test('session cookie: __Host- prefix, HttpOnly, Secure, SameSite=Lax, Path=/, no
   assert.equal(SESSION_COOKIE, '__Host-cb_session');
   const attrs = c.split('; ').slice(1);
   assert.equal(c.split('; ')[0], '__Host-cb_session=tok');
-  for (const a of ['HttpOnly', 'Secure', 'SameSite=Lax', 'Path=/', `Max-Age=${SESSION_MAX_MS / 1000}`]) assert.ok(attrs.includes(a), a);
+  for (const a of ['HttpOnly', 'Secure', 'SameSite=Lax', 'Path=/', 'Max-Age=2592000']) assert.ok(attrs.includes(a), a); // 30 days
   assert.equal(/domain=/i.test(c), false);
   assert.match(clearedSessionCookie(), /^__Host-cb_session=; Max-Age=0; Path=\/; HttpOnly; Secure; SameSite=Lax$/);
   assert.equal(readSessionToken('a=1; __Host-cb_session=abc; b=2'), 'abc');

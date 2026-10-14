@@ -39,10 +39,11 @@ export function assertInTempDir(p: string) {
 
 /** Data folder for the scripts: DATA_DIR, else the development folder. Created 0700; refused if others can read it. */
 export function resolveDataDir(env: NodeJS.ProcessEnv = process.env) {
-  const dir = path.resolve(env.DATA_DIR || DEV_DATA_DIR);
+  // The data folder is outside the project, so Turbopack need not trace the project for these calls.
+  const dir = path.resolve(/*turbopackIgnore: true*/ env.DATA_DIR || DEV_DATA_DIR);
   assertOutsideProject(path.join(dir, 'branch.db'));
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const mode = fs.statSync(dir).mode & 0o777;
+  const mode = fs.statSync(/*turbopackIgnore: true*/ dir).mode & 0o777;
   if (process.platform !== 'win32' && mode & 0o077) {
     throw new Error(`Data folder ${dir} has mode ${mode.toString(8)}; it must be 0700 (chmod 700 "${dir}")`);
   }

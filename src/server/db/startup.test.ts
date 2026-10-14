@@ -200,7 +200,7 @@ test('user CLI: adds an account with a one-time printed password, refuses duplic
   assert.equal(user('disable', 'staff.two').status, 1, 'already disabled');
 });
 
-test('first-run-code: shows the existing code in a terminal only, never replaces it, refuses once setup is done', async (t) => {
+test('first-run-code: shows an existing code in a terminal only, never creates or replaces one, refuses once setup is done', async (t) => {
   const { dataDir } = tempDataDir(t);
   const env = { ...process.env, DATA_DIR: dataDir };
   const piped = () => spawnSync(process.execPath, ['scripts/first-run-code.ts'], { cwd: PROJECT_ROOT, env, encoding: 'utf8' });
@@ -216,6 +216,17 @@ test('first-run-code: shows the existing code in a terminal only, never replaces
   assert.match(refusedPipe.stderr, /Refusing to print the one-time code into a pipe or a file/);
   assert.equal(fs.existsSync(file), false, 'nothing created when refused');
 
+  // No code file yet: the command refuses and does not create a setup credential of its own.
+  const missing = inTerminal();
+  assert.equal(missing.status, 1);
+  assert.match(missing.stdout, /No one-time code exists yet/);
+  assert.equal(fs.existsSync(file), false, 'the command never creates a code');
+  // The sign-in page creates the code (ensureFirstRunCode); from then on the command shows it.
+  const { ensureFirstRunCode } = await import('../auth/accounts.ts');
+  const { openVerifiedDatabase: openForPage } = await import('./migrate.ts');
+  const pageDb = openForPage(path.join(dataDir, 'branch.db'));
+  ensureFirstRunCode(pageDb, dataDir);
+  pageDb.close();
   const first = inTerminal();
   assert.equal(first.status, 0, first.stdout);
   const code = fs.readFileSync(file, 'utf8').trim();

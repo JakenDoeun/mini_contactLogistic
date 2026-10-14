@@ -125,6 +125,14 @@ is done.
 - [ ] **Security advisory review — NOT done; the security gate has NOT passed.** When the announced Next.js
   advisories are published: record every ID and fixed version here, check whether 16.4.0 (and 15.5.27 on `main`) are
   affected, and if so move to the patched exact version and re-run the table above.
+  - 2026-10-14 check (GitHub Advisory Database, `next`, newest first): the newest `next` advisories are from
+    2026-10-07. GHSA-cjq9-62q9-8jv4 (high, SSRF in Image Optimization; >= 16.0.0 < 16.3.8), GHSA-mcj8-r9mp-w47p
+    (medium; >= 16.0.0 < 16.3.8, >= 15.0.0 < 15.5.27), GHSA-4jqv-mc3x-m676 (medium; >= 16.0.0 < 16.3.8,
+    >= 15.0.0 < 15.5.27), GHSA-f87g-xv8r-7p7x (medium; >= 16.0.0 < 16.3.8), GHSA-3w37-wq28-93x7 (medium;
+    >= 16.3.0 < 16.3.8) and GHSA-39w2-rjm5-chcv (low, dev server only; >= 16.0.0 < 16.3.8). Earlier criticals:
+    GHSA-vcvr-r3jv-pc5j (fixed in 16.3.6) and GHSA-2xp9-vwfh-vxw4 / GHSA-p293-qw3h-jr36 (fixed in 16.3.3 and 15.5.24).
+    None lists 16.4.0 in an affected range. The batch announced for 2026-10-14 is not published yet, so this item
+    stays open.
 - [ ] Live HTTPS check: start `npm run start:lan` from a normal terminal and open Settings; expect 7 / 7.
 - [ ] Camera scanner on the phone at the Tailscale address.
 - [x] Owner approval to merge `phase0-upgrade` into `main` (2026-10-14).

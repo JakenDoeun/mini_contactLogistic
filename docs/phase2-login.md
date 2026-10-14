@@ -40,9 +40,9 @@ npm run first-run-code
 ```
 
 It prints the code only to a terminal: it refuses when its output is a pipe or a file, so the code cannot end up in a
-log by accident. If the file does not exist yet, it is created exactly as the login page would create it. Once an
-account exists, the command refuses, removes any leftover file, and the code no longer works (`/api/auth/setup` answers
-409). The code is never shown on a web page, sent by an API, written to the server log (the log names only the file and
+log by accident. It only reads: if the file does not exist (the sign-in page has not been opened yet, or the file was
+deleted), it says so and exits without creating a code; only the sign-in page creates one. Once an account exists, the
+command refuses, removes any leftover file, and the code no longer works (`/api/auth/setup` answers 409). The code is never shown on a web page, sent by an API, written to the server log (the log names only the file and
 the command) or stored in the audit log.
 
 ## Login page
@@ -60,6 +60,46 @@ the command) or stored in the audit log.
   slot, the field concerned gets `aria-invalid` and focus, and the form gives a short shake (skipped with reduced
   motion); on success the button shows "Signed in" while the redirect starts at once. No feedback delays the request
   or the redirect.
+
+## Supported login addresses
+
+Sign-in (a POST) is accepted only from the branch address or the office computer itself (`src/server/auth/origin.ts`);
+the session cookie also needs HTTPS or loopback.
+
+| Address | Who | Sign-in works |
+|---|---|---|
+| `https://spacek4k.tailc4ca3f.ts.net` (Tailscale Serve → `127.0.0.1:3000`) | staff laptop and phones on the tailnet | **Yes** |
+| `http://127.0.0.1:3000`, `http://localhost:3000` | the office computer itself | **Yes** |
+| The origin in `BRANCH_URL`, if set (it replaces the Tailscale name) | as configured | **Yes** |
+| Old Caddy LAN addresses, e.g. `https://192.168.1.10`, `https://172.20.10.3` | — | **No.** The sign-in page loads, but the sign-in request is refused (403, cross-site) by the origin rule (unit and integration tested; not sent through Caddy, which is not running) |
+| `http://<LAN-IP>:3000` | — | No: the app listens on 127.0.0.1 only |
+
+The phone Setup page (`/setup`) and `/branch-ca.crt` stay open on every address.
+
+Against the agreed deployment: the hosting plan moves from Caddy on the LAN IP to Tailscale Serve (phases approved
+2026-10-12), keeping Caddy only as a rollback until the real-phone test passes. So no conflict with the target set-up,
+with one dependency to flag. If that phone test fails and the branch rolls back to Caddy, staff could not sign in over
+the LAN address unless `BRANCH_URL` is set to it. That is a single address, and the laptop's LAN IP changes, which is
+why the migration was started.
+
+## Password reset (recommendation, before real staff use)
+
+Today the only way to reset a password is `npm run user -- disable` followed by `add` with a new username. Before staff
+rely on the app (at the latest before Phase 4), add:
+
+```
+npm run user -- reset <username>
+```
+
+It would:
+- keep the username and the user ID, so audit history stays attached;
+- generate a new 20-character password and print it once, to a terminal only, as `first-run-code` does;
+- replace the scrypt hash and delete all the account's sessions in one transaction, so every signed-in device is
+  signed out at once;
+- write a `user.password_reset` audit entry with the user ID only;
+- leave a disabled account disabled (enabling stays a separate, explicit step).
+
+Not built in Phase 2: it needs your go-ahead, as it is a new command.
 
 ## Routes
 
@@ -136,10 +176,11 @@ Replaced the earlier provisional values (12 hours idle, 7 days absolute).
 3. Login works through the branch address (Tailscale or `BRANCH_URL`) and on the office computer at `127.0.0.1` or
    `localhost`. The legacy Caddy LAN addresses are not accepted origins (and a plain-http LAN address cannot hold a
    Secure cookie). Set `BRANCH_URL` if Caddy must stay in use.
-4. The login pause counter lives in the web process's memory and resets on restart (code comment). It is enough for one
-   web process.
-5. There is no change-password or reset screen. To reset, run `npm run user -- disable` and then `add` with a new
-   username. This is a candidate for a later phase if the owner wants it.
+4. The login pause counter (five failures, then a one-minute pause) lives in the web process's memory. A restart clears
+   it, and a second web process would keep its own count. Acceptable for one web process on the office computer,
+   because restarting it requires that computer. Move the counter to the database if a second process or remote
+   restarts are ever added.
+5. There is no password reset yet. See "Password reset" above for the recommended `npm run user -- reset` command.
 6. Pages are checked in the console layout. Server data added in later phases must also be checked in its own route
    (`withSession()`), as the plan requires, and not rely on the layout.
 7. Tailscale identity headers (plan: "option to evaluate later") were not evaluated.

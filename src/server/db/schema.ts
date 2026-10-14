@@ -13,6 +13,7 @@ import {
   type SQLiteColumn,
 } from 'drizzle-orm/sqlite-core';
 
+// Format only; that the date exists on the calendar (no 2026-02-30) is enforced by triggers in drizzle/0001.
 const LOCAL_DATE = "'[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'";
 const localDate = (c: SQLiteColumn, nullable = false): SQL =>
   nullable ? sql`${c} IS NULL OR ${c} GLOB ${sql.raw(LOCAL_DATE)}` : sql`${c} GLOB ${sql.raw(LOCAL_DATE)}`;

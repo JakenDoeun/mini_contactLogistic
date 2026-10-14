@@ -150,6 +150,46 @@ test('review items: only the resolution changes, only while the import is checke
   rejects(() => add('db_duplicate', 0, 'OTHER'), /no longer being reviewed/);
 });
 
+test('local dates must be real calendar dates (decision on finding I2)', () => {
+  const valid = ['2026-10-14', '2026-01-31', '2026-04-30', '2026-12-31', '2028-02-29', '2000-02-29'];
+  const impossible = ['2026-02-29', '2027-02-29', '1900-02-29', '2026-02-30', '2026-04-31', '2026-02-32', '2026-13-01', '2026-00-10', '2026-10-00', '2026-19-39'];
+  // The runtime this runs on is the one the app uses: check its date() behaves as the triggers assume.
+  for (const d of valid) assert.equal((db.prepare('SELECT date(?) IS ? AS ok').get(d, d) as { ok: number }).ok, 1, d);
+  for (const d of impossible) assert.equal((db.prepare('SELECT date(?) IS ? AS ok').get(d, d) as { ok: number }).ok, 0, d);
+
+  const imp = addImport();
+  let n = 0;
+  for (const d of valid) addParcel(`DT${String(++n).padStart(9, '0')}`, imp, { arrival_date: d });
+  for (const d of impossible) rejects(() => addParcel(`DT${String(++n).padStart(9, '0')}`, imp, { arrival_date: d }), /arrival_date is not a real calendar date/);
+  const parcel = addParcel('DT999999999', imp);
+  rejects(() => db.prepare("UPDATE parcels SET arrival_date = '2026-02-30' WHERE id = ?").run(parcel), /not a real calendar date/);
+  db.prepare("UPDATE parcels SET arrival_date = '2028-02-29' WHERE id = ?").run(parcel);
+
+  addImport({ ...confirmed, date_choice: 'only_scan_date', chosen_scan_date: '2028-02-29', arrival_batch_date: '2028-02-29' });
+  rejects(() => addImport({ ...confirmed, arrival_batch_date: '2026-02-30' }), /imports: .* not a real calendar date/);
+  rejects(() => addImport({ ...confirmed, date_choice: 'only_scan_date', chosen_scan_date: '2026-04-31' }), /imports: .* not a real calendar date/);
+  const later = addImport();
+  rejects(() => db.prepare("UPDATE imports SET arrival_batch_date = '2027-02-29' WHERE id = ?").run(later), /not a real calendar date/);
+  db.prepare("UPDATE imports SET arrival_batch_date = '2026-10-14' WHERE id = ?").run(later);
+
+  const item = (d: string) =>
+    db.prepare("INSERT INTO import_review_items (import_id, tracking_key, kind, blocking, detail, parcel_scan_date, created_at) VALUES (?, ?, 'not_chosen_scan_date', 0, '{}', ?, ?)").run(later, `K${d}`, d, AT);
+  item('2028-02-29');
+  rejects(() => item('2026-02-30'), /parcel_scan_date is not a real calendar date/);
+
+  const batch = (d: string) =>
+    db.prepare("INSERT INTO send_batches (request_key, arrival_date, planned_messages, planned_parcels, status, created_at) VALUES (?, ?, 0, 0, 'done', ?)").run(`rk-${d}`, d, AT).lastInsertRowid;
+  const b = batch('2026-10-14');
+  rejects(() => batch('2026-13-01'), /send_batches: arrival_date is not a real calendar date/);
+  rejects(() => db.prepare("UPDATE send_batches SET arrival_date = '2026-02-30' WHERE id = ?").run(b), /not a real calendar date/);
+
+  const note = (d: string) =>
+    db.prepare("INSERT INTO notifications (phone_normalized, arrival_date, message_text, reason, created_at) VALUES ('012345670', ?, 'm', 'initial', ?)").run(d, AT).lastInsertRowid;
+  const nId = note('2026-10-14');
+  rejects(() => note('2026-10-00'), /notifications: arrival_date is not a real calendar date/);
+  rejects(() => db.prepare("UPDATE notifications SET arrival_date = '2026-02-29' WHERE id = ?").run(nId), /not a real calendar date/);
+});
+
 test('scan times: raw text always kept; parsed time and date only for a valid time', () => {
   const imp = addImport();
   const parcel = addParcel('SC000000001', imp);

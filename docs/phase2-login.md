@@ -30,6 +30,37 @@ Before any database-backed route, `openVerifiedDatabase()` was verified inside t
 resolve correctly. Two build warnings found there (the data-folder lookup made Turbopack trace the whole project) were
 fixed with `turbopackIgnore`.
 
+## First-run code
+
+The code stays in `first-run-code.txt` in the data folder (mode 0600, written once, never overwritten). To read it, run
+this on the office computer, in the project folder:
+
+```
+npm run first-run-code
+```
+
+It prints the code only to a terminal: it refuses when its output is a pipe or a file, so the code cannot end up in a
+log by accident. If the file does not exist yet, it is created exactly as the login page would create it. Once an
+account exists, the command refuses, removes any leftover file, and the code no longer works (`/api/auth/setup` answers
+409). The code is never shown on a web page, sent by an API, written to the server log (the log names only the file and
+the command) or stored in the audit log.
+
+## Login page
+
+- Desktop (lg, 1024 px and up): a split screen. The navy panel shows the brand, one line about the product and the
+  parcel-journey diagram with three step cards. The sign-in card sits on the warm neutral background. Phones: a compact
+  navy band with the brand and the diagram, then the card, in a single column.
+- The parcel journey (`src/components/auth/parcel-journey.tsx`, Anime.js 4.5.0) shows the real workflow as one
+  timeline: the parcel is scanned in, travels the route to sorting, then the phone's badge and "SMS ready" light up. It
+  loops with a pause. The server renders the finished diagram, which is also what visitors with
+  `prefers-reduced-motion` or without JavaScript see. The timeline pauses while the page is hidden, and switching on
+  reduced motion stops it and restores the static diagram. On unmount the timeline is reverted and listeners are
+  removed. The art is local SVG only.
+- Form feedback: a spinner and "Signing in…" while the request runs; on an error, the message appears in a fixed-height
+  slot, the field concerned gets `aria-invalid` and focus, and the form gives a short shake (skipped with reduced
+  motion); on success the button shows "Signed in" while the redirect starts at once. No feedback delays the request
+  or the redirect.
+
 ## Routes
 
 | Route | Signed out | Notes |
@@ -84,6 +115,18 @@ Replaced the earlier provisional values (12 hours idle, 7 days absolute).
   through `next start` (9). Removing `withSession()` from `/api/branch-status` makes the route test fail.
 - Browser check (Chromium, 390 px wide, not part of the suite): first run, the cookie, reload, sign-out and sign-in all
   work; 28 of 28 console pages load signed in without console errors.
+
+- `npm test`: the `first-run-code` test runs the command under `script` to give it a real terminal. It covers: refused
+  before `db:migrate`; refused into a pipe; the code shown; the same code on a second run; the file stays 0600; refused
+  after setup; the file removed; the old code rejected; the code absent from the audit log.
+- Login page browser check (Chromium, not part of the suite):
+  - 1366, 1024, 390 and 360 px: no sideways scrolling, layout shift 0, no console errors.
+  - The timeline loops through scan, sort and notify. It pauses while the page is hidden and resumes afterwards.
+  - Reduced motion shows the finished diagram with nothing moving. Switching to it mid-run restores the static diagram
+    with no leftover attributes.
+  - Tab order: code, username, password, repeat password, button. Focus is visible.
+  - A wrong code focuses the code field, sets `aria-invalid` and does not move the button. The first-run and sign-in
+    flows reach the dashboard.
 
 ## Open issues
 

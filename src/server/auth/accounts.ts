@@ -110,7 +110,7 @@ export function ensureFirstRunCode(db: Db, dataDir: string): string | null {
   }
   try {
     fs.writeFileSync(file, `${newCode()}\n`, { flag: 'wx', mode: 0o600 });
-    console.log(`First run: the one-time code for the first account is in ${file}`);
+    console.log(`First run: no account yet. Run \`npm run first-run-code\` on this computer to see the one-time code (kept in ${file}).`);
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
   }

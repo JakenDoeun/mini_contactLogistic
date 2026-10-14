@@ -200,6 +200,47 @@ test('user CLI: adds an account with a one-time printed password, refuses duplic
   assert.equal(user('disable', 'staff.two').status, 1, 'already disabled');
 });
 
+test('first-run-code: shows the existing code in a terminal only, never replaces it, refuses once setup is done', async (t) => {
+  const { dataDir } = tempDataDir(t);
+  const env = { ...process.env, DATA_DIR: dataDir };
+  const piped = () => spawnSync(process.execPath, ['scripts/first-run-code.ts'], { cwd: PROJECT_ROOT, env, encoding: 'utf8' });
+  // `script` gives the command a real terminal, as when the owner runs it by hand.
+  const inTerminal = () =>
+    spawnSync('script', ['-qec', `${JSON.stringify(process.execPath)} scripts/first-run-code.ts`, '/dev/null'], { cwd: PROJECT_ROOT, env, encoding: 'utf8' });
+  const file = path.join(dataDir, 'first-run-code.txt');
+
+  assert.equal(inTerminal().status, 1, 'no database yet');
+  assert.equal(migrateCli(dataDir).status, 0);
+  const refusedPipe = piped();
+  assert.equal(refusedPipe.status, 1);
+  assert.match(refusedPipe.stderr, /Refusing to print the one-time code into a pipe or a file/);
+  assert.equal(fs.existsSync(file), false, 'nothing created when refused');
+
+  const first = inTerminal();
+  assert.equal(first.status, 0, first.stdout);
+  const code = fs.readFileSync(file, 'utf8').trim();
+  assert.match(code, /^[A-Z2-9]{4}(-[A-Z2-9]{4}){3}$/);
+  assert.ok(first.stdout.includes(code), 'the code is shown');
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  const again = inTerminal();
+  assert.ok(again.stdout.includes(code), 'same code the second time: never regenerated');
+  assert.equal(fs.readFileSync(file, 'utf8').trim(), code);
+
+  // Setup completed with that code: the command refuses and the code no longer works.
+  const { openVerifiedDatabase } = await import('./migrate.ts');
+  const { createFirstAccount } = await import('../auth/accounts.ts');
+  const db = openVerifiedDatabase(path.join(dataDir, 'branch.db'));
+  t.after(() => db.close());
+  assert.ok((await createFirstAccount(db, dataDir, code, 'first.staff', 'correct horse battery')).ok);
+  const done = inTerminal();
+  assert.equal(done.status, 1);
+  assert.match(done.stdout, /setup is complete/);
+  assert.equal(done.stdout.includes(code), false);
+  assert.equal(fs.existsSync(file), false);
+  assert.deepEqual(await createFirstAccount(db, dataDir, code, 'second.staff', 'correct horse battery'), { ok: false, reason: 'exists' });
+  assert.equal(JSON.stringify(db.prepare('SELECT * FROM audit_log').all()).includes(code), false, 'never logged');
+});
+
 test('the demo seed refuses the production data folder before touching it', () => {
   const result = spawnSync(process.execPath, ['scripts/db-seed.ts'], {
     cwd: PROJECT_ROOT,

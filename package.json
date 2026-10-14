@@ -12,7 +12,8 @@
     "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.ts\"",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/db-migrate.ts",
-    "db:seed": "node scripts/db-seed.ts"
+    "db:seed": "node scripts/db-seed.ts",
+    "user": "node scripts/user.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "1.2.0",

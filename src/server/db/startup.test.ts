@@ -172,6 +172,34 @@ test('openVerifiedDatabase: only an existing, fully migrated database; never cre
   assert.equal(db.pragma('journal_mode', { simple: true }), 'wal');
 });
 
+test('user CLI: adds an account with a one-time printed password, refuses duplicates, disables and ends sessions', async (t) => {
+  const { dataDir } = tempDataDir(t);
+  const user = (...args: string[]) =>
+    spawnSync(process.execPath, ['scripts/user.ts', ...args], { cwd: PROJECT_ROOT, env: { ...process.env, DATA_DIR: dataDir }, encoding: 'utf8' });
+  assert.equal(user('add', 'staff.two').status, 1, 'no database yet: refused, nothing created');
+  assert.equal(fs.existsSync(path.join(dataDir, 'branch.db')), false);
+  assert.equal(migrateCli(dataDir).status, 0);
+  const added = user('add', 'Staff.Two');
+  assert.equal(added.status, 0, added.stderr);
+  const password = added.stdout.trim().split('\n').at(-1)!;
+  assert.match(password, /^[A-Za-z0-9_-]{20}$/);
+  assert.equal(user('add', 'staff.two').status, 1);
+  assert.equal(user('bogus', 'x').status, 2);
+  const db = new Database(path.join(dataDir, 'branch.db'));
+  const row = db.prepare("SELECT id, password_hash FROM users WHERE username = 'staff.two'").get() as { id: number; password_hash: string };
+  assert.equal(row.password_hash.includes(password), false);
+  db.prepare("INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at) VALUES ('h', ?, 'a', 'b', 'c')").run(row.id);
+  db.close();
+  const disabled = user('disable', 'staff.two');
+  assert.equal(disabled.status, 0, disabled.stderr);
+  const db2 = new Database(path.join(dataDir, 'branch.db'), { readonly: true });
+  assert.deepEqual(db2.prepare('SELECT disabled FROM users WHERE id = ?').get(row.id), { disabled: 1 });
+  assert.equal((db2.prepare('SELECT count(*) AS n FROM sessions').get() as { n: number }).n, 0);
+  assert.equal(JSON.stringify(db2.prepare('SELECT * FROM audit_log').all()).includes(password), false);
+  db2.close();
+  assert.equal(user('disable', 'staff.two').status, 1, 'already disabled');
+});
+
 test('the demo seed refuses the production data folder before touching it', () => {
   const result = spawnSync(process.execPath, ['scripts/db-seed.ts'], {
     cwd: PROJECT_ROOT,

@@ -177,6 +177,36 @@ test('foreign keys are switched off only inside the migration and always back on
   assert.equal(db.pragma('foreign_keys', { simple: true }), 1);
 });
 
+test('two start-ups at once apply a migration exactly once (finding H2)', async (t) => {
+  const { folder, dbPath, backupDir, dir } = await seededDb(t);
+  // A data migration with no unique key to stop a second run.
+  migrationsFolder(dir, [
+    { tag: '0001_data', sql: "INSERT INTO backup_runs (at, kind, outcome) VALUES ('2026-10-14T00:00:00.000Z', 'local', 'ok');" },
+  ]);
+  // Both calls work out the pending list before either reaches the write lock: each awaits its copy first.
+  const results = await Promise.all([1, 2].map(() => migrateDatabase({ dbPath, backupDir, migrationsFolder: folder })));
+  assert.deepEqual(results.map((r) => r.applied).sort(), [0, 1]);
+  const db = openDatabase(dbPath);
+  t.after(() => db.close());
+  assert.equal((db.prepare("SELECT count(*) AS n FROM backup_runs WHERE kind = 'local'").get() as { n: number }).n, 1);
+  assert.equal(migrationCount(db), 2);
+  assert.equal((db.prepare("SELECT count(*) AS n FROM backup_runs WHERE kind = 'pre_migration'").get() as { n: number }).n, 1, 'only the run that migrated records its copy');
+  db.close();
+  assert.deepEqual(await migrateDatabase({ dbPath, backupDir, migrationsFolder: folder }), { applied: 0, backupPath: null });
+});
+
+test('applyPending skips migrations another process applied after the pending list was read', async (t) => {
+  const { db, cleanup } = await createTestDb();
+  t.after(cleanup);
+  const meta = (sql: string, folderMillis: number) => ({ sql: [sql], folderMillis, hash: crypto.createHash('sha256').update(sql).digest('hex'), bps: true });
+  const m = meta('CREATE TABLE once_only (id integer)', 9_000_000_000_000);
+  assert.equal(applyPending(db, [m], null), 1);
+  assert.equal(applyPending(db, [m], null), 0, 'already applied: nothing runs, no "table already exists" error');
+  assert.equal(db.inTransaction, false);
+  assert.throws(() => applyPending(db, [{ ...m, hash: 'f'.repeat(64) }], null), (e: unknown) => e instanceof MigrationError && e.code === 'migration_changed');
+  assert.equal(db.pragma('foreign_keys', { simple: true }), 1);
+});
+
 test('if the copy fails, nothing is migrated', async (t) => {
   const { folder, dbPath, before, dir } = await seededDb(t);
   migrationsFolder(dir, [{ tag: '0001_settings_note', sql: 'ALTER TABLE `settings` ADD `note` text;' }]);

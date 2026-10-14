@@ -22,7 +22,8 @@ export type MigrationErrorCode =
   | 'migration_failed'
   | 'foreign_key_violation'
   | 'integrity_failed'
-  | 'self_test_failed';
+  | 'self_test_failed'
+  | 'database_missing';
 
 export class MigrationError extends Error {
   readonly code: MigrationErrorCode;
@@ -104,9 +105,9 @@ async function copyBeforeMigrating(db: Db, backupDir: string, now: Date): Promis
 /**
  * Steps 3–6: foreign keys off outside the transaction, every pending migration in one BEGIN IMMEDIATE transaction,
  * foreign_key_check and integrity_check before COMMIT, ROLLBACK on any error or finding. Foreign keys are always switched
- * back on afterwards.
+ * back on afterwards. Returns how many migrations this call applied.
  */
-export function applyPending(db: Db, pending: MigrationMeta[], backup: { path: string; at: string } | null) {
+export function applyPending(db: Db, pending: MigrationMeta[], backup: { path: string; at: string } | null): number {
   db.pragma('foreign_keys = OFF');
   try {
     if (db.pragma('foreign_keys', { simple: true }) !== 0) {
@@ -114,9 +115,20 @@ export function applyPending(db: Db, pending: MigrationMeta[], backup: { path: s
     }
     db.exec('BEGIN IMMEDIATE');
     try {
+      // Pending was worked out before the write lock: another process may have applied some of it since (finding H2).
+      const appliedNow = new Map(appliedMigrations(db).map((a) => [a.createdAt, a.hash]));
+      const todo = pending.filter((m) => {
+        const hash = appliedNow.get(m.folderMillis);
+        if (hash !== undefined && hash !== m.hash) throw new MigrationError('migration_changed', `migration ${m.folderMillis} was applied with other content`);
+        return hash === undefined;
+      });
+      if (todo.length === 0) {
+        db.exec('ROLLBACK');
+        return 0;
+      }
       db.exec(MIGRATIONS_TABLE);
       const record = db.prepare('INSERT INTO "__drizzle_migrations" ("hash", "created_at") VALUES (?, ?)');
-      for (const migration of pending) {
+      for (const migration of todo) {
         for (const statement of migration.sql) {
           if (statement.trim()) db.exec(statement);
         }
@@ -135,6 +147,7 @@ export function applyPending(db: Db, pending: MigrationMeta[], backup: { path: s
       const integrity = db.pragma('integrity_check', { simple: true });
       if (integrity !== 'ok') throw new MigrationError('integrity_failed', `integrity_check returned ${String(integrity)}`);
       db.exec('COMMIT');
+      return todo.length;
     } catch (e) {
       if (db.inTransaction) db.exec('ROLLBACK');
       throw e instanceof MigrationError ? e : new MigrationError('migration_failed', (e as Error).message, { cause: e });
@@ -178,18 +191,44 @@ export async function migrateDatabase(options: MigrateOptions): Promise<MigrateR
       throw new MigrationError('migration_out_of_order', 'a pending migration is older than one already applied');
     }
     let backupPath: string | null = null;
+    let appliedCount = 0;
     if (pending.length > 0) {
       const now = (options.now ?? (() => new Date()))();
       const hasTables =
         (db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").get() as { n: number }).n > 0;
       // A brand-new, empty database has nothing to lose; anything else is copied first.
       if (hasTables) backupPath = await copyBeforeMigrating(db, options.backupDir, now);
-      applyPending(db, pending, backupPath ? { path: backupPath, at: now.toISOString() } : null);
+      appliedCount = applyPending(db, pending, backupPath ? { path: backupPath, at: now.toISOString() } : null);
     }
     selfTest(db, files);
-    return { applied: pending.length, backupPath };
+    return { applied: appliedCount, backupPath };
   } finally {
     db.close();
+  }
+}
+
+/**
+ * For the app (web routes, worker): open the existing database only if it is fully migrated and passes the self-test.
+ * Read-only check: it never creates, migrates or changes the database, so a start that skipped `db:migrate` (or a
+ * database the runner refused) fails here instead of running on the wrong schema.
+ */
+export function openVerifiedDatabase(dbPath: string, migrationsFolder = MIGRATIONS_FOLDER): Db {
+  const files = readMigrations(migrationsFolder);
+  let db: Db;
+  try {
+    db = openDatabase(dbPath, { mustExist: true });
+  } catch (e) {
+    if ((e as { code?: string }).code === 'SQLITE_CANTOPEN') {
+      throw new MigrationError('database_missing', `no database at ${dbPath}; run npm run db:migrate`, { cause: e });
+    }
+    throw e;
+  }
+  try {
+    selfTest(db, files);
+    return db;
+  } catch (e) {
+    db.close();
+    throw e;
   }
 }
 

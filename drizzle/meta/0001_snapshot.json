@@ -1,0 +1,2138 @@
+{
+  "id": "285cf982-f7a7-4866-bfa8-e6f090cb784b",
+  "prevId": "ba624da6-ef30-4549-b2bf-c82bea4a1487",
+  "version": "6",
+  "dialect": "sqlite",
+  "tables": {
+    "audit_log": {
+      "name": "audit_log",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "at": {
+          "name": "at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entity": {
+          "name": "entity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entity_ids": {
+          "name": "entity_ids",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "detail": {
+          "name": "detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        }
+      },
+      "indexes": {
+        "audit_log_at_idx": {
+          "name": "audit_log_at_idx",
+          "columns": [
+            "at"
+          ],
+          "isUnique": false
+        },
+        "audit_log_entity_at_idx": {
+          "name": "audit_log_entity_at_idx",
+          "columns": [
+            "entity",
+            "at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "audit_log_user_id_users_id_fk": {
+          "name": "audit_log_user_id_users_id_fk",
+          "tableFrom": "audit_log",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "audit_log_outcome": {
+          "name": "audit_log_outcome",
+          "value": "\"audit_log\".\"outcome\" IN ('ok', 'failed', 'refused')"
+        },
+        "audit_log_entity_ids_json": {
+          "name": "audit_log_entity_ids_json",
+          "value": "json_valid(\"audit_log\".\"entity_ids\")"
+        },
+        "audit_log_detail_json": {
+          "name": "audit_log_detail_json",
+          "value": "json_valid(\"audit_log\".\"detail\") AND json_type(\"audit_log\".\"detail\") = 'object'"
+        }
+      }
+    },
+    "backup_runs": {
+      "name": "backup_runs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "at": {
+          "name": "at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "drive": {
+          "name": "drive",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "snapshot_id": {
+          "name": "snapshot_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "backup_runs_kind_at_idx": {
+          "name": "backup_runs_kind_at_idx",
+          "columns": [
+            "kind",
+            "at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "backup_runs_kind": {
+          "name": "backup_runs_kind",
+          "value": "\"backup_runs\".\"kind\" IN ('local', 'off_machine', 'restore_drill', 'pre_migration')"
+        },
+        "backup_runs_drive": {
+          "name": "backup_runs_drive",
+          "value": "\"backup_runs\".\"drive\" IS NULL OR \"backup_runs\".\"drive\" IN ('A', 'B')"
+        },
+        "backup_runs_outcome": {
+          "name": "backup_runs_outcome",
+          "value": "\"backup_runs\".\"outcome\" IN ('ok', 'failed')"
+        }
+      }
+    },
+    "contact_attempt_parcels": {
+      "name": "contact_attempt_parcels",
+      "columns": {
+        "contact_attempt_id": {
+          "name": "contact_attempt_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parcel_id": {
+          "name": "parcel_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "contact_attempt_parcels_parcel_idx": {
+          "name": "contact_attempt_parcels_parcel_idx",
+          "columns": [
+            "parcel_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "contact_attempt_parcels_contact_attempt_id_contact_attempts_id_fk": {
+          "name": "contact_attempt_parcels_contact_attempt_id_contact_attempts_id_fk",
+          "tableFrom": "contact_attempt_parcels",
+          "columnsFrom": [
+            "contact_attempt_id"
+          ],
+          "tableTo": "contact_attempts",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        },
+        "contact_attempt_parcels_parcel_id_parcels_id_fk": {
+          "name": "contact_attempt_parcels_parcel_id_parcels_id_fk",
+          "tableFrom": "contact_attempt_parcels",
+          "columnsFrom": [
+            "parcel_id"
+          ],
+          "tableTo": "parcels",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "contact_attempt_parcels_contact_attempt_id_parcel_id_pk": {
+          "columns": [
+            "contact_attempt_id",
+            "parcel_id"
+          ],
+          "name": "contact_attempt_parcels_contact_attempt_id_parcel_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "contact_attempts": {
+      "name": "contact_attempts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "phone_normalized": {
+          "name": "phone_normalized",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "contact_attempts_phone_idx": {
+          "name": "contact_attempts_phone_idx",
+          "columns": [
+            "phone_normalized"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "contact_attempts_created_by_users_id_fk": {
+          "name": "contact_attempts_created_by_users_id_fk",
+          "tableFrom": "contact_attempts",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "contact_attempts_channel": {
+          "name": "contact_attempts_channel",
+          "value": "\"contact_attempts\".\"channel\" IN ('call', 'telegram', 'other', 'flag')"
+        },
+        "contact_attempts_outcome": {
+          "name": "contact_attempts_outcome",
+          "value": "\"contact_attempts\".\"outcome\" IN ('reached', 'no_answer', 'attempted', 'messaged', 'follow_up')"
+        }
+      }
+    },
+    "detected_files": {
+      "name": "detected_files",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "size_bytes": {
+          "name": "size_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "modified_at": {
+          "name": "modified_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "import_id": {
+          "name": "import_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "detected_files_identity_unique": {
+          "name": "detected_files_identity_unique",
+          "columns": [
+            "path",
+            "size_bytes",
+            "modified_at"
+          ],
+          "isUnique": true
+        },
+        "detected_files_sha256_idx": {
+          "name": "detected_files_sha256_idx",
+          "columns": [
+            "sha256"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "detected_files_import_id_imports_id_fk": {
+          "name": "detected_files_import_id_imports_id_fk",
+          "tableFrom": "detected_files",
+          "columnsFrom": [
+            "import_id"
+          ],
+          "tableTo": "imports",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "detected_files_state": {
+          "name": "detected_files_state",
+          "value": "\"detected_files\".\"state\" IN ('waiting', 'unreadable', 'imported', 'dismissed')"
+        }
+      }
+    },
+    "import_review_items": {
+      "name": "import_review_items",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "import_id": {
+          "name": "import_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tracking_key": {
+          "name": "tracking_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "blocking": {
+          "name": "blocking",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "detail": {
+          "name": "detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parcel_scan_date": {
+          "name": "parcel_scan_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "existing_parcel_id": {
+          "name": "existing_parcel_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "resolution": {
+          "name": "resolution",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "chosen": {
+          "name": "chosen",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "resolved_by": {
+          "name": "resolved_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "review_items_import_key_kind_unique": {
+          "name": "review_items_import_key_kind_unique",
+          "columns": [
+            "import_id",
+            "tracking_key",
+            "kind"
+          ],
+          "isUnique": true
+        },
+        "review_items_open_idx": {
+          "name": "review_items_open_idx",
+          "columns": [
+            "import_id",
+            "blocking",
+            "resolution"
+          ],
+          "isUnique": false
+        },
+        "review_items_key_idx": {
+          "name": "review_items_key_idx",
+          "columns": [
+            "tracking_key"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "import_review_items_import_id_imports_id_fk": {
+          "name": "import_review_items_import_id_imports_id_fk",
+          "tableFrom": "import_review_items",
+          "columnsFrom": [
+            "import_id"
+          ],
+          "tableTo": "imports",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        },
+        "import_review_items_existing_parcel_id_parcels_id_fk": {
+          "name": "import_review_items_existing_parcel_id_parcels_id_fk",
+          "tableFrom": "import_review_items",
+          "columnsFrom": [
+            "existing_parcel_id"
+          ],
+          "tableTo": "parcels",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        },
+        "import_review_items_resolved_by_users_id_fk": {
+          "name": "import_review_items_resolved_by_users_id_fk",
+          "tableFrom": "import_review_items",
+          "columnsFrom": [
+            "resolved_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "review_items_kind": {
+          "name": "review_items_kind",
+          "value": "\"import_review_items\".\"kind\" IN ('recipient_conflict', 'code_spelling', 'db_duplicate', 'not_chosen_scan_date', 'excluded_by_staff', 'unparseable_scan_time')"
+        },
+        "review_items_blocking": {
+          "name": "review_items_blocking",
+          "value": "\"import_review_items\".\"blocking\" = (\"import_review_items\".\"kind\" IN ('recipient_conflict', 'code_spelling'))"
+        },
+        "review_items_detail_json": {
+          "name": "review_items_detail_json",
+          "value": "json_valid(\"import_review_items\".\"detail\")"
+        },
+        "review_items_chosen_json": {
+          "name": "review_items_chosen_json",
+          "value": "\"import_review_items\".\"chosen\" IS NULL OR json_valid(\"import_review_items\".\"chosen\")"
+        },
+        "review_items_resolution": {
+          "name": "review_items_resolution",
+          "value": "\"import_review_items\".\"resolution\" IS NULL OR \"import_review_items\".\"resolution\" IN ('chosen', 'left_out')"
+        },
+        "review_items_resolved_at": {
+          "name": "review_items_resolved_at",
+          "value": "\"import_review_items\".\"resolution\" IS NULL OR \"import_review_items\".\"resolved_at\" IS NOT NULL"
+        },
+        "review_items_chosen_present": {
+          "name": "review_items_chosen_present",
+          "value": "coalesce(\"import_review_items\".\"resolution\", '') <> 'chosen' OR \"import_review_items\".\"chosen\" IS NOT NULL"
+        },
+        "review_items_scan_date": {
+          "name": "review_items_scan_date",
+          "value": "\"import_review_items\".\"parcel_scan_date\" IS NULL OR \"import_review_items\".\"parcel_scan_date\" GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'"
+        }
+      }
+    },
+    "imports": {
+      "name": "imports",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "detected_file_id": {
+          "name": "detected_file_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "original_filename": {
+          "name": "original_filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "stored_path": {
+          "name": "stored_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "size_bytes": {
+          "name": "size_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file_format": {
+          "name": "file_format",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rerun_of_import_id": {
+          "name": "rerun_of_import_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "rules": {
+          "name": "rules",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "headers_found": {
+          "name": "headers_found",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "time_zone_assumed": {
+          "name": "time_zone_assumed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'Asia/Phnom_Penh'"
+        },
+        "scan_dates": {
+          "name": "scan_dates",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date_choice": {
+          "name": "date_choice",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "chosen_scan_date": {
+          "name": "chosen_scan_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "arrival_batch_date": {
+          "name": "arrival_batch_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "arrival_date_changed": {
+          "name": "arrival_date_changed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "rows_total": {
+          "name": "rows_total",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rows_shopee": {
+          "name": "rows_shopee",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rows_excluded": {
+          "name": "rows_excluded",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "excluded_codes": {
+          "name": "excluded_codes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rows_collapsed": {
+          "name": "rows_collapsed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parcels_unique": {
+          "name": "parcels_unique",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "db_duplicates": {
+          "name": "db_duplicates",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "left_out": {
+          "name": "left_out",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "blocked": {
+          "name": "blocked",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ready": {
+          "name": "ready",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parcels_added": {
+          "name": "parcels_added",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_detail": {
+          "name": "error_detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "checked_at": {
+          "name": "checked_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "checked_by": {
+          "name": "checked_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "confirmed_at": {
+          "name": "confirmed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "confirmed_by": {
+          "name": "confirmed_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "imports_sha256_idx": {
+          "name": "imports_sha256_idx",
+          "columns": [
+            "sha256"
+          ],
+          "isUnique": false
+        },
+        "imports_status_idx": {
+          "name": "imports_status_idx",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        },
+        "imports_rerun_idx": {
+          "name": "imports_rerun_idx",
+          "columns": [
+            "rerun_of_import_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "imports_detected_file_id_detected_files_id_fk": {
+          "name": "imports_detected_file_id_detected_files_id_fk",
+          "tableFrom": "imports",
+          "columnsFrom": [
+            "detected_file_id"
+          ],
+          "tableTo": "detected_files",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        },
+        "imports_rerun_of_import_id_imports_id_fk": {
+          "name": "imports_rerun_of_import_id_imports_id_fk",
+          "tableFrom": "imports",
+          "columnsFrom": [
+            "rerun_of_import_id"
+          ],
+          "tableTo": "imports",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        },
+        "imports_checked_by_users_id_fk": {
+          "name": "imports_checked_by_users_id_fk",
+          "tableFrom": "imports",
+          "columnsFrom": [
+            "checked_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        },
+        "imports_confirmed_by_users_id_fk": {
+          "name": "imports_confirmed_by_users_id_fk",
+          "tableFrom": "imports",
+          "columnsFrom": [
+            "confirmed_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "imports_source": {
+          "name": "imports_source",
+          "value": "\"imports\".\"source\" IN ('manual', 'folder', 'seed')"
+        },
+        "imports_file_format": {
+          "name": "imports_file_format",
+          "value": "\"imports\".\"file_format\" IS NULL OR \"imports\".\"file_format\" IN ('xlsx', 'xls', 'csv')"
+        },
+        "imports_status": {
+          "name": "imports_status",
+          "value": "\"imports\".\"status\" IN ('checked', 'imported', 'no_eligible_rows', 'failed', 'cancelled')"
+        },
+        "imports_rules_json": {
+          "name": "imports_rules_json",
+          "value": "json_valid(\"imports\".\"rules\")"
+        },
+        "imports_headers_json": {
+          "name": "imports_headers_json",
+          "value": "json_valid(\"imports\".\"headers_found\")"
+        },
+        "imports_scan_dates_json": {
+          "name": "imports_scan_dates_json",
+          "value": "json_valid(\"imports\".\"scan_dates\")"
+        },
+        "imports_date_choice": {
+          "name": "imports_date_choice",
+          "value": "\"imports\".\"date_choice\" IS NULL OR \"imports\".\"date_choice\" IN ('single_scan_date', 'all_on_batch_date', 'only_scan_date')"
+        },
+        "imports_chosen_scan_date": {
+          "name": "imports_chosen_scan_date",
+          "value": "(coalesce(\"imports\".\"date_choice\", '') = 'only_scan_date') = (\"imports\".\"chosen_scan_date\" IS NOT NULL) AND (\"imports\".\"chosen_scan_date\" IS NULL OR \"imports\".\"chosen_scan_date\" GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]')"
+        },
+        "imports_arrival_batch_date": {
+          "name": "imports_arrival_batch_date",
+          "value": "\"imports\".\"arrival_batch_date\" IS NULL OR \"imports\".\"arrival_batch_date\" GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'"
+        },
+        "imports_arrival_date_changed_bool": {
+          "name": "imports_arrival_date_changed_bool",
+          "value": "\"imports\".\"arrival_date_changed\" IN (0, 1)"
+        },
+        "imports_counts_non_negative": {
+          "name": "imports_counts_non_negative",
+          "value": "\"imports\".\"size_bytes\" >= 0 AND \"imports\".\"rows_total\" >= 0 AND \"imports\".\"rows_shopee\" >= 0 AND \"imports\".\"rows_excluded\" >= 0 AND \"imports\".\"excluded_codes\" >= 0 AND \"imports\".\"rows_collapsed\" >= 0 AND \"imports\".\"parcels_unique\" >= 0 AND \"imports\".\"db_duplicates\" >= 0 AND \"imports\".\"left_out\" >= 0 AND \"imports\".\"blocked\" >= 0 AND \"imports\".\"ready\" >= 0 AND \"imports\".\"parcels_added\" >= 0"
+        },
+        "imports_rows_identity": {
+          "name": "imports_rows_identity",
+          "value": "\"imports\".\"rows_total\" = \"imports\".\"rows_shopee\" + \"imports\".\"rows_excluded\""
+        },
+        "imports_collapsed_identity": {
+          "name": "imports_collapsed_identity",
+          "value": "\"imports\".\"rows_collapsed\" = \"imports\".\"rows_shopee\" - \"imports\".\"parcels_unique\""
+        },
+        "imports_parcels_identity": {
+          "name": "imports_parcels_identity",
+          "value": "\"imports\".\"parcels_unique\" = \"imports\".\"db_duplicates\" + \"imports\".\"left_out\" + \"imports\".\"blocked\" + \"imports\".\"ready\""
+        },
+        "imports_status_rules": {
+          "name": "imports_status_rules",
+          "value": "CASE \"imports\".\"status\"\n        WHEN 'imported' THEN \"imports\".\"confirmed_at\" IS NOT NULL AND \"imports\".\"arrival_batch_date\" IS NOT NULL AND \"imports\".\"date_choice\" IS NOT NULL AND \"imports\".\"parcels_added\" = \"imports\".\"ready\" AND \"imports\".\"blocked\" = 0\n        WHEN 'failed' THEN \"imports\".\"confirmed_at\" IS NULL AND \"imports\".\"parcels_added\" = 0 AND \"imports\".\"error_code\" IS NOT NULL\n        ELSE \"imports\".\"confirmed_at\" IS NULL AND \"imports\".\"parcels_added\" = 0\n      END"
+        }
+      }
+    },
+    "notification_parcels": {
+      "name": "notification_parcels",
+      "columns": {
+        "notification_id": {
+          "name": "notification_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parcel_id": {
+          "name": "parcel_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "notification_parcels_parcel_idx": {
+          "name": "notification_parcels_parcel_idx",
+          "columns": [
+            "parcel_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "notification_parcels_notification_id_notifications_id_fk": {
+          "name": "notification_parcels_notification_id_notifications_id_fk",
+          "tableFrom": "notification_parcels",
+          "columnsFrom": [
+            "notification_id"
+          ],
+          "tableTo": "notifications",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        },
+        "notification_parcels_parcel_id_parcels_id_fk": {
+          "name": "notification_parcels_parcel_id_parcels_id_fk",
+          "tableFrom": "notification_parcels",
+          "columnsFrom": [
+            "parcel_id"
+          ],
+          "tableTo": "parcels",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "notification_parcels_notification_id_parcel_id_pk": {
+          "columns": [
+            "notification_id",
+            "parcel_id"
+          ],
+          "name": "notification_parcels_notification_id_parcel_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "notifications": {
+      "name": "notifications",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "phone_normalized": {
+          "name": "phone_normalized",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "arrival_date": {
+          "name": "arrival_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "message_text": {
+          "name": "message_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "batch_id": {
+          "name": "batch_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "notifications_phone_idx": {
+          "name": "notifications_phone_idx",
+          "columns": [
+            "phone_normalized"
+          ],
+          "isUnique": false
+        },
+        "notifications_arrival_phone_idx": {
+          "name": "notifications_arrival_phone_idx",
+          "columns": [
+            "arrival_date",
+            "phone_normalized"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "notifications_batch_id_send_batches_id_fk": {
+          "name": "notifications_batch_id_send_batches_id_fk",
+          "tableFrom": "notifications",
+          "columnsFrom": [
+            "batch_id"
+          ],
+          "tableTo": "send_batches",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        },
+        "notifications_created_by_users_id_fk": {
+          "name": "notifications_created_by_users_id_fk",
+          "tableFrom": "notifications",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "notifications_reason": {
+          "name": "notifications_reason",
+          "value": "\"notifications\".\"reason\" IN ('initial', 'resend')"
+        },
+        "notifications_arrival_date": {
+          "name": "notifications_arrival_date",
+          "value": "\"notifications\".\"arrival_date\" GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'"
+        }
+      }
+    },
+    "parcel_phone_changes": {
+      "name": "parcel_phone_changes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parcel_id": {
+          "name": "parcel_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "old_raw": {
+          "name": "old_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "new_raw": {
+          "name": "new_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "old_normalized": {
+          "name": "old_normalized",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "new_normalized": {
+          "name": "new_normalized",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "changed_by": {
+          "name": "changed_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "changed_at": {
+          "name": "changed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "phone_changes_parcel_idx": {
+          "name": "phone_changes_parcel_idx",
+          "columns": [
+            "parcel_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "parcel_phone_changes_parcel_id_parcels_id_fk": {
+          "name": "parcel_phone_changes_parcel_id_parcels_id_fk",
+          "tableFrom": "parcel_phone_changes",
+          "columnsFrom": [
+            "parcel_id"
+          ],
+          "tableTo": "parcels",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        },
+        "parcel_phone_changes_changed_by_users_id_fk": {
+          "name": "parcel_phone_changes_changed_by_users_id_fk",
+          "tableFrom": "parcel_phone_changes",
+          "columnsFrom": [
+            "changed_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "parcel_scan_events": {
+      "name": "parcel_scan_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parcel_id": {
+          "name": "parcel_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "import_id": {
+          "name": "import_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_row": {
+          "name": "source_row",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tracking_code_raw": {
+          "name": "tracking_code_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "scan_type_raw": {
+          "name": "scan_type_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "scan_time_raw": {
+          "name": "scan_time_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "scan_time_utc": {
+          "name": "scan_time_utc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "scan_date": {
+          "name": "scan_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "scan_site_raw": {
+          "name": "scan_site_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "upload_time_raw": {
+          "name": "upload_time_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "scan_events_import_row_unique": {
+          "name": "scan_events_import_row_unique",
+          "columns": [
+            "import_id",
+            "source_row"
+          ],
+          "isUnique": true
+        },
+        "scan_events_parcel_idx": {
+          "name": "scan_events_parcel_idx",
+          "columns": [
+            "parcel_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "parcel_scan_events_parcel_id_parcels_id_fk": {
+          "name": "parcel_scan_events_parcel_id_parcels_id_fk",
+          "tableFrom": "parcel_scan_events",
+          "columnsFrom": [
+            "parcel_id"
+          ],
+          "tableTo": "parcels",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        },
+        "parcel_scan_events_import_id_imports_id_fk": {
+          "name": "parcel_scan_events_import_id_imports_id_fk",
+          "tableFrom": "parcel_scan_events",
+          "columnsFrom": [
+            "import_id"
+          ],
+          "tableTo": "imports",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "scan_events_source_row": {
+          "name": "scan_events_source_row",
+          "value": "\"parcel_scan_events\".\"source_row\" > 0"
+        },
+        "scan_events_parsed_pair": {
+          "name": "scan_events_parsed_pair",
+          "value": "(\"parcel_scan_events\".\"scan_time_utc\" IS NULL) = (\"parcel_scan_events\".\"scan_date\" IS NULL)"
+        },
+        "scan_events_parsed_matches_raw": {
+          "name": "scan_events_parsed_matches_raw",
+          "value": "\"parcel_scan_events\".\"scan_time_utc\" IS NULL OR (\n        \"parcel_scan_events\".\"scan_time_raw\" IS NOT NULL\n        AND strftime('%Y-%m-%d %H:%M:%S', \"parcel_scan_events\".\"scan_time_raw\") IS \"parcel_scan_events\".\"scan_time_raw\"\n        AND \"parcel_scan_events\".\"scan_time_utc\" IS strftime('%Y-%m-%dT%H:%M:%fZ', \"parcel_scan_events\".\"scan_time_raw\", '-7 hours')\n        AND \"parcel_scan_events\".\"scan_date\" IS substr(\"parcel_scan_events\".\"scan_time_raw\", 1, 10)\n      )"
+        }
+      }
+    },
+    "parcels": {
+      "name": "parcels",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tracking_code": {
+          "name": "tracking_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tracking_key": {
+          "name": "tracking_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "recipient_name": {
+          "name": "recipient_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "import_phone_raw": {
+          "name": "import_phone_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "phone_raw": {
+          "name": "phone_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "phone_normalized": {
+          "name": "phone_normalized",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "phone_edited": {
+          "name": "phone_edited",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "arrival_date": {
+          "name": "arrival_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "first_import_id": {
+          "name": "first_import_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "parcels_tracking_key_unique": {
+          "name": "parcels_tracking_key_unique",
+          "columns": [
+            "tracking_key"
+          ],
+          "isUnique": true
+        },
+        "parcels_arrival_phone_idx": {
+          "name": "parcels_arrival_phone_idx",
+          "columns": [
+            "arrival_date",
+            "phone_normalized"
+          ],
+          "isUnique": false
+        },
+        "parcels_phone_idx": {
+          "name": "parcels_phone_idx",
+          "columns": [
+            "phone_normalized"
+          ],
+          "isUnique": false
+        },
+        "parcels_recipient_idx": {
+          "name": "parcels_recipient_idx",
+          "columns": [
+            "recipient_name"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "parcels_first_import_id_imports_id_fk": {
+          "name": "parcels_first_import_id_imports_id_fk",
+          "tableFrom": "parcels",
+          "columnsFrom": [
+            "first_import_id"
+          ],
+          "tableTo": "imports",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "parcels_tracking_code_nonempty": {
+          "name": "parcels_tracking_code_nonempty",
+          "value": "length(\"parcels\".\"tracking_code\") > 0 AND \"parcels\".\"tracking_code\" = trim(\"parcels\".\"tracking_code\")"
+        },
+        "parcels_tracking_key_rule": {
+          "name": "parcels_tracking_key_rule",
+          "value": "\"parcels\".\"tracking_key\" = upper(\"parcels\".\"tracking_code\")"
+        },
+        "parcels_phone_edited_bool": {
+          "name": "parcels_phone_edited_bool",
+          "value": "\"parcels\".\"phone_edited\" IN (0, 1)"
+        },
+        "parcels_phone_unedited": {
+          "name": "parcels_phone_unedited",
+          "value": "\"parcels\".\"phone_edited\" = 1 OR \"parcels\".\"phone_raw\" IS \"parcels\".\"import_phone_raw\""
+        },
+        "parcels_arrival_date": {
+          "name": "parcels_arrival_date",
+          "value": "\"parcels\".\"arrival_date\" GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'"
+        }
+      }
+    },
+    "send_batches": {
+      "name": "send_batches",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "request_key": {
+          "name": "request_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "arrival_date": {
+          "name": "arrival_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "planned_messages": {
+          "name": "planned_messages",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "planned_parcels": {
+          "name": "planned_parcels",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "send_batches_request_key_unique": {
+          "name": "send_batches_request_key_unique",
+          "columns": [
+            "request_key"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "send_batches_created_by_users_id_fk": {
+          "name": "send_batches_created_by_users_id_fk",
+          "tableFrom": "send_batches",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "send_batches_status": {
+          "name": "send_batches_status",
+          "value": "\"send_batches\".\"status\" IN ('running', 'paused', 'stopped', 'done')"
+        },
+        "send_batches_arrival_date": {
+          "name": "send_batches_arrival_date",
+          "value": "\"send_batches\".\"arrival_date\" GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'"
+        },
+        "send_batches_counts": {
+          "name": "send_batches_counts",
+          "value": "\"send_batches\".\"planned_messages\" >= 0 AND \"send_batches\".\"planned_parcels\" >= 0"
+        }
+      }
+    },
+    "sessions": {
+      "name": "sessions",
+      "columns": {
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "sessions_user_idx": {
+          "name": "sessions_user_idx",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "sessions_user_id_users_id_fk": {
+          "name": "sessions_user_id_users_id_fk",
+          "tableFrom": "sessions",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "settings": {
+      "name": "settings",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "settings_updated_by_users_id_fk": {
+          "name": "settings_updated_by_users_id_fk",
+          "tableFrom": "settings",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "settings_value_json": {
+          "name": "settings_value_json",
+          "value": "json_valid(\"settings\".\"value\")"
+        }
+      }
+    },
+    "sms_attempts": {
+      "name": "sms_attempts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "notification_id": {
+          "name": "notification_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attempt_no": {
+          "name": "attempt_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "gateway_state": {
+          "name": "gateway_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_detail": {
+          "name": "error_detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "queued_at": {
+          "name": "queued_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "submitted_at": {
+          "name": "submitted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "delivered_at": {
+          "name": "delivered_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "failed_at": {
+          "name": "failed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_checked_at": {
+          "name": "last_checked_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "resolved_by": {
+          "name": "resolved_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "sms_attempts_notification_attempt_unique": {
+          "name": "sms_attempts_notification_attempt_unique",
+          "columns": [
+            "notification_id",
+            "attempt_no"
+          ],
+          "isUnique": true
+        },
+        "sms_attempts_state_idx": {
+          "name": "sms_attempts_state_idx",
+          "columns": [
+            "state"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "sms_attempts_notification_id_notifications_id_fk": {
+          "name": "sms_attempts_notification_id_notifications_id_fk",
+          "tableFrom": "sms_attempts",
+          "columnsFrom": [
+            "notification_id"
+          ],
+          "tableTo": "notifications",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        },
+        "sms_attempts_resolved_by_users_id_fk": {
+          "name": "sms_attempts_resolved_by_users_id_fk",
+          "tableFrom": "sms_attempts",
+          "columnsFrom": [
+            "resolved_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "restrict",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sms_attempts_state": {
+          "name": "sms_attempts_state",
+          "value": "\"sms_attempts\".\"state\" IN ('queued', 'submitting', 'submitted', 'sent', 'delivered', 'failed', 'unconfirmed', 'cancelled')"
+        },
+        "sms_attempts_attempt_no": {
+          "name": "sms_attempts_attempt_no",
+          "value": "\"sms_attempts\".\"attempt_no\" >= 1"
+        }
+      }
+    },
+    "users": {
+      "name": "users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "username": {
+          "name": "username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "disabled": {
+          "name": "disabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "users_username_unique": {
+          "name": "users_username_unique",
+          "columns": [
+            "username"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "users_disabled_bool": {
+          "name": "users_disabled_bool",
+          "value": "\"users\".\"disabled\" IN (0, 1)"
+        }
+      }
+    },
+    "worker_lease": {
+      "name": "worker_lease",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "holder": {
+          "name": "holder",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "worker_lease_single_row": {
+          "name": "worker_lease_single_row",
+          "value": "\"worker_lease\".\"id\" = 1"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

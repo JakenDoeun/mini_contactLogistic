@@ -2,8 +2,8 @@
 
 Status: **design approved 2026-10-12 (decisions 31–37). Implemented ahead of Phase 0 (sequencing exception) and
 committed as `cd62115`. Formal review 2026-10-14: accepted by the owner with documented conditions, not as defect-free
-(see "Review 2026-10-14" at the end). The corrective commits are on branch `phase1-review-fixes`, awaiting the owner's
-review before merge.** No deployment, real customer data or production import is authorised.
+(see "Review 2026-10-14" at the end). The corrective commits (branch `phase1-review-fixes`) were merged into `main` on
+2026-10-14 with the owner's approval, after Phase 0.** The open findings keep their phase gates. No deployment, real customer data or production import is authorised.
 
 Sources: backend plan Revision 3 ("Database schema", "Imports", "Phase 1: Foundation"), `docs/import-rules.md`
 (revision 2026-10-12d), Phase 1 readiness review (2026-10-12).

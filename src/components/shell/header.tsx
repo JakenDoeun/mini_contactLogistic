@@ -2,14 +2,14 @@
 
 import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, Search } from 'lucide-react';
+import { LogOut, Menu, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { NAV } from './nav';
 import { Brand, SidebarNav } from './sidebar-nav';
 
-export function Header() {
+export function Header({ username }: { username: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -56,12 +56,23 @@ export function Header() {
         <Input id="parcel-search" name="q" placeholder="Search parcels" className="pl-9" autoComplete="off" />
       </form>
 
-      {/* Placeholder identity until staff accounts exist. */}
       <div className="flex shrink-0 items-center gap-2">
-        <span className="flex size-9 items-center justify-center rounded-full bg-secondary text-xs font-semibold" aria-hidden>
-          ST
+        <span className="flex size-9 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase" aria-hidden>
+          {username.slice(0, 2)}
         </span>
-        <span className="hidden text-sm xl:block">Branch staff</span>
+        <span className="hidden text-sm xl:block">{username}</span>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Sign out"
+          title="Sign out"
+          onClick={async () => {
+            await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+            window.location.assign('/login');
+          }}
+        >
+          <LogOut />
+        </Button>
       </div>
     </header>
   );

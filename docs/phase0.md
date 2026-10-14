@@ -94,6 +94,33 @@ Clones on the ext4 disk; Next 15 (`main`) on 127.0.0.1:3101 and the candidate on
 | Camera scanner, fake camera, localhost | Preview plays 1920×1080 on both builds, no errors |
 | `next dev` while `next build` runs | dev uses `.next/dev` and kept serving; the "build in a copy" rule can go after the merge |
 
-Still open: the 2026-10-14 advisory review (IDs, check 16.4.0 and 15.5.27), production server on 127.0.0.1:3000 behind
-Tailscale Serve with the seven Settings checks, and the camera on the Tailscale address. The 14-day wait in the version
-policy is waived for 16.4.0 (published 2026-10-06) because it fixes the PostCSS advisories that affect 15.5.27.
+The 14-day wait in the version policy is waived for 16.4.0 (published 2026-10-06) because it fixes the PostCSS
+advisories that affect 15.5.27.
+
+## Re-verification (2026-10-14, owner instruction: proceed without waiting for the advisories)
+
+Branch already on the tip of `main` (`a8a7409`, includes Phase 1 `cd62115`): no rebase or conflicts. 16.4.0 and
+TypeScript 6.0.3 are still the newest stable releases, kept as the **provisional** choice. Fresh clones on ext4, Node 24.21.0.
+
+| Check | Result |
+|---|---|
+| `npm ci` | ok. npm warns that install scripts of `esbuild` (×3, via drizzle-kit/tsx) and `better-sqlite3` are not in `allowScripts`, so they did not run; better-sqlite3 13 loads its bundled Node-API binary and every database test passes without them; `drizzle-kit check` also runs |
+| `npm test` | 79 / 79 |
+| `tsc --noEmit` | clean |
+| `next build` | ok, 13 routes, no warnings |
+| `npm audit --omit=dev` / incl. dev | 0 / 4 moderate (esbuild via drizzle-kit, accepted, decision 35) |
+| 7 pages × 4 widths, Next 15 (`main`) vs candidate | 28 / 28 each: HTTP 200, no console errors, no sideways scrolling |
+| Screenshot diff | 6 of 28 differ; all are sample-data order (same customers, rows swapped). Two candidate runs differ from each other on 18 of 28 by the same or more, so none is caused by the upgrade |
+| Candidate on 127.0.0.1:3000 behind Tailscale Serve | `/` 307, `/dashboard` `/settings` `/scan` `/api/branch-address` `/branch-ca.crt` 200, tailnet only (Funnel off) |
+| Settings checks (`/api/branch-status`) | 6 / 7 ok. **Live HTTPS check: fail** — `ENOTFOUND` for the MagicDNS name. The host resolves it (`resolvectl`: 100.106.173.28 on tailscale0); the server was started from Claude's sandbox, whose DNS does not see MagicDNS. Not attributed to the upgrade; needs confirming by the owner |
+
+No regressions found; no code changed in this pass.
+
+## Open before merge
+
+- [ ] **Security advisory review — NOT done; the security gate has NOT passed.** When the announced Next.js
+  advisories are published: record every ID and fixed version here, check whether 16.4.0 (and 15.5.27 on `main`) are
+  affected, and if so move to the patched exact version and re-run the table above.
+- [ ] Live HTTPS check: start `npm run start:lan` from a normal terminal and open Settings; expect 7 / 7.
+- [ ] Camera scanner on the phone at the Tailscale address.
+- [ ] Owner approval to merge `phase0-upgrade` into `main`.

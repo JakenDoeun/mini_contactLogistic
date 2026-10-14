@@ -21,7 +21,14 @@ export interface AuditEntry {
   at?: string;
 }
 
+const SHA256 = /^[0-9a-f]{64}$/;
+
 function checkValue(key: string, value: unknown): void {
+  // A hash is validated by its exact format: its digit runs often look like phone numbers (about 1 in 55 hashes).
+  if (key === 'sha256') {
+    if (typeof value !== 'string' || !SHA256.test(value)) throw new Error('audit detail "sha256" must be 64 lower-case hex characters');
+    return;
+  }
   if (value === null || typeof value === 'number' || typeof value === 'boolean') return;
   if (typeof value === 'string') {
     if (value.length > 200) throw new Error(`audit detail "${key}" is too long`);

@@ -103,6 +103,22 @@ test('audit log entries never hold names, phone numbers or message text', async 
   assert.deepEqual(phoneHistory(db, id).map((r) => (r as { new_raw: string }).new_raw), ['+855 77 123 456', 'not a phone']);
 });
 
+test('audit sha256 is checked by its exact format, not by the phone pattern', async (t) => {
+  const { db, cleanup } = await createTestDb();
+  t.after(cleanup);
+  const audit = (sha256: unknown) =>
+    writeAudit(db, { action: 'import.checked', entity: 'import', entityIds: [1], outcome: 'ok', detail: { sha256 } });
+  // A real SHA-256 that the phone pattern used to refuse (review finding H1, 2026-10-14).
+  const reproduced = 'a68b412c4282555f15546cf6e1fc42893b7e07f271557ceb021821098dd66c1b';
+  assert.match(reproduced, /(?:\+?855|(?<!\d)0)[\s-]?\d{2}[\s-]?\d{3}[\s-]?\d{3,4}(?!\d)/, 'still phone-shaped');
+  audit(reproduced);
+  for (const bad of [reproduced.toUpperCase(), reproduced.slice(1), `${reproduced}0`, '012 345 678', 42, null]) {
+    assert.throws(() => audit(bad), /64 lower-case hex/, String(bad));
+  }
+  // Phone-shaped text under any other key is still refused.
+  assert.throws(() => writeAudit(db, { action: 'import.checked', entity: 'import', entityIds: [1], outcome: 'ok', detail: { file_name: reproduced } }), /phone number/);
+});
+
 test('demo seed: fictional sample parcels once, and never into a database with real imports', async (t) => {
   const { db, cleanup } = await createTestDb();
   t.after(cleanup);

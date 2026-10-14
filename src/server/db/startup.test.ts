@@ -74,6 +74,43 @@ test('start-up is refused when the data folder is readable by others or inside t
   assert.equal(fs.existsSync(marker), false);
 });
 
+/** Run `npm run db:migrate`'s script directly with DATA_DIR set. */
+const migrateCli = (dataDir: string) =>
+  spawnSync(process.execPath, ['scripts/db-migrate.ts'], { cwd: PROJECT_ROOT, env: { ...process.env, DATA_DIR: dataDir }, encoding: 'utf8' });
+
+test('db:migrate creates and migrates the database, then has nothing to do', (t) => {
+  const { dataDir } = tempDataDir(t);
+  const committed = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'drizzle/meta/_journal.json'), 'utf8')).entries.length;
+  const first = migrateCli(dataDir);
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stdout, new RegExp(`Database ready in .*: ${committed} migration\\(s\\) applied\\.`));
+  assert.equal(fs.statSync(dataDir).mode & 0o777, 0o700);
+  assert.equal(fs.existsSync(path.join(dataDir, 'backups')), false, 'a new, empty database is not copied');
+  const second = migrateCli(dataDir);
+  assert.equal(second.status, 0, second.stderr);
+  assert.match(second.stdout, /: 0 migration\(s\) applied\./);
+  assert.doesNotMatch(second.stdout, /copy at/);
+});
+
+test('db:migrate exits 1 with the reason when the database or the folder is not safe', (t) => {
+  const { dataDir } = tempDataDir(t);
+  assert.equal(migrateCli(dataDir).status, 0);
+  const db = new Database(path.join(dataDir, 'branch.db'));
+  db.prepare('UPDATE "__drizzle_migrations" SET hash = ?').run('0'.repeat(64));
+  db.close();
+  const changed = migrateCli(dataDir);
+  assert.equal(changed.status, 1);
+  assert.match(changed.stderr, /Database migration failed: migration_changed/);
+
+  const open = tempDataDir(t);
+  fs.mkdirSync(open.dataDir, { mode: 0o750 });
+  fs.chmodSync(open.dataDir, 0o750);
+  const refused = migrateCli(open.dataDir);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /must be 0700/);
+  assert.equal(fs.existsSync(path.join(open.dataDir, 'branch.db')), false, 'nothing is created in an unsafe folder');
+});
+
 test('the demo seed refuses the production data folder before touching it', () => {
   const result = spawnSync(process.execPath, ['scripts/db-seed.ts'], {
     cwd: PROJECT_ROOT,

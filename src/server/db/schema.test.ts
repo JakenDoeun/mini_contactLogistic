@@ -49,6 +49,93 @@ test('the Drizzle schema and the migrated database have the same 18 tables and c
   }
 });
 
+test('every index in the Drizzle schema exists in the database, with the same columns and uniqueness', () => {
+  const declared = ALL_TABLES.flatMap((table) => {
+    const config = getTableConfig(table);
+    return config.indexes.map((i) => ({
+      name: i.config.name,
+      table: config.name,
+      unique: i.config.unique ? 1 : 0,
+      columns: i.config.columns.map((c) => (c as { name: string }).name),
+    }));
+  });
+  const actual = (db.prepare("SELECT name, tbl_name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_autoindex_%'").all() as {
+    name: string; tbl_name: string;
+  }[]).map((r) => ({
+    name: r.name,
+    table: r.tbl_name,
+    unique: (db.pragma(`index_list(${r.tbl_name})`) as { name: string; unique: number }[]).find((x) => x.name === r.name)!.unique,
+    columns: (db.pragma(`index_info(${r.name})`) as { seqno: number; name: string }[]).sort((a, b) => a.seqno - b.seqno).map((c) => c.name),
+  }));
+  const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+  assert.equal(declared.length, 28);
+  assert.deepEqual(actual.sort(byName), declared.sort(byName));
+});
+
+test('CHECK, UNIQUE and key constraints on the notification, contact and system tables', () => {
+  const imp = addImport();
+  const parcel = addParcel('CK000000001', imp);
+  const run = (sql: string, ...params: unknown[]) => db.prepare(sql).run(...params).lastInsertRowid;
+
+  const batch = (status: string, planned = 1, key = `rk${++seq}`) =>
+    run("INSERT INTO send_batches (request_key, arrival_date, planned_messages, planned_parcels, status, created_at) VALUES (?, '2026-10-14', ?, ?, ?, ?)", key, planned, planned, status, AT);
+  batch('running', 1, 'same-key');
+  rejects(() => batch('done', 1, 'same-key'), /UNIQUE constraint failed: send_batches.request_key/);
+  rejects(() => batch('sending'), /send_batches_status/);
+  rejects(() => batch('done', -1), /send_batches_counts/);
+
+  const note = Number(run("INSERT INTO notifications (phone_normalized, arrival_date, message_text, reason, created_at) VALUES ('012345670', '2026-10-14', 'm', 'initial', ?)", AT));
+  rejects(() => run("INSERT INTO notifications (phone_normalized, arrival_date, message_text, reason, created_at) VALUES ('012345670', '2026-10-14', 'm', 'reminder', ?)", AT), /notifications_reason/);
+  rejects(() => run("INSERT INTO notifications (phone_normalized, arrival_date, message_text, reason, created_at) VALUES (NULL, '2026-10-14', 'm', 'initial', ?)", AT), /NOT NULL/);
+  run('INSERT INTO notification_parcels (notification_id, parcel_id) VALUES (?, ?)', note, parcel);
+  rejects(() => run('INSERT INTO notification_parcels (notification_id, parcel_id) VALUES (?, ?)', note, parcel), /UNIQUE constraint failed/);
+  rejects(() => run('INSERT INTO notification_parcels (notification_id, parcel_id) VALUES (?, 999999)', note), /FOREIGN KEY/);
+
+  const attempt = (id: string | null, no: number, state = 'queued') =>
+    run('INSERT INTO sms_attempts (id, notification_id, attempt_no, state, queued_at) VALUES (?, ?, ?, ?, ?)', id, note, no, state, AT);
+  attempt('11111111-1111-4111-8111-111111111111', 1);
+  rejects(() => attempt('22222222-2222-4222-8222-222222222222', 1), /UNIQUE constraint failed: sms_attempts.notification_id, sms_attempts.attempt_no/);
+  rejects(() => attempt('11111111-1111-4111-8111-111111111111', 2), /UNIQUE constraint failed: sms_attempts.id/);
+  rejects(() => attempt('33333333-3333-4333-8333-333333333333', 0), /sms_attempts_attempt_no/);
+  rejects(() => attempt('44444444-4444-4444-8444-444444444444', 3, 'lost'), /sms_attempts_state/);
+  rejects(() => attempt(null, 4), /NOT NULL constraint failed: sms_attempts.id/);
+
+  const contact = (channel: string, outcome: string) =>
+    run('INSERT INTO contact_attempts (channel, outcome, created_at) VALUES (?, ?, ?)', channel, outcome, AT);
+  const c = contact('telegram', 'messaged');
+  rejects(() => contact('sms', 'reached'), /contact_attempts_channel/);
+  rejects(() => contact('call', 'busy'), /contact_attempts_outcome/);
+  run('INSERT INTO contact_attempt_parcels (contact_attempt_id, parcel_id) VALUES (?, ?)', c, parcel);
+  rejects(() => run('INSERT INTO contact_attempt_parcels (contact_attempt_id, parcel_id) VALUES (?, ?)', c, parcel), /UNIQUE constraint failed/);
+
+  const file = (state: string, size = 10) =>
+    run("INSERT INTO detected_files (path, size_bytes, modified_at, state, first_seen_at) VALUES ('/w/a.xlsx', ?, ?, ?, ?)", size, AT, state, AT);
+  file('waiting');
+  rejects(() => file('waiting'), /UNIQUE constraint failed: detected_files.path/);
+  rejects(() => file('importing', 11), /detected_files_state/);
+
+  const backup = (kind: string, drive: string | null, outcome = 'ok') =>
+    run('INSERT INTO backup_runs (at, kind, drive, outcome) VALUES (?, ?, ?, ?)', AT, kind, drive, outcome);
+  backup('off_machine', 'B');
+  rejects(() => backup('cloud', null), /backup_runs_kind/);
+  rejects(() => backup('off_machine', 'C'), /backup_runs_drive/);
+  rejects(() => backup('local', null, 'partial'), /backup_runs_outcome/);
+
+  run("INSERT INTO settings (key, value, updated_at) VALUES ('rate', '{\"per_minute\":6}', ?)", AT);
+  rejects(() => run("INSERT INTO settings (key, value, updated_at) VALUES ('bad', 'not json', ?)", AT), /settings_value_json/);
+  rejects(() => run("INSERT INTO settings (key, value, updated_at) VALUES ('rate', '{}', ?)", AT), /UNIQUE constraint failed: settings.key/);
+
+  const user = Number(run("INSERT INTO users (username, password_hash, created_at) VALUES ('staff', 'scrypt$x', ?)", AT));
+  rejects(() => run("INSERT INTO users (username, password_hash, created_at) VALUES ('staff', 'scrypt$y', ?)", AT), /UNIQUE constraint failed: users.username/);
+  rejects(() => run("INSERT INTO users (username, password_hash, disabled, created_at) VALUES ('other', 'scrypt$z', 2, ?)", AT), /users_disabled_bool/);
+  run("INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at) VALUES ('t1', ?, ?, ?, ?)", user, AT, AT, AT);
+  rejects(() => run("INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at) VALUES ('t2', 999999, ?, ?, ?)", AT, AT, AT), /FOREIGN KEY/);
+  rejects(() => run('DELETE FROM users WHERE id = ?', user), /FOREIGN KEY/);
+
+  run("INSERT INTO worker_lease (id, holder, expires_at) VALUES (1, 'worker-a', ?)", AT);
+  rejects(() => run("INSERT INTO worker_lease (id, holder, expires_at) VALUES (2, 'worker-b', ?)", AT), /worker_lease_single_row/);
+});
+
 test('foreign keys are enforced in normal use', () => {
   rejects(() => addParcel('FK000000001', 999_999), /FOREIGN KEY/);
 });

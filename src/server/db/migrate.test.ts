@@ -107,6 +107,7 @@ test('upgrade with data: copy first, data unchanged, copy recorded', async (t) =
   assert.equal(result.applied, 1);
   assert.ok(result.backupPath && fs.existsSync(result.backupPath));
   assert.equal(fs.statSync(result.backupPath).mode & 0o777, 0o600);
+  assert.equal(fs.statSync(backupDir).mode & 0o777, 0o700, 'the backups folder is created 0700');
   const copy = new Database(result.backupPath, { readonly: true });
   assert.equal(copy.pragma('integrity_check', { simple: true }), 'ok');
   assert.deepEqual(snapshot(copy), before, 'the copy holds the data as it was before migrating');
@@ -145,6 +146,24 @@ test('a failing statement rolls back the whole migration; the copy is kept', asy
   const copy = new Database(path.join(backupDir, copies[0]), { readonly: true });
   assert.equal(copy.pragma('integrity_check', { simple: true }), 'ok');
   copy.close();
+});
+
+test('when the second of two pending migrations fails, neither is applied', async (t) => {
+  const { folder, dbPath, backupDir, before, dir } = await seededDb(t);
+  migrationsFolder(dir, [
+    { tag: '0101_good', sql: 'ALTER TABLE `settings` ADD `note` text;\n--> statement-breakpoint\nCREATE TABLE `first_ok` (`id` integer);' },
+    { tag: '0102_bad', sql: 'CREATE TABLE `second_part` (`id` integer);\n--> statement-breakpoint\nINSERT INTO `no_such_table` VALUES (1);' },
+  ]);
+  await rejectsWith(migrateDatabase({ dbPath, backupDir, migrationsFolder: folder }), 'migration_failed');
+  const db = openDatabase(dbPath);
+  t.after(() => db.close());
+  assert.equal(columns(db, 'settings').includes('note'), false);
+  assert.equal(userTables(db).includes('first_ok'), false, 'the first, valid migration was rolled back too');
+  assert.equal(userTables(db).includes('second_part'), false);
+  assert.equal(migrationCount(db), COMMITTED);
+  assert.deepEqual(snapshot(db), before);
+  assert.equal(db.pragma('foreign_keys', { simple: true }), 1);
+  assert.equal(fs.readdirSync(backupDir).length, 1, 'the pre-migration copy is kept');
 });
 
 test('a migration that breaks a foreign key is rolled back', async (t) => {

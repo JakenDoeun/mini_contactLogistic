@@ -20,7 +20,8 @@ Sources: backend plan Revision 3 ("Database schema", "Imports", "Phase 1: Founda
   `CHECK (json_valid(x))`.
 - `*_raw` columns hold the source text exactly as read (after nothing but cell-to-text conversion).
 - `*_by` columns reference `users(id)`; NULL means the system (worker, seed, start-up script).
-- Append-only tables (`parcel_phone_changes`, `parcel_scan_events`, `import_review_items` once resolved, `notifications`,
+- Append-only tables (`parcel_phone_changes`, `parcel_scan_events`, `import_review_items` (never deleted; a decision may be
+  revised while its import is `checked` and is frozen once it is not, decision 38), `notifications`,
   `notification_parcels`, `contact_attempts`, `contact_attempt_parcels`, `audit_log`, `backup_runs`): no DELETE; triggers
   `BEFORE DELETE … RAISE(ABORT)` on all of them, and `BEFORE UPDATE … RAISE(ABORT)` on `parcel_phone_changes`,
   `parcel_scan_events` and `audit_log`.

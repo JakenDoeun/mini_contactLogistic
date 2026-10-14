@@ -6,8 +6,14 @@ import { nowIso } from './values.ts';
 
 const DETAIL_KEYS = new Set([
   'count', 'counts', 'rules', 'status_from', 'status_to', 'settings_keys', 'error_code', 'file_name', 'sha256',
-  'phone_valid', 'migrations_applied', 'arrival_dates', 'source',
+  'phone_valid', 'migrations_applied', 'arrival_dates', 'source', 'item_kind', 'resolution_from', 'resolution_to',
 ]);
+// Keys whose value must come from a closed set, so no free text can ride on them.
+const CLOSED_SETS: Record<string, readonly (string | null)[]> = {
+  item_kind: ['recipient_conflict', 'code_spelling', 'db_duplicate', 'not_chosen_scan_date', 'excluded_by_staff', 'unparseable_scan_time'],
+  resolution_from: [null, 'chosen', 'left_out'],
+  resolution_to: ['chosen', 'left_out'],
+};
 const PHONE_SHAPED = /(?:\+?855|(?<!\d)0)[\s-]?\d{2}[\s-]?\d{3}[\s-]?\d{3,4}(?!\d)/;
 
 export type AuditEntityIds = number[] | Record<string, number[]>;
@@ -27,6 +33,10 @@ function checkValue(key: string, value: unknown): void {
   // A hash is validated by its exact format: its digit runs often look like phone numbers (about 1 in 55 hashes).
   if (key === 'sha256') {
     if (typeof value !== 'string' || !SHA256.test(value)) throw new Error('audit detail "sha256" must be 64 lower-case hex characters');
+    return;
+  }
+  if (key in CLOSED_SETS) {
+    if (!CLOSED_SETS[key].includes(value as string | null)) throw new Error(`audit detail "${key}" has a value outside its allowed set`);
     return;
   }
   if (value === null || typeof value === 'number' || typeof value === 'boolean') return;

@@ -116,11 +116,15 @@ TypeScript 6.0.3 are still the newest stable releases, kept as the **provisional
 
 No regressions found; no code changed in this pass.
 
-## Open before merge
+## Merge and follow-ups
+
+Merged into `main` on 2026-10-14 with the owner's explicit approval; the items below were open at the merge and stay
+open as follow-ups. The provisional versions (Next.js 16.4.0, TypeScript 6.0.3) remain provisional until the first item
+is done.
 
 - [ ] **Security advisory review — NOT done; the security gate has NOT passed.** When the announced Next.js
   advisories are published: record every ID and fixed version here, check whether 16.4.0 (and 15.5.27 on `main`) are
   affected, and if so move to the patched exact version and re-run the table above.
 - [ ] Live HTTPS check: start `npm run start:lan` from a normal terminal and open Settings; expect 7 / 7.
 - [ ] Camera scanner on the phone at the Tailscale address.
-- [ ] Owner approval to merge `phase0-upgrade` into `main`.
+- [x] Owner approval to merge `phase0-upgrade` into `main` (2026-10-14).

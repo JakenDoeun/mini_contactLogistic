@@ -1,9 +1,9 @@
 # Phase 2: login and sessions
 
 Status: **implemented on branch `phase2-login` (2026-10-14), awaiting the owner's review. Not merged.** The Phase 2 gate
-(the owner signs in on the laptop and a phone) has not been done. The Next.js security advisory review from Phase 0 is
-still open, so **the security gate has not passed** (see `docs/phase0.md`, "Merge and follow-ups"). Synthetic data only;
-no deployment.
+(the owner signs in on the laptop and a phone) has not been done. The Next.js security advisory review was done on
+2026-10-15: Next.js moved to the patched **16.4.1** on this branch (GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr,
+GHSA-p3m5-59mp-jv5r; see `docs/phase0.md`, "Merge and follow-ups"). Synthetic data only; no deployment.
 
 Source: backend plan Revision 3, "Security, privacy and operations" (Login), "Changes to the existing code" (new
 modules) and "Phased plan" (Phase 2).
@@ -227,8 +227,9 @@ Replaced the earlier provisional values (12 hours idle, 7 days absolute).
 
 ## Open issues
 
-1. **Security advisory review (Phase 0): not done.** Next.js 16.4.0 and TypeScript 6.0.3 remain provisional. The
-   security gate has not passed.
+1. **Security advisory review (Phase 0): done 2026-10-15.** Next.js 16.4.1 (exact pin) fixes the three 2026-10-14
+   advisories that affected 16.4.0; TypeScript 6.0.3 final. `main` stays on the affected 16.4.0 until this branch is
+   merged. After pulling, run `npm ci` in the project folder (with the dev server stopped).
 2. **Phase 2 gate:** the owner signs in on the laptop and on a phone through the Tailscale address. Not done.
 3. Login works through the branch address (Tailscale or `BRANCH_URL`) and on the office computer at `127.0.0.1` or
    `localhost`. The legacy Caddy LAN addresses are not accepted origins (and a plain-http LAN address cannot hold a
@@ -244,3 +245,4 @@ Replaced the earlier provisional values (12 hours idle, 7 days absolute).
 7. Tailscale identity headers (plan: "option to evaluate later") were not evaluated.
 8. Phase 1 conditions still apply: M2 and L1 before Phase 4, L2 in Phase 4, L4 and I4 in Phase 10
    (`docs/phase1-schema.md`, "Review 2026-10-14").
+

@@ -29,7 +29,7 @@
     "drizzle-orm": "0.45.4",
     "geist": "1.7.2",
     "lucide-react": "0.544.0",
-    "next": "16.4.0",
+    "next": "16.4.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "tailwind-merge": "3.7.0"

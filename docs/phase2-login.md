@@ -246,3 +246,28 @@ Replaced the earlier provisional values (12 hours idle, 7 days absolute).
 8. Phase 1 conditions still apply: M2 and L1 before Phase 4, L2 in Phase 4, L4 and I4 in Phase 10
    (`docs/phase1-schema.md`, "Review 2026-10-14").
 
+## Future enhancements (not in Phase 2)
+
+### QR sign-in for phones (deferred by the owner, 2026-10-15)
+
+Intentionally deferred, not forgotten. **Not implemented in Phase 2 and not part of its scope**; it needs its own
+approval before any work starts.
+
+Goal: sign a phone in to an **existing** account by scanning a QR code shown on a laptop that is already signed in,
+without typing the password on the phone.
+
+Requirements:
+- **Pairs with the existing account; never creates one.** The phone gets a normal session for the account that is
+  signed in on the laptop. No new user, no shared or device account, and the same session rules apply (7 days idle,
+  30 days absolute, ended by logout, disable or a password reset).
+- **Short-lived, single-use challenge.** The phone opens the QR link and receives a random challenge (at least 128 bits,
+  stored only as a hash, like session tokens) that expires after a short time, e.g. 2 minutes. It can be approved once
+  and redeemed once; expired, used or refused challenges never work again.
+- **Explicit approval on the signed-in laptop.** Scanning alone signs nothing in. The laptop shows the pending request
+  (device and browser, time, a short matching code also shown on the phone) and a person must press Approve. Deny or
+  no answer before expiry ends the challenge.
+- **The secret stays with the device that asked.** The session is issued only to the phone browser that started the
+  challenge (bound to a value held only by that browser), so a photographed or forwarded QR code cannot be redeemed
+  elsewhere.
+- **Same protections as sign-in:** same-site origin rule, rate limiting, audit entries with record IDs and error codes
+  only (never the challenge, token or matching code), and refused for disabled accounts.

@@ -40,8 +40,8 @@ function addParcel(code: string, importId: number, fields: Record<string, unknow
 
 const rejects = (fn: () => unknown, pattern: RegExp) => assert.throws(fn, pattern);
 
-test('the Drizzle schema and the migrated database have the same 18 tables and columns', () => {
-  assert.equal(ALL_TABLES.length, 18);
+test('the Drizzle schema and the migrated database have the same 19 tables and columns', () => {
+  assert.equal(ALL_TABLES.length, 19);
   for (const table of ALL_TABLES) {
     const config = getTableConfig(table);
     const dbColumns = (db.pragma(`table_info(${config.name})`) as { name: string }[]).map((c) => c.name).sort();
@@ -56,7 +56,7 @@ test('every index in the Drizzle schema exists in the database, with the same co
       name: i.config.name,
       table: config.name,
       unique: i.config.unique ? 1 : 0,
-      columns: i.config.columns.map((c) => (c as { name: string }).name),
+      columns: i.config.columns.map((c) => (c as { name?: string }).name ?? null), // an expression index has no column name
     }));
   });
   const actual = (db.prepare("SELECT name, tbl_name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_autoindex_%'").all() as {
@@ -68,7 +68,7 @@ test('every index in the Drizzle schema exists in the database, with the same co
     columns: (db.pragma(`index_info(${r.name})`) as { seqno: number; name: string }[]).sort((a, b) => a.seqno - b.seqno).map((c) => c.name),
   }));
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
-  assert.equal(declared.length, 28);
+  assert.equal(declared.length, 30);
   assert.deepEqual(actual.sort(byName), declared.sort(byName));
 });
 

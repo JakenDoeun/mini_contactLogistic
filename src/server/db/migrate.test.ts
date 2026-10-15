@@ -67,11 +67,11 @@ async function seededDb(t: TestContext) {
   return { dir, folder, dbPath, backupDir, before };
 }
 
-test('fresh database: all 18 tables, triggers, foreign keys and integrity', async (t) => {
+test('fresh database: all 19 tables (18 approved + recovery_codes), triggers, foreign keys and integrity', async (t) => {
   const { db, dir, cleanup } = await createTestDb();
   t.after(cleanup);
   assert.deepEqual(userTables(db), [...EXPECTED_TABLES].sort());
-  assert.equal(userTables(db).length, 18);
+  assert.equal(userTables(db).length, 19);
   const triggers = db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'trigger'").get() as { n: number };
   assert.equal(triggers.n, 27, '18 from 0000 and 9 strict-date triggers from 0001');
   assert.equal(db.pragma('foreign_keys', { simple: true }), 1);
@@ -240,8 +240,9 @@ test('the strict-date migration refuses a database that already holds an impossi
   fs.writeFileSync(journalPath, JSON.stringify({ ...journal, entries: journal.entries.slice(0, 1) }));
   const dbPath = path.join(dir, 'branch.db');
   const backupDir = path.join(dir, 'backups');
-  await migrateDatabase({ dbPath, backupDir, migrationsFolder: folder });
+  // applyPending, not migrateDatabase: the self-test would refuse a database without the later tables.
   let db = openDatabase(dbPath);
+  applyPending(db, readMigrationFiles({ migrationsFolder: folder }), null);
   seedDemoData(db);
   db.prepare("UPDATE parcels SET arrival_date = '2026-02-30' WHERE id = 1").run();
   const before = snapshot(db);

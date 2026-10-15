@@ -44,13 +44,16 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
       <section className="flex items-start justify-center px-4 py-8 sm:items-center lg:px-10">
         <div className="w-full max-w-[400px] rounded-2xl border bg-card p-6 shadow-[0_1px_2px_rgba(20,33,58,0.05),0_16px_40px_-20px_rgba(20,33,58,0.25)] sm:p-8">
-          <h1 className="text-[1.375rem] leading-tight font-semibold tracking-tight">{firstRun ? 'Create the first account' : 'Sign in'}</h1>
           {!db ? (
-            <p role="alert" className="mt-4 text-sm text-destructive">
-              The branch database is not ready. Ask the office to run <code>npm run db:migrate</code> and start the app again.
-            </p>
+            <>
+              <h1 className="text-[1.375rem] leading-tight font-semibold tracking-tight">Sign in</h1>
+              <p role="alert" className="mt-4 text-sm text-destructive">
+                The branch database is not ready. Ask the office to run <code>npm run db:migrate</code> and start the app again.
+              </p>
+            </>
           ) : firstRun ? (
             <>
+              <h1 className="text-[1.375rem] leading-tight font-semibold tracking-tight">Create the first account</h1>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 No account exists yet. On the office computer, run <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[12px]">npm run first-run-code</code> in
                 the project folder and type the code below. It works once.
@@ -58,10 +61,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
               <AuthForm mode="first_run" next={next} />
             </>
           ) : (
-            <>
-              <p className="mt-1.5 text-sm text-muted-foreground">Use your staff account.</p>
-              <AuthForm mode="login" next={next} />
-            </>
+            // The form owns its heading: it switches between sign-in and password recovery in the browser.
+            <AuthForm mode="login" next={next} />
           )}
           <p className="mt-6 flex items-center gap-1.5 border-t pt-4 text-xs text-muted-foreground">
             <LockKeyhole className="size-3.5" aria-hidden />

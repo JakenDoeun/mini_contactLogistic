@@ -82,24 +82,62 @@ with one dependency to flag. If that phone test fails and the branch rolls back 
 the LAN address unless `BRANCH_URL` is set to it. That is a single address, and the laptop's LAN IP changes, which is
 why the migration was started.
 
-## Password reset (recommendation, before real staff use)
+## Recovery code (password reset)
 
-Today the only way to reset a password is `npm run user -- disable` followed by `add` with a new username. Before staff
-rely on the app (at the latest before Phase 4), add:
+Added 2026-10-14 on `phase2-login` to the owner's specification. **Design approved by the owner 2026-10-15**, with five
+decisions: (1) one installation-wide code that can reset any active account; (2) a new `recovery_codes` table through
+migration `0002`, never by editing `0000`; (3) disabled accounts cannot recover themselves; (4) a successful reset
+consumes the code, revokes all sessions and requires a normal sign-in; (5) five failed attempts pause recovery for one
+minute, with the in-memory limitation documented below. One recovery code for the installation lets a person
+who has lost their password set a new one on the sign-in page ("Forgot password?"). It is separate from the first-run
+code: its own file, its own table, its own pause counter, and neither code is accepted in place of the other.
+
+| Rule | How |
+|---|---|
+| Format | 32 Crockford Base32 characters (`0-9`, `A-Z` without `I L O U`), shown as eight groups of four: `XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`. Typing is case-, space- and dash-insensitive; `O` reads as `0`, `I`/`L` as `1` |
+| Entropy | 20 bytes from `crypto.randomBytes` = 160 bits = exactly 32 characters (5 bits each) |
+| Where the code is kept | `recovery-code.txt` in the data folder (`DATA_DIR`, default `~/.local/share/campus-branch`; 0700, outside the repository), mode 0600, written to a temporary 0600 file, fsynced, then renamed into place |
+| Where validity is decided | Table `recovery_codes` (migration `0002`): only the SHA-256 of the code, `created_at`, `ended_at`, `end_reason` (`used` / `rotated` / `revoked`), `used_by`. A unique partial index allows at most one active row (`ended_at IS NULL`). The file is never trusted on its own: a code is valid only if its hash matches the active row |
+| Expiry | None by time. Valid until used once, rotated or revoked |
+| One use | On success, one `BEGIN IMMEDIATE` transaction: mark the code `used` (only if still active), replace the password hash, delete every session of the account, audit `user.password_recovered`. Then the file is removed; if that fails, the code is still invalid because the database says it is used, and the leftover file is removed at the next `show` |
+| Failed attempts | Wrong code, unknown or disabled account, or an already used code: same answer (403 `bad_recovery`), the code stays as it was, audit `user.recovery_refused` with `error_code` only. Five failures pause recovery for a minute (one counter for the installation). A password under 12 characters is refused (400) before the code is checked |
+| Pause limitation | The failure counter lives in the web process's memory, like the login pause (open issue 4): restarting the app clears it, and a second web process would count separately. Acceptable while one process runs on the office computer, since a restart needs that computer; the 160-bit code makes guessing infeasible regardless. Move the counter to the database if a second process or remote restarts are added |
+| Disabled accounts | Cannot be recovered; enabling stays a separate step |
+| Concurrency | The "still active" check is repeated inside the write lock, so two requests with the same code: exactly one succeeds |
+| Exposure | The code is printed only by `show`, only to a terminal. Not in any API response, server log line, audit entry (not even its hash) or Git (the data folder is outside the repository, which the app enforces; `.gitignore` also lists `recovery-code.txt*` and `first-run-code.txt` in case a copy is made) |
+
+Commands (office computer, in the project folder):
 
 ```
-npm run user -- reset <username>
+npm run recovery-code -- rotate   # create the first code, or replace the active one (the old one stops working at once)
+npm run recovery-code -- show     # print the active code; refuses a pipe or file
+npm run recovery-code -- revoke   # end the active code without a replacement
 ```
 
-It would:
-- keep the username and the user ID, so audit history stays attached;
-- generate a new 20-character password and print it once, to a terminal only, as `first-run-code` does;
-- replace the scrypt hash and delete all the account's sessions in one transaction, so every signed-in device is
-  signed out at once;
-- write a `user.password_reset` audit entry with the user ID only;
-- leave a disabled account disabled (enabling stays a separate, explicit step).
+The "Forgot password?" link switches the card to **Reset your password** (its own heading and one-line explanation; focus
+moves to the heading so screen readers announce it). The form lists both commands in this order (`rotate`, then
+`show`), each with a Copy button. "Back to sign in" returns to **Sign in**, as does a successful reset, which shows
+"Password changed. Every device was signed out."
 
-Not built in Phase 2: it needs your go-ahead, as it is a new command.
+No code exists until the first `rotate`; nothing creates one by itself. `show` never creates or repairs: with no active
+code it says so; if the file is missing or does not match the active code, it refuses and tells you to `rotate`.
+
+Rotate order and failure handling: remove temporary files left by an earlier stopped run → write the new code to a
+temporary 0600 file and fsync → database transaction (end the old code, insert the new hash, audit
+`recovery_code.rotated`) → rename into place.
+
+| Failure | Result | What to do |
+|---|---|---|
+| Before or during the database transaction (e.g. disk full) | Nothing changes: the temporary file is removed, the old code and its file stay valid | Nothing; `rotate` again when the cause is fixed |
+| The rename fails after the commit | **Fails closed.** The old code is already ended, the new code's temporary file is removed, so no code is valid that anyone holds. `rotate` exits 1 with "the new code is active but could not be saved … run rotate again" | `npm run recovery-code -- rotate` |
+| The process stops after the commit, before the rename (power cut, kill) | **Fails closed.** The old code is ended; the new one exists only in a leftover temporary file (0600, in the 0700 data folder), which `show` never reads. `show` refuses with "does not match the active code" | `npm run recovery-code -- rotate`: it removes the leftover temporary file and makes a fresh code. `revoke` removes it too |
+
+Restoring a usable code never prints, logs or copies the stranded code: `rotate` replaces it, and `show` then prints the
+new one to the terminal only. In both fail-closed cases recovery with the old code is refused and every password stays
+as it was.
+
+After a recovery, the person signs in with the new password on every device. Rotate a new code afterwards if one should
+stay available (`show` reports "no active recovery code" until then).
 
 ## Routes
 
@@ -107,6 +145,7 @@ Not built in Phase 2: it needs your go-ahead, as it is a new command.
 |---|---|---|
 | `POST /api/auth/login` | public | 401 wrong credentials, 429 + `Retry-After` while paused, 403 cross-site, 400 bad body |
 | `POST /api/auth/setup` | public while no account exists | 403 wrong code, 409 once an account exists |
+| `POST /api/auth/recover` | public | recovery code + username + new password; 200 (session cookie cleared), 403 `bad_recovery`, 400 short password, 429 + `Retry-After` while paused, 403 cross-site |
 | `POST /api/auth/logout` | 401 (cookie cleared anyway) | ends the session row on the server |
 | `GET /api/auth/session` | 401 | `{ username }` |
 | `GET /api/branch-status` | 401 | Settings readiness checks |
@@ -168,6 +207,24 @@ Replaced the earlier provisional values (12 hours idle, 7 days absolute).
   - A wrong code focuses the code field, sets `aria-invalid` and does not move the button. The first-run and sign-in
     flows reach the dashboard.
 
+- Recovery code (`src/server/auth/recovery.test.ts`, 18 tests): format and Crockford decoding of all 160 bits, the
+  20-byte random request, 0600 file with no temporary file left and only a hash stored, no time expiry (5 years later),
+  one-time use (password changed, all sessions ended, code consumed, file removed, second use refused), invalid
+  attempts (wrong code, unknown or disabled account, short password: code untouched), the one-minute pause, rotation,
+  revoke, and failure handling (file not removable after success, database error during rotate, missing or planted
+  file, two simultaneous uses) and failure injection after the commit: the rename throwing (mocked), and a real stop
+  (a child process kills itself with SIGKILL at the rename). Both fail closed (old code refused, `show` refuses, password
+  unchanged) and a following `rotate` removes leftover temporary files and restores a usable code. Mutations checked: dropping the in-transaction re-check, the session revocation, the
+  file-versus-database check, the pause, the 0600 mode, the leftover temporary-file cleanup, or removing the temporary
+  file when the rename fails each makes a test fail.
+- `npm test`: the `recovery-code` command test (`startup.test.ts`) runs `show` under `script`: never creates a code,
+  refuses a pipe, `rotate` does not print the code, a missing file is reported and not regenerated, `revoke` twice.
+- `npm run test:integration`: 12 tests; the new one drives `POST /api/auth/recover` through `next start`: cross-site,
+  wrong code and short password refused, success clears the cookie and ends the existing session, second use refused,
+  the code absent from the audit log and the server output.
+- Migration tests now expect 19 tables (18 approved + `recovery_codes`) and 30 indexes. Stale test databases are built
+  with `applyPending` directly, because `migrateDatabase`'s self-test refuses a database without the later table.
+
 ## Open issues
 
 1. **Security advisory review (Phase 0): not done.** Next.js 16.4.0 and TypeScript 6.0.3 remain provisional. The
@@ -180,7 +237,8 @@ Replaced the earlier provisional values (12 hours idle, 7 days absolute).
    it, and a second web process would keep its own count. Acceptable for one web process on the office computer,
    because restarting it requires that computer. Move the counter to the database if a second process or remote
    restarts are ever added.
-5. There is no password reset yet. See "Password reset" above for the recommended `npm run user -- reset` command.
+5. Password reset is the recovery code (see "Recovery code"). Its pause counter is in memory, like the login pause
+   (item 4), as approved. The owner should run `npm run recovery-code -- rotate` once and keep the code offline.
 6. Pages are checked in the console layout. Server data added in later phases must also be checked in its own route
    (`withSession()`), as the plan requires, and not rely on the layout.
 7. Tailscale identity headers (plan: "option to evaluate later") were not evaluated.

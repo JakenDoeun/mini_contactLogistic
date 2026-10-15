@@ -14,7 +14,8 @@
     "db:migrate": "node scripts/db-migrate.ts",
     "db:seed": "node scripts/db-seed.ts",
     "user": "node scripts/user.ts",
-    "first-run-code": "node scripts/first-run-code.ts"
+    "first-run-code": "node scripts/first-run-code.ts",
+    "recovery-code": "node scripts/recovery-code.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "1.2.0",

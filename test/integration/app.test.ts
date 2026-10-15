@@ -6,7 +6,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
-import { migrateDatabase } from '../../src/server/db/migrate.ts';
+import { verifyPassword } from '../../src/server/auth/password.ts';
+import { readActiveRecoveryCode, rotateRecoveryCode } from '../../src/server/auth/recovery.ts';
+import { createSession } from '../../src/server/auth/sessions.ts';
+import { openDatabase } from '../../src/server/db/connection.ts';
+import { applyPending, migrateDatabase } from '../../src/server/db/migrate.ts';
 import { buildCopy, REPO, startApp, tempDir } from './harness.ts';
 
 let buildDir: string;
@@ -35,8 +39,13 @@ async function dataFolder(upTo?: number) {
       journal.entries = journal.entries.slice(0, upTo);
       for (const e of journal.entries) fs.copyFileSync(path.join(REPO, 'drizzle', `${e.tag}.sql`), path.join(migrationsFolder, `${e.tag}.sql`));
       fs.writeFileSync(path.join(migrationsFolder, 'meta/_journal.json'), JSON.stringify(journal));
+      // applyPending, not migrateDatabase: the self-test would refuse a database without the later tables.
+      const db = openDatabase(path.join(dir, 'branch.db'));
+      applyPending(db, readMigrationFiles({ migrationsFolder }), null);
+      db.close();
+    } else {
+      await migrateDatabase({ dbPath: path.join(dir, 'branch.db'), backupDir: path.join(dir, 'backups') });
     }
-    await migrateDatabase({ dbPath: path.join(dir, 'branch.db'), backupDir: path.join(dir, 'backups'), migrationsFolder });
   }
   return dir;
 }
@@ -70,20 +79,20 @@ test('server bundle: a missing, stale or refused database is not used, and is le
   assert.equal(fs.existsSync(dbPath), false, 'no empty database created by the app');
 
   // One migration behind the code, as after an update started without db:migrate.
-  const stale = await dataFolder(1);
+  const stale = await dataFolder(readMigrationFiles({ migrationsFolder: path.join(REPO, 'drizzle') }).length - 1);
   fs.copyFileSync(path.join(stale, 'branch.db'), dbPath);
   const before = fs.readFileSync(dbPath);
   r = await probe(url);
   assert.equal(r.ok, false);
   assert.equal(r.code, 'self_test_failed');
-  assert.match(String(r.message), /1 of \d+ migrations applied/);
+  assert.match(String(r.message), /missing tables: recovery_codes/);
   assert.deepEqual(fs.readFileSync(dbPath), before, 'the stale database was not migrated or changed');
 });
 
 // ---- Phase 2: login and sessions, through the real server -------------------------------------------------------
 
 
-const PUBLIC_API = new Set(['/api/branch-address', '/api/auth/login', '/api/auth/setup']);
+const PUBLIC_API = new Set(['/api/branch-address', '/api/auth/login', '/api/auth/setup', '/api/auth/recover']);
 const PASSWORD = 'correct horse battery';
 
 /** Every API route in the app, with the HTTP methods its route.ts exports. New routes are covered automatically. */
@@ -111,7 +120,7 @@ const consolePages = () =>
     .filter((e) => e.isDirectory() && !e.name.startsWith('[') && fs.existsSync(path.join(REPO, 'src/app/(console)', e.name, 'page.tsx')))
     .map((e) => `/${e.name}`);
 
-let site: { url: string; host: string; dataDir: string };
+let site: { url: string; host: string; dataDir: string; log: () => string };
 const send = (p: string, init: RequestInit & { cookie?: string; origin?: string | null } = {}) => {
   const headers = new Headers(init.headers);
   if (init.cookie) headers.set('cookie', init.cookie);
@@ -129,7 +138,7 @@ const siteDb = () => new Database(path.join(site.dataDir, 'branch.db'));
 test('login: the site starts with no account and shows the first-run screen with a 0600 code file', async () => {
   const dataDir = await dataFolder(Infinity);
   const running = await app(dataDir);
-  site = { url: running.url, host: running.host, dataDir };
+  site = { url: running.url, host: running.host, dataDir, log: running.log };
   const res = await send('/login');
   assert.equal(res.status, 200);
   assert.match(await res.text(), /Create the first account/);
@@ -284,4 +293,44 @@ test('login: the audit log records logins without usernames, passwords, tokens o
   const text = JSON.stringify(rows);
   for (const secret of [PASSWORD, 'wrong-1-password', 'first.staff', 'nobody', 'AAAA-BBBB']) assert.equal(text.includes(secret), false, secret);
   assert.ok(sessions.every((s) => /^[0-9a-f]{64}$/.test(s.token_hash)), 'only token hashes stored');
+});
+
+test('recovery: the recovery code resets a password once through the route, ends every session, and never leaves the server', async () => {
+  const db = openDatabase(path.join(site.dataDir, 'branch.db'));
+  rotateRecoveryCode(db, site.dataDir);
+  const shown = readActiveRecoveryCode(db, site.dataDir);
+  assert.ok(shown.ok);
+  const { code } = shown;
+  const { id } = db.prepare("SELECT id FROM users WHERE username = 'first.staff'").get() as { id: number };
+  const cookie = `__Host-cb_session=${createSession(db, id)}`;
+  db.close();
+  assert.equal((await send('/api/auth/session', { cookie })).status, 200);
+
+  const NEW = 'recovered passphrase here';
+  const reset = { username: 'first.staff', code, password: NEW };
+  assert.equal((await postJson('/api/auth/recover', reset, { origin: 'https://evil.example' })).status, 403, 'cross-site refused');
+  const wrong = await postJson('/api/auth/recover', { ...reset, code: code.replace(/^./, (c) => (c === '0' ? '1' : '0')) });
+  assert.equal(wrong.status, 403);
+  assert.deepEqual(await wrong.json(), { error: 'bad_recovery' });
+  assert.equal((await postJson('/api/auth/recover', { ...reset, password: 'short' })).status, 400);
+  assert.equal((await send('/api/auth/session', { cookie })).status, 200, 'failed attempts change nothing');
+
+  const ok = await postJson('/api/auth/recover', { ...reset, code: code.toLowerCase() });
+  assert.equal(ok.status, 200);
+  const body = await ok.text();
+  assert.equal(body, '{"ok":true}');
+  assert.match(cookieOf(ok), /^__Host-cb_session=; Max-Age=0;/);
+  assert.equal((await send('/api/auth/session', { cookie })).status, 401, 'every session ended');
+  assert.equal((await postJson('/api/auth/recover', { ...reset, password: 'another passphrase!' })).status, 403, 'used once only');
+  assert.equal(fs.existsSync(path.join(site.dataDir, 'recovery-code.txt')), false);
+
+  const check = siteDb();
+  const { password_hash } = check.prepare("SELECT password_hash FROM users WHERE username = 'first.staff'").get() as { password_hash: string };
+  const audit = JSON.stringify(check.prepare('SELECT * FROM audit_log').all());
+  check.close();
+  assert.equal(await verifyPassword(NEW, password_hash), true);
+  const bare = code.replace(/-/g, '');
+  for (const where of [audit, site.log()]) {
+    assert.equal(where.includes(bare) || where.includes(code), false, 'code never in the audit log or server output');
+  }
 });

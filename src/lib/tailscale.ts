@@ -15,6 +15,8 @@ export type TailscaleStatus =
       online: boolean;
       /** This machine's MagicDNS name, e.g. office-pc.example-tailnet.ts.net. */
       hostname: string | null;
+      /** This machine's Tailscale IPv4 address, e.g. 100.x.y.z. */
+      ip: string | null;
       /** MagicDNS is on for the tailnet: phones find the computer by name. */
       magicDNS: boolean;
       /** HTTPS certificates are enabled for the tailnet and cover this hostname. */
@@ -29,7 +31,7 @@ export type TailscaleStatus =
 export function parseStatus(json: unknown) {
   const d = (json ?? {}) as {
     BackendState?: string;
-    Self?: { DNSName?: string; Online?: boolean };
+    Self?: { DNSName?: string; Online?: boolean; TailscaleIPs?: string[] };
     CertDomains?: string[] | null;
     CurrentTailnet?: { MagicDNSEnabled?: boolean } | null;
   };
@@ -38,6 +40,7 @@ export function parseStatus(json: unknown) {
     state: d.BackendState ?? 'Unknown',
     online: !!d.Self?.Online,
     hostname,
+    ip: d.Self?.TailscaleIPs?.find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a)) ?? null,
     magicDNS: !!d.CurrentTailnet?.MagicDNSEnabled,
     httpsCertificates: !!hostname && (d.CertDomains ?? []).includes(hostname),
   };
@@ -77,7 +80,7 @@ export async function tailscaleStatus(): Promise<TailscaleStatus> {
   let value: TailscaleStatus;
   if (!status.ok && status.missing) value = { installed: false };
   else {
-    let parsed = { state: 'Unavailable', online: false, hostname: null as string | null, magicDNS: false, httpsCertificates: false };
+    let parsed = { state: 'Unavailable', online: false, hostname: null as string | null, ip: null as string | null, magicDNS: false, httpsCertificates: false };
     try {
       if (status.ok) parsed = parseStatus(JSON.parse(status.out));
     } catch {}
@@ -123,12 +126,23 @@ export type HttpsProbe =
   | { ok: false; reason: 'dns' | 'refused' | 'tls' | 'timeout' | 'other'; message: string };
 
 /**
- * Opens https://hostname/api/branch-address with normal certificate checks. Proves, end to end, that the name
- * resolves, Serve answers, the certificate is valid and trusted, and the request reaches this app.
+ * A DNS lookup that always answers `ip`. Phones reach the computer through their own Tailscale app, so the probe goes
+ * to this computer's Tailscale address directly instead of trusting this computer's DNS setup, which phones never use.
  */
-export function probeHttps(hostname: string): Promise<HttpsProbe> {
+export const pinnedLookup =
+  (ip: string) =>
+  (_host: string, options: { all?: boolean }, cb: (err: Error | null, address: string | { address: string; family: number }[], family?: number) => void) =>
+    options?.all ? cb(null, [{ address: ip, family: 4 }]) : cb(null, ip, 4);
+
+/**
+ * Opens https://hostname/api/branch-address with normal certificate checks. Proves, end to end, that Serve answers,
+ * the certificate is valid and trusted for the name, and the request reaches this app. With `ip`, the name is not
+ * looked up in this computer's DNS (see pinnedLookup); the certificate is still checked against the name.
+ */
+export function probeHttps(hostname: string, ip?: string | null): Promise<HttpsProbe> {
   return new Promise((resolve) => {
-    const req = https.get({ host: hostname, port: 443, path: '/api/branch-address', servername: hostname, timeout: 8000 }, (res) => {
+    const lookup = ip ? { lookup: pinnedLookup(ip) as never } : {};
+    const req = https.get({ host: hostname, port: 443, path: '/api/branch-address', servername: hostname, timeout: 8000, ...lookup }, (res) => {
       const cert = (res.socket as TLSSocket).getPeerCertificate();
       let body = '';
       res.setEncoding('utf8');
@@ -365,6 +379,6 @@ export async function tailscaleReadiness(appPort: string) {
   cached = null; // "Check again" must measure, not repeat
   const [ts, origin] = await Promise.all([tailscaleStatus(), branchOrigin()]);
   const ready = ts.installed && ts.state === 'Running' && ts.hostname && ts.httpsCertificates && ts.serveTarget && !ts.funnel;
-  const probe = ready ? await probeHttps(ts.hostname!) : null;
+  const probe = ready ? await probeHttps(ts.hostname!, ts.ip) : null;
   return { tailscale: ts, origin, checks: diagnoseTailscale(ts, probe, origin, appPort) };
 }

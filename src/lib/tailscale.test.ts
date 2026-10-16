@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { diagnoseTailscale, parseServe, parseStatus, type HttpsProbe, type TailscaleStatus } from './tailscale.ts';
+import { diagnoseTailscale, parseServe, parseStatus, pinnedLookup, type HttpsProbe, type TailscaleStatus } from './tailscale.ts';
 
 // Shapes as printed by tailscale 1.102 (`status --json`, `serve status --json`), trimmed to the fields read.
 const HOST = 'office-pc.example-tailnet.ts.net';
 
 test('status: offline, certificates not yet enabled', () => {
   const s = parseStatus({ BackendState: 'Running', Self: { DNSName: `${HOST}.`, Online: false }, CertDomains: null });
-  assert.deepEqual(s, { state: 'Running', online: false, hostname: HOST, magicDNS: false, httpsCertificates: false });
+  assert.deepEqual(s, { state: 'Running', online: false, hostname: HOST, ip: null, magicDNS: false, httpsCertificates: false });
   assert.equal(parseStatus({ CurrentTailnet: { MagicDNSEnabled: true } }).magicDNS, true);
 });
 
@@ -29,6 +29,7 @@ test('serve: the https root of this host, and Funnel flagged', () => {
 const NOW = new Date('2026-10-12T12:00:00Z');
 const healthy: TailscaleStatus = {
   installed: true,
+  ip: '100.64.0.1',
   state: 'Running',
   online: true,
   hostname: HOST,
@@ -84,4 +85,13 @@ test('diagnosis: BRANCH_URL copied from another installation is flagged', () => 
   assert.match(checks.find((c) => c.id === 'address')!.detail, /this computer is office-pc/);
   const invalid = diagnoseTailscale(healthy, goodProbe, { origin: null, source: null, invalidBranchUrl: 'office-pc' }, '3000', NOW);
   assert.equal(states(invalid).address, 'fail');
+});
+
+test('the live check uses the Tailscale IPv4 address, not this computer\'s DNS', () => {
+  const s = parseStatus({ Self: { DNSName: `${HOST}.`, TailscaleIPs: ['fd7a:115c:a1e0::1', '100.64.0.7'] } });
+  assert.equal(s.ip, '100.64.0.7');
+  assert.equal(parseStatus({ Self: { TailscaleIPs: ['fd7a:115c:a1e0::1'] } }).ip, null);
+  const lookup = pinnedLookup('100.64.0.7');
+  lookup(HOST, {}, (err, address, family) => assert.deepEqual([err, address, family], [null, '100.64.0.7', 4]));
+  lookup(HOST, { all: true }, (err, address) => assert.deepEqual([err, address], [null, [{ address: '100.64.0.7', family: 4 }]]));
 });

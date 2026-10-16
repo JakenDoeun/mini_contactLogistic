@@ -155,5 +155,5 @@ is done.
   (`docs/phase1-schema.md`). The project folder's `node_modules` was left on 16.4.0 because the dev server was running:
   run `npm ci` there after stopping it.
 - [ ] Live HTTPS check: start `npm run start:lan` from a normal terminal and open Settings; expect 7 / 7.
-- [ ] Camera scanner on the phone at the Tailscale address.
+- [x] Camera scanner on the phone at the Tailscale address: **PASS, owner-confirmed 2026-10-16** (barcode scan in Safari; `docs/phase2-login.md`, "Device acceptance").
 - [x] Owner approval to merge `phase0-upgrade` into `main` (2026-10-14).

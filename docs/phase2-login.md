@@ -1,7 +1,8 @@
 # Phase 2: login and sessions
 
-Status: **implemented on branch `phase2-login` (2026-10-14), awaiting the owner's review. Not merged.** The Phase 2 gate
-(the owner signs in on the laptop and a phone) has not been done. The Next.js security advisory review was done on
+Status: **merged into `main` on 2026-10-16 with the owner's explicit approval.** The device acceptance checks (laptop
+sign-in and logout, Settings 7/7, phone Safari session, phone camera scan, recovery with session revocation and reuse
+refused) had **not been reported** at the time of the merge; they remain open below and none is recorded as passed. The Next.js security advisory review was done on
 2026-10-15: Next.js moved to the patched **16.4.1** on this branch (GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr,
 GHSA-p3m5-59mp-jv5r; see `docs/phase0.md`, "Merge and follow-ups"). Synthetic data only; no deployment.
 
@@ -230,7 +231,9 @@ Replaced the earlier provisional values (12 hours idle, 7 days absolute).
 1. **Security advisory review (Phase 0): done 2026-10-15.** Next.js 16.4.1 (exact pin) fixes the three 2026-10-14
    advisories that affected 16.4.0; TypeScript 6.0.3 final. `main` stays on the affected 16.4.0 until this branch is
    merged. After pulling, run `npm ci` in the project folder (with the dev server stopped).
-2. **Phase 2 gate:** the owner signs in on the laptop and on a phone through the Tailscale address. Not done.
+2. **Phase 2 device checks: not reported** (merge approved by the owner 2026-10-16 without them). Laptop sign-in and
+   logout, Settings 7/7, phone Safari session persistence, phone camera scan, and password recovery (session
+   revocation, reused code refused). Record each result here when done.
 3. Login works through the branch address (Tailscale or `BRANCH_URL`) and on the office computer at `127.0.0.1` or
    `localhost`. The legacy Caddy LAN addresses are not accepted origins (and a plain-http LAN address cannot hold a
    Secure cookie). Set `BRANCH_URL` if Caddy must stay in use.

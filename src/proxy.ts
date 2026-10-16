@@ -11,7 +11,7 @@ export function proxy(req: NextRequest) {
   return NextResponse.redirect(url);
 }
 
-// Not for API routes (they answer 401 themselves), the login and phone Setup pages, the CA certificate, or files.
+// Not for API routes (they answer 401 themselves), the login and phone Setup pages, or files.
 export const config = {
-  matcher: ['/((?!api/|_next/|login|setup|branch-ca\\.crt|favicon\\.ico|.*\\.[a-z0-9]+$).*)'],
+  matcher: ['/((?!api/|_next/|login|setup|favicon\\.ico|.*\\.[a-z0-9]+$).*)'],
 };

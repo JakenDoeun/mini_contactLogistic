@@ -3,7 +3,7 @@ import { PhoneSetup } from '@/components/setup/phone-setup';
 
 export const metadata: Metadata = { title: 'Set up this phone' };
 
-// Outside the console layout: opened over plain http on a phone that does not trust the branch yet.
+// Outside the console layout and open without signing in: a new phone opens it before its first sign-in.
 export default function SetupPage() {
   return <PhoneSetup />;
 }

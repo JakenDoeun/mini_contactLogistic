@@ -104,8 +104,7 @@ export type BranchOrigin = {
 
 /**
  * The one https address phones use. BRANCH_URL wins; otherwise this machine's Tailscale name, but only once
- * Tailscale Serve actually forwards it (before that the name would not answer). Neither: the legacy LAN setup.
- * Rollback is therefore: unset BRANCH_URL and run `tailscale serve reset`.
+ * Tailscale Serve actually forwards it (before that the name would not answer). Neither: no phone address yet.
  */
 export async function branchOrigin(): Promise<BranchOrigin> {
   const raw = process.env.BRANCH_URL;
@@ -367,7 +366,7 @@ export function diagnoseTailscale(
       id: 'address',
       label: 'Phone address',
       state: 'warn',
-      detail: 'No Tailscale address yet, so phones are given the legacy LAN setup.',
+      detail: 'No Tailscale address yet, so phones have no address to open.',
       fix: 'Fix the failing steps above; the address is picked up automatically once Serve shares the app.',
     });
   }

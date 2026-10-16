@@ -174,9 +174,12 @@ test('login: pages redirect to sign-in without a session; a forged cookie passes
   }
   const deep = await send('/parcels?q=CB1');
   assert.equal(new URL(deep.headers.get('location')!, site.url).searchParams.get('next'), '/parcels?q=CB1');
-  // Open without a session: the phone Setup page, the login page, the CA certificate route and the branch address.
+  // Open without a session: the phone Setup page, the login page and the branch address.
   for (const open of ['/setup', '/login', '/api/branch-address']) assert.equal((await send(open)).status, 200, open);
-  assert.notEqual((await send('/branch-ca.crt')).status, 307);
+  // The retired Caddy certificate download is an ordinary unknown page now: signed out, it goes to sign-in.
+  const retired = await send('/branch-ca.crt');
+  assert.equal(retired.status, 307, 'no certificate is served');
+  assert.equal(new URL(retired.headers.get('location')!, site.url).pathname, '/login');
 });
 
 test('login: first account needs the right one-time code and a same-site request; then the code is gone', async () => {

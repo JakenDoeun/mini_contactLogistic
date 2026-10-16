@@ -1,11 +1,11 @@
 # Branch deployment with Tailscale HTTPS
 
 How staff phones reach the Campus Branch console securely, on any computer and any tailnet, without a fixed LAN IP and without installing a
-certificate on each phone. It replaces the Caddy-by-IP setup in `docs/local-https.md` **once verified**; until then both exist side by side.
+certificate on each phone. It replaced the Caddy-by-IP setup in `docs/local-https.md`, which was retired on 2026-10-16.
 Migration status and rollback: `docs/migration-tailscale.md`.
 
-> **Status (2026-10-12): live on spacek4k for testing, not yet confirmed on a phone.** Serve runs and the computer-side checks pass
-> (`docs/migration-tailscale.md`). The app still uses sample data in the browser, has no staff login yet, and sends no real SMS.
+> **Status (2026-10-16): live on spacek4k and confirmed on a phone** (camera scan, Settings 7/7); the Caddy LAN setup is retired
+> (`docs/migration-tailscale.md`). Staff login is in place; parcel data is still sample data and no real SMS is sent.
 
 ## How it works
 
@@ -32,7 +32,7 @@ expires (the certificates last about 90 days). The only conditions: HTTPS Certif
 is online now and then so renewal can happen. Settings › *Live HTTPS check* shows the issuer and days left, and warns when fewer
 than 14 days remain (which means renewal is not happening: usually the computer has been offline).
 
-The old Caddy setup's certificate (`/branch-ca.crt`, `docs/local-https.md`) is unrelated and only kept for rollback.
+The retired Caddy setup's certificate is unrelated; the app no longer serves it.
 
 ## One-time prerequisites per tailnet
 
@@ -162,5 +162,5 @@ its own configuration, data and tailnet access.
 
 ## Rollback
 
-`tailscale serve reset`, remove `BRANCH_URL` from `.env.local`, restart the app. Phones then get the legacy LAN setup (`docs/local-https.md`)
-again; Caddy and its certificates were never changed.
+The Caddy LAN setup was retired on 2026-10-16; going back to it is described in `docs/migration-tailscale.md`, "Rollback". Caddy, its
+configuration and certificates were kept for that.

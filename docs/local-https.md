@@ -1,5 +1,8 @@
 # Local HTTPS for the branch: Caddy, the office computer's IP, and phone setup
 
+> **Retired 2026-10-16.** Phones now use Tailscale HTTPS (`docs/deploy-tailscale.md`); the app no longer has a LAN mode
+> or the `/branch-ca.crt` download. Kept as the rollback reference: see `docs/migration-tailscale.md`, "Rollback".
+
 The parcel console runs on the office computer. Staff phones use it over the branch Wi-Fi only.
 Nothing is hosted publicly, no domain name is needed, and nothing is reachable from the internet.
 

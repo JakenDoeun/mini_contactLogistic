@@ -9,8 +9,8 @@ Working record of the migration on this computer. Guide for any installation: `d
 | 1. Audit and diagnose | Done | 2026-10-12 |
 | 2. Prepare (backups, config, app support, docs) | **Done** | 2026-10-12 |
 | 3. Tailscale Serve | **Done**: serving `https://spacek4k.tailc4ca3f.ts.net`, tailnet only | 2026-10-12 |
-| 4. Verify | Computer-side checks done; **phone tests outstanding** (see Phase 3 below) | |
-| 5. Retire Caddy setup | Not started. Caddy config and certificates untouched | |
+| 4. Verify | **Done**: phone camera scan over Tailscale owner-confirmed PASS; Settings 7/7 | 2026-10-16 |
+| 5. Retire Caddy setup | **Done** (see Phase 5 below). Caddy stopped and not started by anything; binary, config, data and certificates kept | 2026-10-16 |
 | 6. Portable deployment scripts | Docs done; start/stop/health-check scripts not written | |
 
 ## Phase 1 findings (2026-10-12)
@@ -92,12 +92,34 @@ per prerequisite with its fix. `src/app/api/branch-status/route.ts` measures fre
 the live run passes all seven checks (Let's Encrypt, 89 days left). Real failures were also seen classified correctly: unknown name → dns,
 certificate for another name → tls, nothing listening → refused, app stopped behind Serve → HTTP 502.
 
+## Phase 5: Caddy retired (2026-10-16, owner approval)
+
+Checked first, read-only: Caddy (`~/.local/bin/caddy` v2.11.7, a personal binary) had **no** system or user service,
+cron entry, autostart or shell-profile line, no special permissions, and was **not running**; nothing listened on its
+ports (8080, 8443, admin 2019). Its last saved config (`~/.config/caddy/autosave.json`) served only the old Campus
+Branch LAN address `172.20.10.3` on 8080/8443, forwarding to `127.0.0.1:3000` (this app). Its local CA is not in the
+system trust store (the only extra CA there is an unrelated mkcert one, left alone). Port 443 on the Tailscale address
+belongs to Tailscale Serve. Conclusion: nothing besides Campus Branch's old LAN setup depended on Caddy, so there was
+nothing to stop or disable.
+
+Kept untouched for rollback: the Caddy binary, `~/.config/caddy/`, `~/.local/share/caddy/` (incl. its CA and
+certificates), `deploy/Caddyfile`, `docs/local-https.md`, and `~/campus-branch-backup-2026-10-12/` (all 17 files match
+`SHA256SUMS`; only the list's own line differs, recorded while it was being written).
+
+Removed from the app: the LAN address mode (`src/lib/branch-address.ts`), Caddy's status and CA reader
+(`src/lib/branch-ca.ts`), the `/branch-ca.crt` download, the legacy rows in Settings › Ready for phones?, the
+certificate-install steps and `?auto` redirect on `/setup`, the LAN wording on the Settings phone card, and
+`CADDY_CA_DIR` from `deploy/branch.env.example`. Phones that installed the "Caddy Local Authority" profile can remove it
+(iPhone: Settings › General › VPN & Device Management; Android: Settings › Security › Credentials); it is no longer used.
+
 ## Rollback
 
 - Before Phase 3: nothing to undo at runtime. To restore the Phase 2 source files, copy them back from the backup folder.
 - After Phase 3: `tailscale serve reset`, remove `BRANCH_URL` from `.env.local` if set, restore `package.json` and `next.config.ts` from the
-  backup folder if wanted, restart the app. Caddy (`docs/local-https.md`) works as before;
-  start it with the current IP, e.g. `BRANCH_IP=<ip> HTTP_PORT=8080 HTTPS_PORT=8443 caddy run --config deploy/Caddyfile`.
+  backup folder if wanted, restart the app.
+- After Phase 5: `git revert` the Caddy-retirement commit to bring the LAN mode, `/branch-ca.crt` and the legacy Settings rows back,
+  rebuild, then start Caddy with the current IP, e.g. `BRANCH_IP=<ip> HTTP_PORT=8080 HTTPS_PORT=8443 caddy run --config deploy/Caddyfile`
+  (`docs/local-https.md`). Sign-in over a LAN address also needs `BRANCH_URL` set to it (`docs/phase2-login.md`).
 
 ## Not production-ready (do not rely on these yet)
 

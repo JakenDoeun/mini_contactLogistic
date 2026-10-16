@@ -24,7 +24,8 @@ Sources: backend plan Revision 3 ("Database schema", "Imports", "Phase 1: Founda
   revised while its import is `checked` and is frozen once it is not, decision 38), `notifications`,
   `notification_parcels`, `contact_attempts`, `contact_attempt_parcels`, `audit_log`, `backup_runs`): no DELETE; triggers
   `BEFORE DELETE … RAISE(ABORT)` on all of them, and `BEFORE UPDATE … RAISE(ABORT)` on `parcel_phone_changes`,
-  `parcel_scan_events` and `audit_log`.
+  `parcel_scan_events` and `audit_log`. Since Phase 3 (migration 0003, decision 40) the delete triggers let the retention
+  job's own transaction delete expired rows; nothing else can (docs/phase3-backups.md).
 
 ## Tables (18)
 
@@ -197,7 +198,7 @@ CHECK in (`waiting`, `unreadable`, `imported`, `dismissed`), `first_seen_at`, `i
 Phone numbers and message bodies live only in tables 1, 6, 8, 11 (and the parcel's import evidence in 3). Access: only
 through server route handlers that check the session (Phase 2); no route returns them to a signed-out request; no bulk export
 in V1; the database file, backups and logs are readable only by the account running the app (mode 0700 folders) and
-backups are encrypted (Phase 3).
+backups stay on this computer in the same 0700 folder (Phase 3, decision 40: no encryption or off-machine copy).
 
 ### System
 
@@ -425,6 +426,7 @@ Node 24.21.0: the glob finds the same 46 tests). The existing 46 tests must stil
 | 37 | Phase 3 secrets: service account and `/etc/campus-branch/branch.env` (service account, 0600) created during Phase 3 before the restic password exists; password stored there directly; no temporary user-owned secrets file; does not authorise real imports | Resolved 2026-10-12 |
 | 38 | Review decisions (finding I3): staff may revise an item's decision any number of times while its import is `checked`; Confirm, cancel or failure freezes it. Each decision is audited with `item_kind`, `resolution_from`, `resolution_to` only, never names, phones or message text | Approved 2026-10-14 |
 | 39 | Local dates (finding I2): must be real calendar dates (`date(x) IS x`), enforced by triggers in migration 0001; leap days follow the Gregorian calendar | Approved 2026-10-14 |
+| 40 | Plan Revision 4 (Phase 3): local backups only (VACUUM INTO, checked, kept 3 days), no restic or off-machine copy; `synchronous = FULL`, `secure_delete`; rolling deletion of parcel data after N days (default 7, 1–14, admin only); `users.is_admin`; replaces the restic part of decision 37 | Approved 2026-10-17 |
 
 ## Implementation notes (2026-10-12)
 
@@ -479,13 +481,13 @@ reproduced (H1, H2); none could occur yet because no app code used the database.
 | L1 | Low | Seed's production guard compares unresolved paths (a symlink or bind mount gets past it) | Open | Before Phase 4: compare real paths and refuse when `NODE_ENV=production` |
 | L2 | Low | Audit values are checked for phone shapes only; free-text keys (`counts`, `rules`, `file_name`) could carry a name | Partly: closed sets for the new review keys | Phase 4: a value rule per key (counts numeric, rules rule-ID pattern) |
 | L3 | Low | Tests missing for indexes, several CHECKs, the migration CLI, backup-folder mode, second-file failure | Fixed `297ed1c` | — |
-| L4 | Low | `start-with-db.ts` does not forward stop signals to the app | Open (npm scripts no longer use it) | Phase 10: forward SIGTERM/SIGINT or use systemd `ExecStartPre=` |
+| L4 | Low | `start-with-db.ts` does not forward stop signals to the app | Superseded in Phase 3: the production launcher `scripts/serve.ts` forwards SIGTERM/SIGINT and saves a backup on stop | — |
 | I1 | Info | Code rollback after a later migration refuses start-up (`migration_missing`) by design | Documented | Every rollback runbook restores the pre-migration copy with the old code |
 | I2 | Info | GLOB date CHECK accepted impossible dates | Fixed `d86e75e` (decision 39) | — |
 | I3 | Info | Whether review decisions can be revised before Confirm | Decided and implemented `a6dc176` (decision 38) | Phase 4 Confirm uses `decideReviewItem()` |
 | I4 | Info | `resolveDataDir` skips the 0700 check on Windows | Open | Phase 10: Windows folder ACLs |
 | I5 | Info | `__drizzle_migrations.id` is NULL (same as Drizzle's migrator); order comes from `created_at` | Accepted | — |
-| I6 | Info | A failed pre-migration copy can leave a partial file inside the 0700 backups folder | Accepted | Phase 3: backup pruning removes it |
+| I6 | Info | A failed pre-migration copy can leave a partial file inside the 0700 backups folder | Fixed in Phase 3: copies are written to a temporary name and renamed after the check; pruning removes stale temporary files | — |
 
 Also to check in Phase 2: `MIGRATIONS_FOLDER` is found from the location of `paths.ts`; inside a Next.js server bundle
 that location may differ, so the first database-backed route must prove `openVerifiedDatabase()` finds `drizzle/`.

@@ -15,6 +15,7 @@ const hashToken = (token: string) => crypto.createHash('sha256').update(token).d
 export interface SessionUser {
   userId: number;
   username: string;
+  isAdmin: boolean;
 }
 
 function purgeExpired(db: Db, now: Date) {
@@ -40,10 +41,10 @@ export function findSession(db: Db, token: unknown, now = new Date()): SessionUs
   const tokenHash = hashToken(token);
   const row = db
     .prepare(
-      `SELECT s.user_id, s.expires_at, s.last_seen_at, u.username, u.disabled
+      `SELECT s.user_id, s.expires_at, s.last_seen_at, u.username, u.disabled, u.is_admin
        FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`,
     )
-    .get(tokenHash) as { user_id: number; expires_at: string; last_seen_at: string; username: string; disabled: number } | undefined;
+    .get(tokenHash) as { user_id: number; expires_at: string; last_seen_at: string; username: string; disabled: number; is_admin: number } | undefined;
   if (!row) return null;
   const t = now.getTime();
   const lastSeen = Date.parse(row.last_seen_at);
@@ -52,7 +53,7 @@ export function findSession(db: Db, token: unknown, now = new Date()): SessionUs
     return null;
   }
   if (t - lastSeen >= TOUCH_MS) db.prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?').run(now.toISOString(), tokenHash);
-  return { userId: row.user_id, username: row.username };
+  return { userId: row.user_id, username: row.username, isAdmin: row.is_admin === 1 };
 }
 
 export function endSession(db: Db, token: unknown): boolean {

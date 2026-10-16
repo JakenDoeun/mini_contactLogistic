@@ -29,3 +29,6 @@ export function parseScanTime(raw: string | null | undefined): { utc: string; da
 }
 
 export const nowIso = () => new Date().toISOString();
+
+/** The calendar date in Cambodia (UTC+7) at `now`, whatever time zone the computer is set to (plan Revision 4). */
+export const cambodiaDate = (now = new Date()) => new Date(now.getTime() + PHNOM_PENH_OFFSET_MS).toISOString().slice(0, 10);

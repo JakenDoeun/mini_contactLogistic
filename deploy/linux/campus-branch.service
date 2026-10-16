@@ -1,0 +1,26 @@
+# Campus Branch: start at boot on Linux (plan Revision 4). Installed by deploy/linux/install.sh.
+# serve.ts restarts the web app after a crash and saves a backup when systemd stops it (SIGTERM, also at shutdown).
+[Unit]
+Description=Campus Branch parcel console
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=campus-branch
+Group=campus-branch
+WorkingDirectory=/opt/campus-branch/app
+Environment=NODE_ENV=production
+ExecStart=/opt/campus-branch/node/bin/node scripts/serve.ts --data-dir=/var/lib/campus-branch --port=3000
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

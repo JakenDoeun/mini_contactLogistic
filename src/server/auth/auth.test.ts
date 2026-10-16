@@ -54,7 +54,7 @@ test('login: the right password signs in and is audited with the user ID only', 
   const r = await logIn(db, ' STAFF.ONE ', PASSWORD, T0);
   assert.ok(r.ok);
   assert.equal(r.userId, userId);
-  assert.deepEqual(findSession(db, r.token, T0), { userId, username: 'staff.one' });
+  assert.deepEqual(findSession(db, r.token, T0), { userId, username: 'staff.one', isAdmin: true }, 'the first account is the admin');
   const last = auditRows(db).at(-1)!;
   assert.deepEqual({ ...last, detail: JSON.parse(last.detail) }, { action: 'login.succeeded', user_id: userId, entity_ids: `[${userId}]`, outcome: 'ok', detail: {} });
 });
@@ -202,7 +202,7 @@ test('first run: one-time code file 0600, never overwritten; wrong code refused;
 
   const ok = await createFirstAccount(db, dataDir, code.toLowerCase().replace(/-/g, ' '), 'First.Staff', PASSWORD, T0);
   assert.ok(ok.ok);
-  assert.deepEqual(findSession(db, ok.token, T0), { userId: ok.userId, username: 'first.staff' });
+  assert.deepEqual(findSession(db, ok.token, T0), { userId: ok.userId, username: 'first.staff', isAdmin: true });
   assert.equal(fs.existsSync(file), false, 'the code is used up');
   assert.deepEqual(await createFirstAccount(db, dataDir, code, 'second.staff', PASSWORD, T0), { ok: false, reason: 'exists' });
   assert.equal(ensureFirstRunCode(db, dataDir), null);

@@ -56,7 +56,7 @@ export const hasUsers = (db: Db) => db.prepare('SELECT 1 FROM users LIMIT 1').ge
 
 export type CreateUserResult = { ok: true; userId: number } | { ok: false; reason: 'invalid_username' | 'invalid_password' | 'exists' };
 
-/** Adds a staff account (first-run screen or scripts/user.ts). */
+/** Adds a staff account (first-run screen or scripts/user.ts). The first account is the admin (plan Revision 4). */
 export async function createUser(db: Db, rawUsername: unknown, password: unknown, source: 'first_run' | 'cli', now = new Date(), onlyIfNoUsers = false): Promise<CreateUserResult> {
   const username = normalizeUsername(rawUsername);
   if (!validUsername(username)) return { ok: false, reason: 'invalid_username' };
@@ -66,7 +66,9 @@ export async function createUser(db: Db, rawUsername: unknown, password: unknown
     if (onlyIfNoUsers && hasUsers(db)) return { ok: false, reason: 'exists' };
     if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) return { ok: false, reason: 'exists' };
     const userId = Number(
-      db.prepare('INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)').run(username, hash, now.toISOString()).lastInsertRowid,
+      db
+        .prepare('INSERT INTO users (username, password_hash, created_at, is_admin) VALUES (?, ?, ?, NOT EXISTS (SELECT 1 FROM users))')
+        .run(username, hash, now.toISOString()).lastInsertRowid,
     );
     writeAudit(db, { action: 'user.created', entity: 'user', entityIds: [userId], outcome: 'ok', at: now.toISOString(), detail: { source } });
     return { ok: true, userId };

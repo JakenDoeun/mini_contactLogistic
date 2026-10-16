@@ -1,17 +1,19 @@
 // npm run test:integration — builds the app once in a temporary copy, then tests it through `next start`.
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync, spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
+import { createUser } from '../../src/server/auth/accounts.ts';
 import { verifyPassword } from '../../src/server/auth/password.ts';
 import { readActiveRecoveryCode, rotateRecoveryCode } from '../../src/server/auth/recovery.ts';
 import { createSession } from '../../src/server/auth/sessions.ts';
 import { openDatabase } from '../../src/server/db/connection.ts';
 import { applyPending, migrateDatabase } from '../../src/server/db/migrate.ts';
-import { buildCopy, REPO, startApp, tempDir } from './harness.ts';
+import { buildCopy, freePort, REPO, startApp, tempDir } from './harness.ts';
 
 let buildDir: string;
 const cleanups: (() => void | Promise<void>)[] = [];
@@ -336,4 +338,78 @@ test('recovery: the recovery code resets a password once through the route, ends
   for (const where of [audit, site.log()]) {
     assert.equal(where.includes(bare) || where.includes(code), false, 'code never in the audit log or server output');
   }
+});
+
+test('backups and data: any staff member saves a backup; only the admin changes how long data is kept (Phase 3)', async () => {
+  const db = openDatabase(path.join(site.dataDir, 'branch.db'));
+  const { id: adminId } = db.prepare("SELECT id FROM users WHERE username = 'first.staff'").get() as { id: number };
+  const staff = await createUser(db, 'second.staff', 'correct horse battery', 'cli');
+  assert.ok(staff.ok);
+  const adminCookie = `__Host-cb_session=${createSession(db, adminId)}`;
+  const staffCookie = `__Host-cb_session=${createSession(db, staff.userId)}`;
+  db.close();
+  const putDays = (days: unknown, cookie: string, origin?: string) =>
+    send('/api/settings/retention', { method: 'PUT', body: JSON.stringify({ days }), headers: { 'content-type': 'application/json' }, cookie, origin });
+
+  const before = await (await send('/api/backup', { cookie: staffCookie })).json();
+  assert.deepEqual({ isAdmin: before.isAdmin, retentionDays: before.retentionDays }, { isAdmin: false, retentionDays: 7 });
+  assert.equal((await postJson('/api/backup', {}, { cookie: staffCookie, origin: 'https://evil.example' })).status, 403);
+  const saved = await postJson('/api/backup', {}, { cookie: staffCookie });
+  assert.equal(saved.status, 200);
+  const { lastBackupAt, failing } = await saved.json();
+  assert.equal(failing, false);
+  assert.ok(Date.now() - Date.parse(lastBackupAt) < 60_000, 'a backup was just saved');
+  assert.ok(fs.readdirSync(path.join(site.dataDir, 'backups')).some((f) => f.startsWith('backup-')));
+
+  assert.equal((await putDays(3, staffCookie)).status, 403, 'staff cannot change it');
+  assert.equal((await putDays(3, adminCookie, 'https://evil.example')).status, 403);
+  assert.equal((await putDays(15, adminCookie)).status, 400);
+  const changed = await putDays(3, adminCookie);
+  assert.equal(changed.status, 200);
+  assert.deepEqual(await changed.json(), { retentionDays: 3 });
+  const after = await (await send('/api/backup', { cookie: adminCookie })).json();
+  assert.deepEqual({ isAdmin: after.isAdmin, retentionDays: after.retentionDays }, { isAdmin: true, retentionDays: 3 });
+  assert.equal((await putDays(7, adminCookie)).status, 200);
+});
+
+test('serve: migrates, starts the app, restarts it after a crash, and saves a backup when stopped (Phase 3)', async () => {
+  const dataDir = await dataFolder();
+  const port = await freePort();
+  let out = '';
+  const serve = spawn(process.execPath, ['scripts/serve.ts', `--data-dir=${dataDir}`, `--port=${port}`], {
+    cwd: buildDir,
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1', BRANCH_URL: '' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  serve.stdout!.on('data', (d) => (out += d));
+  serve.stderr!.on('data', (d) => (out += d));
+  cleanups.push(() => void (serve.exitCode === null && serve.kill('SIGKILL')));
+  const up = async (wantUp: boolean) => {
+    for (let i = 0; i < 300; i++) {
+      const ok = await fetch(`http://127.0.0.1:${port}/login`, { redirect: 'manual' }).then(() => true, () => false);
+      if (ok === wantUp) return;
+      if (serve.exitCode !== null) throw new Error(`serve exited:\n${out}`);
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error(`the app did not come ${wantUp ? 'up' : 'down'}:\n${out}`);
+  };
+  await up(true);
+  assert.equal(fs.readFileSync(path.join(dataDir, 'serve.pid'), 'utf8'), String(serve.pid));
+  assert.match(out, /Backup saved \(start\)/);
+
+  const [web] = execFileSync('pgrep', ['-P', String(serve.pid)], { encoding: 'utf8' }).trim().split('\n').map(Number);
+  process.kill(web, 'SIGKILL');
+  await up(false);
+  await up(true);
+  assert.match(out, /Web app stopped \(SIGKILL\); restarting in 5 s/);
+
+  const db = openDatabase(path.join(dataDir, 'branch.db'));
+  db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('it.marker', '1', ?)").run(new Date().toISOString());
+  db.close();
+  const exited = new Promise<number | null>((resolve) => serve.once('exit', resolve));
+  serve.kill('SIGTERM');
+  assert.equal(await exited, 0, out);
+  assert.match(out, /Backup saved \(stop\)/, 'the change made before stopping is in a backup');
+  assert.equal(fs.existsSync(path.join(dataDir, 'serve.pid')), false);
+  assert.equal(fs.readdirSync(path.join(dataDir, 'backups')).filter((f) => f.startsWith('backup-')).length, 2);
 });

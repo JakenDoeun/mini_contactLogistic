@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FolderMonitor } from '@/components/import/folder-monitor';
+import { BackupCard } from './backup-card';
 import { PhoneSetupCard } from './phone-setup-card';
 import { composeMessage } from '@/lib/parcel-logic';
 import {
@@ -43,7 +44,7 @@ export function SettingsView() {
         <Badge variant="info" className="bg-card">
           Preview
         </Badge>
-        Changes are remembered in this browser only. Nothing reaches the branch server until the backend is connected.
+        Backups and data are on the server. The other settings are remembered in this browser only until the backend is connected.
       </p>
 
       {!settings ? (
@@ -53,6 +54,7 @@ export function SettingsView() {
         </div>
       ) : (
         <div className="mt-6 flex flex-col gap-6">
+          <BackupCard />
           <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
             <MonitoringSection settings={settings} />
             <FolderMonitor state={monitor} error={null} settingsLink={false} />

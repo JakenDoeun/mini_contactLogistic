@@ -7,6 +7,7 @@ import { nowIso } from './values.ts';
 const DETAIL_KEYS = new Set([
   'count', 'counts', 'rules', 'status_from', 'status_to', 'settings_keys', 'error_code', 'file_name', 'sha256',
   'phone_valid', 'migrations_applied', 'arrival_dates', 'source', 'item_kind', 'resolution_from', 'resolution_to',
+  'retention_days', 'cutoff_date',
 ]);
 // Keys whose value must come from a closed set, so no free text can ride on them.
 const CLOSED_SETS: Record<string, readonly (string | null)[]> = {

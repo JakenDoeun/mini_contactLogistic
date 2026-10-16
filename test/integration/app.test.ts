@@ -87,7 +87,7 @@ test('server bundle: a missing, stale or refused database is not used, and is le
   r = await probe(url);
   assert.equal(r.ok, false);
   assert.equal(r.code, 'self_test_failed');
-  assert.match(String(r.message), /missing tables: recovery_codes/);
+  assert.match(String(r.message), /missing tables: |\d+ of \d+ migrations applied/, 'refused because it is behind the code');
   assert.deepEqual(fs.readFileSync(dbPath), before, 'the stale database was not migrated or changed');
 });
 

@@ -12,7 +12,7 @@ Plan: Campus Branch backend plan, Revision 3 (Phase 0). This file records what w
 | Node 24.21.0 | **Default since 2026-10-12**; 24.14.0 kept for rollback |
 | Real export headers, Shopee filter spec, synthetic fixtures | Done (`docs/import-rules.md`, `test/fixtures/`) |
 | Next.js security review of 15.5.27 | Done; one finding, see below |
-| Next.js 16 upgrade | **In preparation** on branch `phase0-upgrade` (owner, 2026-10-13: development does not wait for the advisories; internal network/tailnet only). Versions are final only after the 2026-10-14 advisory review |
+| Next.js 16 upgrade | **In preparation** on branch `phase0-upgrade` (owner, 2026-10-13: development does not wait for the advisories; internal network/tailnet only). Versions are final only after the 2026-10-14 advisory review. **Reviewed 2026-10-15: Next.js 16.4.1 (patched), TypeScript 6.0.3 final; see "Merge and follow-ups"** |
 | Phase 1 | **Committed** (`cd62115`), built ahead of Phase 0 under the sequencing exception: 46 + 33 tests pass on a clean clone; must be re-run on the upgraded stack |
 | Phase 2 | Not started; needs every Phase 0 acceptance item and the owner's approval |
 
@@ -122,9 +122,38 @@ Merged into `main` on 2026-10-14 with the owner's explicit approval; the items b
 open as follow-ups. The provisional versions (Next.js 16.4.0, TypeScript 6.0.3) remain provisional until the first item
 is done.
 
-- [ ] **Security advisory review — NOT done; the security gate has NOT passed.** When the announced Next.js
+- [x] ~~Security advisory review~~ superseded by the 2026-10-15 entry below; kept for the record. Original text: **NOT done; the security gate has NOT passed.** When the announced Next.js
   advisories are published: record every ID and fixed version here, check whether 16.4.0 (and 15.5.27 on `main`) are
   affected, and if so move to the patched exact version and re-run the table above.
+  - 2026-10-14 check (GitHub Advisory Database, `next`, newest first): the newest `next` advisories are from
+    2026-10-07. GHSA-cjq9-62q9-8jv4 (high, SSRF in Image Optimization; >= 16.0.0 < 16.3.8), GHSA-mcj8-r9mp-w47p
+    (medium; >= 16.0.0 < 16.3.8, >= 15.0.0 < 15.5.27), GHSA-4jqv-mc3x-m676 (medium; >= 16.0.0 < 16.3.8,
+    >= 15.0.0 < 15.5.27), GHSA-f87g-xv8r-7p7x (medium; >= 16.0.0 < 16.3.8), GHSA-3w37-wq28-93x7 (medium;
+    >= 16.3.0 < 16.3.8) and GHSA-39w2-rjm5-chcv (low, dev server only; >= 16.0.0 < 16.3.8). Earlier criticals:
+    GHSA-vcvr-r3jv-pc5j (fixed in 16.3.6) and GHSA-2xp9-vwfh-vxw4 / GHSA-p293-qw3h-jr36 (fixed in 16.3.3 and 15.5.24).
+    None lists 16.4.0 in an affected range. The batch announced for 2026-10-14 is not published yet, so this item
+    stays open.
+- [x] **Security advisory review — done 2026-10-15 on branch `phase2-login`** (owner instruction; `main` is unchanged
+  and still on the affected 16.4.0 until the Phase 2 merge). Source: GitHub security advisories for `vercel/next.js`,
+  published 2026-10-14 17:46–17:47 UTC; Next.js 16.4.1 published 2026-10-14 17:43 UTC (npm `latest`).
+
+  | Advisory | Severity | Summary | Affected 16.x | Patched |
+  |---|---|---|---|---|
+  | GHSA-2464-fhr4-w9xw (CVE-2026-96889) | Critical | Unauthenticated RCE in the Image Optimization API when SVG files are used | > 16.0.0, <= 16.4.0 (15.x: <= 15.5.27) | 16.4.1 (15.5.28) |
+  | GHSA-673q-mjm6-r5xr | Critical | Unauthenticated RCE in `use cache` functions returning typed arrays | >= 16.0.0, <= 16.4.0 | 16.4.1 |
+  | GHSA-p3m5-59mp-jv5r | High | Denial of service in the App Router using Server Actions | >= 16.0.0, <= 16.4.0 (13.x–15.x: <= 15.5.27) | 16.4.1 (15.5.28) |
+
+  16.4.0 was affected by all three. Exposure in this app: no `use cache` and no Server Actions in `src/`, and
+  `next/image` is not used, but the `/_next/image` endpoint exists by default; the app is reachable only on the tailnet.
+  All `next` advisories published earlier (215 scanned) are fixed at or before 16.3.8, so none affects 16.4.1.
+  **Selected: `next` 16.4.1, exact pin** (`package.json` and `package-lock.json`; only `next`, `@next/env` and the
+  `@next/swc-*` binaries change, plus npm recording Tailwind's optional WebAssembly bundle entries, not installed on
+  Linux x64). PostCSS bundled by Next stays 8.5.23 (past 8.5.22). TypeScript 6.0.3: no advisories; now final.
+  Verification on a clean ext4 copy with `npm ci`: 128/128 unit tests, `tsc --noEmit` clean, `next build` (Next.js
+  16.4.1) ok, `npm audit --omit=dev` 0 vulnerabilities; integration 12/12 (its own `npm ci` + `next build` copy).
+  Full `npm audit` still lists only the accepted dev-only esbuild GHSA-67mh-4wv8-2f99 via drizzle-kit
+  (`docs/phase1-schema.md`). The project folder's `node_modules` was left on 16.4.0 because the dev server was running:
+  run `npm ci` there after stopping it.
 - [ ] Live HTTPS check: start `npm run start:lan` from a normal terminal and open Settings; expect 7 / 7.
 - [ ] Camera scanner on the phone at the Tailscale address.
 - [x] Owner approval to merge `phase0-upgrade` into `main` (2026-10-14).

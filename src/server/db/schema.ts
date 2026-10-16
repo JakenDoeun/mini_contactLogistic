@@ -1,4 +1,4 @@
-// Approved Phase 1 schema (docs/phase1-schema.md, decisions 31–37): 18 tables.
+// Approved Phase 1 schema (docs/phase1-schema.md, decisions 31–37): 18 tables, plus `recovery_codes` (Phase 2, 0002).
 // Triggers (append-only tables, import status changes) are not expressible here; they live in the migration SQL.
 import { sql, type SQL } from 'drizzle-orm';
 import {
@@ -385,6 +385,28 @@ export const sessions = sqliteTable(
   (t) => [index('sessions_user_idx').on(t.userId)],
 );
 
+// Password recovery code (docs/phase2-login.md, "Recovery code"). The database decides validity, never the file: only
+// the SHA-256 of the code is stored, and a row with ended_at set never validates again. At most one active row.
+export const recoveryCodes = sqliteTable(
+  'recovery_codes',
+  {
+    id: integer('id').primaryKey(),
+    codeHash: text('code_hash').notNull(),
+    createdAt: text('created_at').notNull(),
+    endedAt: text('ended_at'),
+    endReason: text('end_reason'),
+    usedBy: integer('used_by').references(() => users.id, restrict),
+  },
+  (t) => [
+    uniqueIndex('recovery_codes_hash_unique').on(t.codeHash),
+    uniqueIndex('recovery_codes_one_active').on(sql`(${t.endedAt} IS NULL)`).where(sql`${t.endedAt} IS NULL`),
+    check('recovery_codes_hash', sql`length(${t.codeHash}) = 64`),
+    check('recovery_codes_end_reason', oneOf(t.endReason, ['used', 'rotated', 'revoked'], true)),
+    check('recovery_codes_ended', sql`(${t.endedAt} IS NULL) = (${t.endReason} IS NULL)`),
+    check('recovery_codes_used_by', sql`(${t.endReason} IS 'used') = (${t.usedBy} IS NOT NULL)`),
+  ],
+);
+
 export const auditLog = sqliteTable(
   'audit_log',
   {
@@ -435,9 +457,10 @@ export const backupRuns = sqliteTable(
   ],
 );
 
-/** The 18 approved tables, in the order of docs/phase1-schema.md. */
+/** The 18 approved tables, in the order of docs/phase1-schema.md, then the tables added later. */
 export const ALL_TABLES = [
   parcels, imports, importReviewItems, parcelScanEvents, detectedFiles, parcelPhoneChanges,
   sendBatches, notifications, notificationParcels, smsAttempts, contactAttempts, contactAttemptParcels,
   settings, users, sessions, auditLog, workerLease, backupRuns,
+  recoveryCodes,
 ] as const;

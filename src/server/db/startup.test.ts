@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { openDatabase } from './connection.ts';
-import { migrateDatabase, MigrationError, openVerifiedDatabase } from './migrate.ts';
+import { readMigrationFiles } from 'drizzle-orm/migrator';
+import { applyPending, migrateDatabase, MigrationError, openVerifiedDatabase } from './migrate.ts';
 import { MIGRATIONS_FOLDER, PROJECT_ROOT } from './paths.ts';
 import { makeTempDir, removeTempDir } from './test-db.ts';
 
@@ -152,7 +153,10 @@ test('openVerifiedDatabase: only an existing, fully migrated database; never cre
   fs.copyFileSync(path.join(MIGRATIONS_FOLDER, '0000_initial.sql'), path.join(folder, '0000_initial.sql'));
   fs.writeFileSync(path.join(folder, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: journal.entries.slice(0, 1) }));
   const stale = path.join(dir, 'stale.db');
-  await migrateDatabase({ dbPath: stale, backupDir: path.join(dir, 'backups'), migrationsFolder: folder });
+  // applyPending, not migrateDatabase: the self-test would refuse a database without the later tables.
+  const staleDb = openDatabase(stale);
+  applyPending(staleDb, readMigrationFiles({ migrationsFolder: folder }), null);
+  staleDb.close();
   const schemaOf = (p: string) => {
     const d = new Database(p, { readonly: true });
     const s = d.prepare('SELECT type, name, sql FROM sqlite_master ORDER BY name').all();
@@ -161,7 +165,7 @@ test('openVerifiedDatabase: only an existing, fully migrated database; never cre
     return { s, m };
   };
   const before = schemaOf(stale);
-  assert.throws(() => openVerifiedDatabase(stale), /self_test_failed: 1 of \d+ migrations applied/);
+  assert.throws(() => openVerifiedDatabase(stale), /self_test_failed: missing tables: recovery_codes/);
   assert.deepEqual(schemaOf(stale), before);
 
   const current = path.join(dir, 'current.db');
@@ -172,6 +176,86 @@ test('openVerifiedDatabase: only an existing, fully migrated database; never cre
   assert.equal(db.pragma('journal_mode', { simple: true }), 'wal');
 });
 
+test('user CLI: adds an account with a one-time printed password, refuses duplicates, disables and ends sessions', async (t) => {
+  const { dataDir } = tempDataDir(t);
+  const user = (...args: string[]) =>
+    spawnSync(process.execPath, ['scripts/user.ts', ...args], { cwd: PROJECT_ROOT, env: { ...process.env, DATA_DIR: dataDir }, encoding: 'utf8' });
+  assert.equal(user('add', 'staff.two').status, 1, 'no database yet: refused, nothing created');
+  assert.equal(fs.existsSync(path.join(dataDir, 'branch.db')), false);
+  assert.equal(migrateCli(dataDir).status, 0);
+  const added = user('add', 'Staff.Two');
+  assert.equal(added.status, 0, added.stderr);
+  const password = added.stdout.trim().split('\n').at(-1)!;
+  assert.match(password, /^[A-Za-z0-9_-]{20}$/);
+  assert.equal(user('add', 'staff.two').status, 1);
+  assert.equal(user('bogus', 'x').status, 2);
+  const db = new Database(path.join(dataDir, 'branch.db'));
+  const row = db.prepare("SELECT id, password_hash FROM users WHERE username = 'staff.two'").get() as { id: number; password_hash: string };
+  assert.equal(row.password_hash.includes(password), false);
+  db.prepare("INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at) VALUES ('h', ?, 'a', 'b', 'c')").run(row.id);
+  db.close();
+  const disabled = user('disable', 'staff.two');
+  assert.equal(disabled.status, 0, disabled.stderr);
+  const db2 = new Database(path.join(dataDir, 'branch.db'), { readonly: true });
+  assert.deepEqual(db2.prepare('SELECT disabled FROM users WHERE id = ?').get(row.id), { disabled: 1 });
+  assert.equal((db2.prepare('SELECT count(*) AS n FROM sessions').get() as { n: number }).n, 0);
+  assert.equal(JSON.stringify(db2.prepare('SELECT * FROM audit_log').all()).includes(password), false);
+  db2.close();
+  assert.equal(user('disable', 'staff.two').status, 1, 'already disabled');
+});
+
+test('first-run-code: shows an existing code in a terminal only, never creates or replaces one, refuses once setup is done', async (t) => {
+  const { dataDir } = tempDataDir(t);
+  const env = { ...process.env, DATA_DIR: dataDir };
+  const piped = () => spawnSync(process.execPath, ['scripts/first-run-code.ts'], { cwd: PROJECT_ROOT, env, encoding: 'utf8' });
+  // `script` gives the command a real terminal, as when the owner runs it by hand.
+  const inTerminal = () =>
+    spawnSync('script', ['-qec', `${JSON.stringify(process.execPath)} scripts/first-run-code.ts`, '/dev/null'], { cwd: PROJECT_ROOT, env, encoding: 'utf8' });
+  const file = path.join(dataDir, 'first-run-code.txt');
+
+  assert.equal(inTerminal().status, 1, 'no database yet');
+  assert.equal(migrateCli(dataDir).status, 0);
+  const refusedPipe = piped();
+  assert.equal(refusedPipe.status, 1);
+  assert.match(refusedPipe.stderr, /Refusing to print the one-time code into a pipe or a file/);
+  assert.equal(fs.existsSync(file), false, 'nothing created when refused');
+
+  // No code file yet: the command refuses and does not create a setup credential of its own.
+  const missing = inTerminal();
+  assert.equal(missing.status, 1);
+  assert.match(missing.stdout, /No one-time code exists yet/);
+  assert.equal(fs.existsSync(file), false, 'the command never creates a code');
+  // The sign-in page creates the code (ensureFirstRunCode); from then on the command shows it.
+  const { ensureFirstRunCode } = await import('../auth/accounts.ts');
+  const { openVerifiedDatabase: openForPage } = await import('./migrate.ts');
+  const pageDb = openForPage(path.join(dataDir, 'branch.db'));
+  ensureFirstRunCode(pageDb, dataDir);
+  pageDb.close();
+  const first = inTerminal();
+  assert.equal(first.status, 0, first.stdout);
+  const code = fs.readFileSync(file, 'utf8').trim();
+  assert.match(code, /^[A-Z2-9]{4}(-[A-Z2-9]{4}){3}$/);
+  assert.ok(first.stdout.includes(code), 'the code is shown');
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  const again = inTerminal();
+  assert.ok(again.stdout.includes(code), 'same code the second time: never regenerated');
+  assert.equal(fs.readFileSync(file, 'utf8').trim(), code);
+
+  // Setup completed with that code: the command refuses and the code no longer works.
+  const { openVerifiedDatabase } = await import('./migrate.ts');
+  const { createFirstAccount } = await import('../auth/accounts.ts');
+  const db = openVerifiedDatabase(path.join(dataDir, 'branch.db'));
+  t.after(() => db.close());
+  assert.ok((await createFirstAccount(db, dataDir, code, 'first.staff', 'correct horse battery')).ok);
+  const done = inTerminal();
+  assert.equal(done.status, 1);
+  assert.match(done.stdout, /setup is complete/);
+  assert.equal(done.stdout.includes(code), false);
+  assert.equal(fs.existsSync(file), false);
+  assert.deepEqual(await createFirstAccount(db, dataDir, code, 'second.staff', 'correct horse battery'), { ok: false, reason: 'exists' });
+  assert.equal(JSON.stringify(db.prepare('SELECT * FROM audit_log').all()).includes(code), false, 'never logged');
+});
+
 test('the demo seed refuses the production data folder before touching it', () => {
   const result = spawnSync(process.execPath, ['scripts/db-seed.ts'], {
     cwd: PROJECT_ROOT,
@@ -180,4 +264,49 @@ test('the demo seed refuses the production data folder before touching it', () =
   });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /refusing to seed demo data/);
+});
+
+test('recovery-code CLI: show only in a terminal and never creates; rotate replaces; revoke ends; nothing is logged', async (t) => {
+  const { dataDir } = tempDataDir(t);
+  const env = { ...process.env, DATA_DIR: dataDir };
+  const piped = (cmd: string) => spawnSync(process.execPath, ['scripts/recovery-code.ts', cmd], { cwd: PROJECT_ROOT, env, encoding: 'utf8' });
+  const inTerminal = (cmd: string) =>
+    spawnSync('script', ['-qec', `${JSON.stringify(process.execPath)} scripts/recovery-code.ts ${cmd}`, '/dev/null'], { cwd: PROJECT_ROOT, env, encoding: 'utf8' });
+  const file = path.join(dataDir, 'recovery-code.txt');
+  const CODE = /[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){7}/;
+
+  assert.equal(migrateCli(dataDir).status, 0);
+  assert.equal(piped('bogus').status, 2);
+  const none = inTerminal('show');
+  assert.equal(none.status, 1);
+  assert.match(none.stdout, /no active recovery code/);
+  assert.equal(fs.existsSync(file), false, 'show never creates a code');
+
+  const rotated = piped('rotate');
+  assert.equal(rotated.status, 0, rotated.stderr);
+  assert.doesNotMatch(rotated.stdout, CODE, 'rotate does not print the code');
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  assert.match(piped('show').stderr, /Refusing to print the recovery code into a pipe/);
+  const first = inTerminal('show').stdout.match(CODE)?.[0];
+  assert.equal(first, fs.readFileSync(file, 'utf8').trim());
+
+  assert.equal(piped('rotate').status, 0);
+  const second = inTerminal('show').stdout.match(CODE)?.[0];
+  assert.ok(second && second !== first, 'rotate made a new code');
+
+  fs.rmSync(file);
+  const missing = inTerminal('show');
+  assert.match(missing.stdout, /its file is missing/);
+  assert.equal(fs.existsSync(file), false, 'a missing file is never regenerated by show');
+
+  assert.match(piped('revoke').stdout, /Recovery code revoked/);
+  assert.match(piped('revoke').stdout, /no active recovery code/);
+  const db = new Database(path.join(dataDir, 'branch.db'), { readonly: true });
+  t.after(() => db.close());
+  const everything = JSON.stringify(db.prepare('SELECT * FROM audit_log').all());
+  for (const code of [first!, second!]) assert.equal(everything.includes(code.replace(/-/g, '').slice(0, 8)), false);
+  assert.deepEqual(
+    (db.prepare('SELECT end_reason FROM recovery_codes ORDER BY id').all() as { end_reason: string }[]).map((r) => r.end_reason),
+    ['rotated', 'revoked'],
+  );
 });

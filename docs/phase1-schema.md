@@ -231,6 +231,12 @@ phone number. Index `at`; (`entity`, `at`). No UPDATE or DELETE (triggers).
 **18. `backup_runs`**: `at`, `kind` CHECK in (`local`, `off_machine`, `restore_drill`, `pre_migration`), `drive` CHECK in
 (`A`, `B`) NULL, `snapshot_id`, `outcome` CHECK in (`ok`, `failed`), `error`. Index (`kind`, `at`).
 
+**19. `recovery_codes`** (added in Phase 2, migration `0002_recovery_codes`; outside the original 18, approved by the
+owner 2026-10-15; migrations `0000` and `0001` unchanged): `code_hash`
+(SHA-256 hex, unique, CHECK length 64), `created_at`, `ended_at`, `end_reason` CHECK in (`used`, `rotated`, `revoked`)
+NULL, `used_by` → `users` (set exactly when `end_reason` = `used`). Unique partial index: at most one row with
+`ended_at IS NULL`. The code itself is never stored here. Rules: `docs/phase2-login.md`, "Recovery code".
+
 Tables 14–15 are created in Phase 1 but used from Phase 2 (login); 7–12 from Phase 9; 18 from Phase 1 (pre-migration
 copies) and Phase 3. Creating them all in the initial migration avoids later migrations on tables that will hold real data.
 

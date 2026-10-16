@@ -42,3 +42,7 @@ logs/
 graphify-out/
 .DS_Store
 Thumbs.db
+
+# Login codes live in the data folder outside the project; never commit a copy.
+first-run-code.txt
+recovery-code.txt*

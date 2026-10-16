@@ -15,6 +15,13 @@
       "when": 1791954166130,
       "tag": "0001_strict_local_dates",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791989508316,
+      "tag": "0002_recovery_codes",
+      "breakpoints": true
     }
   ]
 }

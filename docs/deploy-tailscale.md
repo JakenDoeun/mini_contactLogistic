@@ -119,6 +119,15 @@ like these replaces the default allow-all policy: check that admins keep the acc
 
 ## Troubleshooting
 
+**"Server not found" in the computer's browsers, while phones open the address** (seen 2026-10-16 on spacek4k):
+another VPN or DNS filter owns the computer's DNS and does not know `*.ts.net` names. On spacek4k it was Cloudflare
+WARP: `/etc/resolv.conf` points at WARP's proxy (`127.0.2.2`), so `getent hosts <name>` prints nothing although
+`resolvectl query <name>` works. Do not repoint `/etc/resolv.conf` (WARP owns it). Either add the name to the hosts
+file (`100.x.y.z <name>`; `tailscale ip -4` shows the address; Windows: `C:\Windows\System32\drivers\etc\hosts`), add
+`ts.net` to the other VPN's local-domain/split-DNS exceptions, or turn that VPN off. Settings' Live HTTPS check is not
+affected: it connects to the Tailscale address directly. On phones only one VPN can be active: Tailscale must be the
+one that is on.
+
 Start with **Settings › Ready for phones? › Check again**. Each line is measured on the computer when you press it, and the first
 failing line is usually the one to fix.
 

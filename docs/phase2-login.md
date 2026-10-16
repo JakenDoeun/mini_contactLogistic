@@ -1,8 +1,8 @@
 # Phase 2: login and sessions
 
 Status: **merged into `main` on 2026-10-16 with the owner's explicit approval.** Device acceptance was
-**confirmed by the owner on 2026-10-16** (after the merge): laptop, phone and password recovery PASS. Settings 7/7 was
-not part of that confirmation and stays open (see "Device acceptance" and open issue 2). The Next.js security advisory review was done on
+**confirmed by the owner on 2026-10-16** (after the merge): laptop, phone and password recovery PASS; Settings 7/7 PASS after the Live HTTPS
+check fix (`343ba44`). The Next.js security advisory review was done on
 2026-10-15: Next.js moved to the patched **16.4.1** on this branch (GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr,
 GHSA-p3m5-59mp-jv5r; see `docs/phase0.md`, "Merge and follow-ups"). Synthetic data only; no deployment.
 
@@ -236,15 +236,17 @@ Run by the owner on their own devices against the running server at `https://spa
 | Laptop: sign-in, session, logout | **PASS** (owner-confirmed) |
 | Phone: Tailscale, Safari, barcode scan with the camera | **PASS** (owner-confirmed) |
 | Password recovery | **PASS** (owner-confirmed) |
-| Settings › Ready for phones? 7/7 | **Not confirmed**: not part of the owner's report |
+| Settings › Ready for phones? 7/7 | **PASS** (owner-confirmed, `npm run dev`, after fix `343ba44`) |
 
 ## Open issues
 
 1. **Security advisory review (Phase 0): done 2026-10-15.** Next.js 16.4.1 (exact pin) fixes the three 2026-10-14
    advisories that affected 16.4.0; TypeScript 6.0.3 final. `main` stays on the affected 16.4.0 until this branch is
    merged. After pulling, run `npm ci` in the project folder (with the dev server stopped).
-2. **Phase 2 device checks: owner-confirmed PASS 2026-10-16** for the laptop, phone and recovery (see "Device
-   acceptance"). **Settings 7/7 not confirmed**: open, carried over from Phase 0.
+2. **Phase 2 device checks: owner-confirmed PASS 2026-10-16** for the laptop, phone, recovery and Settings 7/7 (see
+   "Device acceptance"). The office laptop needed an `/etc/hosts` line to open the address in its browsers because
+   Cloudflare WARP owns its DNS (`docs/deploy-tailscale.md`, Troubleshooting); this is a device setting, not an app
+   change.
 3. Login works through the branch address (Tailscale or `BRANCH_URL`) and on the office computer at `127.0.0.1` or
    `localhost`. The legacy Caddy LAN addresses are not accepted origins (and a plain-http LAN address cannot hold a
    Secure cookie). Set `BRANCH_URL` if Caddy must stay in use.

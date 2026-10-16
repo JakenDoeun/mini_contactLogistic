@@ -154,12 +154,13 @@ is done.
   Full `npm audit` still lists only the accepted dev-only esbuild GHSA-67mh-4wv8-2f99 via drizzle-kit
   (`docs/phase1-schema.md`). The project folder's `node_modules` was left on 16.4.0 because the dev server was running:
   run `npm ci` there after stopping it.
-- [ ] Live HTTPS check: start `npm run start:lan` from a normal terminal and open Settings; expect 7 / 7.
+- [x] Live HTTPS check: start `npm run start:lan` from a normal terminal and open Settings; expect 7 / 7. **PASS,
+  owner-confirmed 2026-10-16** (on `npm run dev`, after the fix below).
   - 2026-10-16 fix (`src/lib/tailscale.ts`): the check failed with `ENOTFOUND` on the office laptop because the app's
     server looked the name up in the laptop's own DNS, which does not use MagicDNS. Phones never use that DNS (their
     Tailscale app resolves the name), so the check now connects to this computer's Tailscale IPv4 address from
     `tailscale status` and still verifies the certificate against the name. Verified against the live address: before,
     `ENOTFOUND`; after, HTTP 200 from this app with the trusted Let's Encrypt certificate; a wrong name on the same
-    address is refused (TLS). Awaiting the owner's 7/7 confirmation.
+    address is refused (TLS).
 - [x] Camera scanner on the phone at the Tailscale address: **PASS, owner-confirmed 2026-10-16** (barcode scan in Safari; `docs/phase2-login.md`, "Device acceptance").
 - [x] Owner approval to merge `phase0-upgrade` into `main` (2026-10-14).

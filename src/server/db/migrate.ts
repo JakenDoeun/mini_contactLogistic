@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { getTableName } from 'drizzle-orm';
 import { readMigrationFiles, type MigrationMeta } from 'drizzle-orm/migrator';
-import { writeCopy } from './backup.ts';
+import { stamp, writeCopy } from './backup.ts';
 import { openDatabase, type Db } from './connection.ts';
 import { assertOutsideProject, MIGRATIONS_FOLDER } from './paths.ts';
 import { ALL_TABLES } from './schema.ts';
@@ -80,7 +80,7 @@ function verifyApplied(applied: { hash: string; createdAt: number }[], files: Mi
 }
 
 async function copyBeforeMigrating(db: Db, backupDir: string, now: Date): Promise<string> {
-  const dest = path.join(backupDir, `pre-migration-${now.toISOString().replace(/[:.]/g, '-')}.db`);
+  const dest = path.join(backupDir, `pre-migration-${stamp(now)}.db`);
   try {
     assertOutsideProject(dest);
     writeCopy(db, dest); // the same checked VACUUM INTO copy as every other backup (src/server/db/backup.ts)

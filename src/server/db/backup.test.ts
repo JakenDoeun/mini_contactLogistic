@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { BACKUP_KEEP_MS, backupDirOf, backupScheduler, backupStatus, listBackups, pruneBackups, saveBackup, writeCopy } from './backup.ts';
+import { BACKUP_KEEP_MS, backupDirOf, backupScheduler, backupStatus, listBackups, pruneBackups, saveBackup, stamp, writeCopy } from './backup.ts';
 import { openDatabase } from './connection.ts';
 import { createTestDb } from './test-db.ts';
 
@@ -31,7 +31,17 @@ test('saveBackup: a checked 0600 copy in a 0700 folder; no new copy while nothin
   assert.deepEqual(backupStatus(dir), { lastBackupAt: later(2 * MIN).toISOString(), failing: false });
 });
 
-test('pruneBackups: copies older than 3 days go, the newest always stays, stale temporary files go (finding I6)', async (t) => {
+test('file names carry Cambodia time (UTC+7); older UTC names are still read', async (t) => {
+  const { db, dir, cleanup } = await createTestDb();
+  t.after(cleanup);
+  assert.equal(stamp(new Date('2026-10-17T20:16:24.221Z')), '2026-10-18T03-16-24-221+07');
+  const r = saveBackup(db, dir, T0);
+  assert.ok(r.saved && path.basename(r.path) === 'backup-2026-10-17T10-00-00-000+07.db');
+  writeCopy(db, path.join(backupDirOf(dir), 'pre-migration-2026-10-16T18-12-40-600Z.db'));
+  assert.deepEqual(listBackups(dir).map((b) => b.at.toISOString()), [T0.toISOString(), '2026-10-16T18:12:40.600Z']);
+});
+
+test('pruneBackups: copies older than 7 days go, the newest always stays, stale temporary files go (finding I6)', async (t) => {
   const { db, dir, cleanup } = await createTestDb();
   t.after(cleanup);
   for (const name of ['pre-migration-2026-10-10T00-00-00-000Z.db', 'backup-2026-10-17T03-00-00-000Z.db', 'backup-2026-10-17T03-01-00-000Z.db']) {

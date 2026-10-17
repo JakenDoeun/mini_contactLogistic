@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { writeAudit } from '../src/server/db/audit.ts';
-import { listBackups, SERVE_PID_FILE, writeCopy, backupDirOf } from '../src/server/db/backup.ts';
+import { listBackups, SERVE_PID_FILE, stamp, writeCopy, backupDirOf } from '../src/server/db/backup.ts';
 import { openDatabase } from '../src/server/db/connection.ts';
 import { openVerifiedDatabase, prepareDatabase } from '../src/server/db/migrate.ts';
 import { resolveDataDir } from '../src/server/db/paths.ts';
@@ -46,9 +46,8 @@ check.close();
 if (!ok) fail(`${chosen!.file} is damaged; choose another backup`);
 
 const dbPath = path.join(dataDir, 'branch.db');
-const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 if (fs.existsSync(dbPath)) {
-  const keep = path.join(backupDirOf(dataDir), `before-restore-${stamp}.db`);
+  const keep = path.join(backupDirOf(dataDir), `before-restore-${stamp(new Date())}.db`);
   try {
     const current = openDatabase(dbPath, { mustExist: true });
     try {

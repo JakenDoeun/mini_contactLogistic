@@ -1,4 +1,4 @@
-// Local safety copies (plan Revision 4): the laptop only, no off-machine copy, kept 3 days. Each copy is one consistent
+// Local safety copies (plan Revision 4): the laptop only, no off-machine copy, kept 7 days. Each copy is one consistent
 // VACUUM INTO snapshot (deleted rows are left behind), written to a temporary name and renamed only after it passes
 // integrity_check, so a power cut can leave at most a temporary file, which pruning removes.
 import crypto from 'node:crypto';
@@ -7,7 +7,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import type { Db } from './connection.ts';
 
-export const BACKUP_KEEP_MS = 3 * 24 * 3600_000;
+export const BACKUP_KEEP_MS = 7 * 24 * 3600_000;
 export const BACKUP_QUIET_MS = 5 * 60_000; // a copy follows 5 minutes after the last change…
 export const BACKUP_MIN_GAP_MS = 15 * 60_000; // …and at most one every 15 minutes
 const TEMP_STALE_MS = 10 * 60_000; // a temporary file this old belongs to a run that stopped
@@ -15,11 +15,14 @@ const STATUS_FILE = 'backup-status.json';
 export const SERVE_PID_FILE = 'serve.pid'; // written by scripts/serve.ts; scripts/restore.ts refuses while it is alive
 
 export type BackupKind = 'backup' | 'pre-migration' | 'before-restore';
-const NAME = /^(backup|pre-migration|before-restore)-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.db$/;
+// Names carry Cambodia time (UTC+7, no daylight saving); older copies were named in UTC with a Z.
+const NAME = /^(backup|pre-migration|before-restore)-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})(Z|\+07)\.db$/;
 const TEMP = /\.db\.[0-9a-f]{12}\.tmp$/;
 
 export const backupDirOf = (dataDir: string) => path.join(dataDir, 'backups');
-const stamp = (d: Date) => d.toISOString().replace(/[:.]/g, '-');
+const ICT_MS = 7 * 3600_000;
+/** 2026-10-17T09-16-24-221+07 for 02:16:24.221 UTC. */
+export const stamp = (d: Date) => `${new Date(d.getTime() + ICT_MS).toISOString().slice(0, -1).replace(/[:.]/g, '-')}+07`;
 /** File names in the backups folder; none when it is missing or not a folder (status must not throw then). */
 const namesIn = (dir: string) => (fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory() ? fs.readdirSync(dir) : []);
 
@@ -64,7 +67,7 @@ export function listBackups(dataDir: string): BackupFile[] {
     .flatMap((file) => {
       const m = NAME.exec(file);
       if (!m) return [];
-      const at = new Date(`${m[2]}T${m[3]}:${m[4]}:${m[5]}.${m[6]}Z`);
+      const at = new Date(`${m[2]}T${m[3]}:${m[4]}:${m[5]}.${m[6]}${m[7] === 'Z' ? 'Z' : '+07:00'}`);
       return Number.isNaN(at.getTime()) ? [] : [{ file, path: path.join(dir, file), kind: m[1] as BackupKind, at }];
     })
     .sort((a, b) => b.at.getTime() - a.at.getTime());
@@ -73,7 +76,7 @@ export function listBackups(dataDir: string): BackupFile[] {
 const sha256 = (file: string) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
 /**
- * Removes copies older than 3 days (always keeping the newest one) and temporary files left by a stopped run,
+ * Removes copies older than 7 days (always keeping the newest one) and temporary files left by a stopped run,
  * including a partial pre-migration copy (finding I6). Returns how many files it removed.
  */
 export function pruneBackups(dataDir: string, now = new Date()): number {

@@ -9,7 +9,7 @@ reinstalling and importing the courier file again (see "Rebuild" below), not by 
 | Part | Where | What it does |
 |---|---|---|
 | Save setting | `src/server/db/connection.ts` | `synchronous = FULL` (a record shown as saved survives a power cut) and `secure_delete = ON` (deleted rows are overwritten) on every connection |
-| Backups | `src/server/db/backup.ts` | `VACUUM INTO` a temporary file, `integrity_check`, fsync, rename to `backups/backup-<UTC time>.db` (0600, folder 0700). No new file when the data is unchanged (identical bytes). Kept 3 days; the newest is always kept; stale temporary files are removed (finding I6) |
+| Backups | `src/server/db/backup.ts` | `VACUUM INTO` a temporary file, `integrity_check`, fsync, rename to `backups/backup-<Cambodia time>+07.db` (0600, folder 0700). No new file when the data is unchanged (identical bytes). Kept 7 days (owner, 2026-10-17); the newest is always kept; stale temporary files are removed (finding I6) |
 | Pre-migration copy | `src/server/db/migrate.ts` | the same checked copy, as `pre-migration-<time>.db`, before any migration |
 | Retention | `src/server/db/retention.ts` | parcels whose arrival date is N days old or more (Cambodia date; N = 7 by default, 1–14, admin only) are deleted with their scan events, phone changes, messages, SMS attempts, contact notes, review items, imports, detected files and stored import files; the activity log and backup history of that period too. Accounts, settings and templates stay. One transaction, foreign keys checked before commit, then WAL truncate and `VACUUM` |
 | Launcher | `scripts/serve.ts` (`npm run serve`) | migrate and self-test, retention, a backup, then `next start` on 127.0.0.1. Restarts the web app after a crash (5 s, doubling to 60 s). Backup 5 minutes after the last change, at most every 15 minutes; retention every hour. On Ctrl+C, a service stop or a Linux shutdown it saves a backup before exiting |
@@ -59,7 +59,7 @@ was changed, and import today's courier file. Lost: SMS status and history of th
 Automated (`npm test`, `npm run test:integration`) on Linux:
 
 - [x] Copies are checked, 0600 in a 0700 folder, consistent while another connection writes, not repeated without changes
-- [x] Copies older than 3 days and stale temporary files are removed; the newest stays
+- [x] Copies older than 7 days and stale temporary files are removed; the newest stays
 - [x] Two failed runs in a row turn the status red; a success clears it
 - [x] The scheduler copies 5 minutes after the web app's last change, at most every 15 minutes, never without changes
 - [x] Retention removes expired parcels and everything about them, keeps recent ones, accounts and settings; the deleted

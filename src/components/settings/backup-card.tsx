@@ -80,7 +80,7 @@ export function BackupCard() {
           </Badge>
         </div>
         <p className="mt-0.5 text-muted-foreground">
-          Backups are made automatically on this computer and kept for 3 days. They do not protect against losing the computer itself.
+          Backups are made automatically on this computer and kept for 7 days. They do not protect against losing the computer itself.
         </p>
       </div>
 

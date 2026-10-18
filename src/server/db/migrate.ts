@@ -1,11 +1,10 @@
 // Migration runner (docs/phase1-schema.md, "Safe migration sequence").
 // Drizzle's migrate() commits before any check can run and cannot switch foreign keys off, so the runner applies
 // Drizzle's migration files itself, keeping Drizzle's __drizzle_migrations table format.
-import fs from 'node:fs';
 import path from 'node:path';
-import Database from 'better-sqlite3';
 import { getTableName } from 'drizzle-orm';
 import { readMigrationFiles, type MigrationMeta } from 'drizzle-orm/migrator';
+import { stamp, writeCopy } from './backup.ts';
 import { openDatabase, type Db } from './connection.ts';
 import { assertOutsideProject, MIGRATIONS_FOLDER } from './paths.ts';
 import { ALL_TABLES } from './schema.ts';
@@ -81,21 +80,10 @@ function verifyApplied(applied: { hash: string; createdAt: number }[], files: Mi
 }
 
 async function copyBeforeMigrating(db: Db, backupDir: string, now: Date): Promise<string> {
-  const dest = path.join(backupDir, `pre-migration-${now.toISOString().replace(/[:.]/g, '-')}.db`);
+  const dest = path.join(backupDir, `pre-migration-${stamp(now)}.db`);
   try {
     assertOutsideProject(dest);
-    fs.mkdirSync(backupDir, { recursive: true, mode: 0o700 });
-    await db.backup(dest);
-    fs.chmodSync(dest, 0o600);
-    const copy = new Database(dest, { fileMustExist: true });
-    try {
-      // The copy inherits WAL mode; make it one self-contained file before checking it.
-      copy.pragma('journal_mode = DELETE');
-      const result = copy.pragma('integrity_check', { simple: true });
-      if (result !== 'ok') throw new Error(`integrity_check on the copy returned ${String(result)}`);
-    } finally {
-      copy.close();
-    }
+    writeCopy(db, dest); // the same checked VACUUM INTO copy as every other backup (src/server/db/backup.ts)
     return dest;
   } catch (e) {
     throw new MigrationError('backup_failed', `could not copy the database before migrating (${(e as Error).message})`, { cause: e });

@@ -138,6 +138,15 @@ export const pinnedLookup =
  * the certificate is valid and trusted for the name, and the request reaches this app. With `ip`, the name is not
  * looked up in this computer's DNS (see pinnedLookup); the certificate is still checked against the name.
  */
+/** The probe's request reached this app: /api/branch-address answers with its phone addresses (branchAddresses). */
+export function answeredByThisApp(status: number, body: string) {
+  try {
+    return status === 200 && 'setup' in JSON.parse(body);
+  } catch {
+    return false;
+  }
+}
+
 export function probeHttps(hostname: string, ip?: string | null): Promise<HttpsProbe> {
   return new Promise((resolve) => {
     const lookup = ip ? { lookup: pinnedLookup(ip) as never } : {};
@@ -150,7 +159,7 @@ export function probeHttps(hostname: string, ip?: string | null): Promise<HttpsP
         resolve({
           ok: true,
           status: res.statusCode ?? 0,
-          thisApp: res.statusCode === 200 && body.includes('"mode"'),
+          thisApp: answeredByThisApp(res.statusCode ?? 0, body),
           issuer: [cert?.issuer?.O, cert?.issuer?.CN].filter(Boolean).join(' '),
           validTo: cert?.valid_to ? new Date(cert.valid_to).toISOString() : '',
         }),
@@ -374,9 +383,37 @@ export function diagnoseTailscale(
 }
 
 /** Everything the Settings panel needs, measured now. The live check runs only when it can succeed. */
+/**
+ * When this app cannot read Tailscale's status but knows its address from BRANCH_URL: on Windows, Tailscale answers
+ * only the user who signed it in, not the app's own account. The live check then shows what a phone will see.
+ */
+export function diagnoseByAddress(probe: HttpsProbe, origin: BranchOrigin & { source: 'BRANCH_URL' }, appPort: string, now = new Date()): Check[] {
+  const hostname = new URL(origin.origin!).hostname;
+  const seen: TailscaleStatus = {
+    installed: true, state: 'Running', online: true, hostname, ip: null, magicDNS: true, httpsCertificates: true, serveTarget: 'this app', funnel: false,
+  };
+  const reached = probe.ok && probe.thisApp;
+  return [
+    {
+      id: 'tailscale',
+      label: 'Tailscale on this computer',
+      state: reached ? 'ok' : 'warn',
+      detail: `Its settings are shown only to the Windows user who signed it in, so the address is checked directly${
+        reached ? ' and answers through Tailscale. Funnel cannot be checked from here; never turn it on.' : '.'
+      }`,
+      fix: reached ? undefined : 'Check the Tailscale icon next to the clock: signed in and connected?',
+    },
+    ...diagnoseTailscale(seen, probe, origin, appPort, now).filter((c) => c.id === 'https' || c.id === 'address'),
+  ];
+}
+
 export async function tailscaleReadiness(appPort: string) {
   cached = null; // "Check again" must measure, not repeat
   const [ts, origin] = await Promise.all([tailscaleStatus(), branchOrigin()]);
+  if (ts.installed && ts.state === 'Unavailable' && origin.source === 'BRANCH_URL') {
+    const probe = await probeHttps(new URL(origin.origin!).hostname);
+    return { tailscale: ts, origin, checks: diagnoseByAddress(probe, { ...origin, source: 'BRANCH_URL' }, appPort) };
+  }
   const ready = ts.installed && ts.state === 'Running' && ts.hostname && ts.httpsCertificates && ts.serveTarget && !ts.funnel;
   const probe = ready ? await probeHttps(ts.hostname!, ts.ip) : null;
   return { tailscale: ts, origin, checks: diagnoseTailscale(ts, probe, origin, appPort) };

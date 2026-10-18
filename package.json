@@ -15,7 +15,9 @@
     "db:seed": "node scripts/db-seed.ts",
     "user": "node scripts/user.ts",
     "first-run-code": "node scripts/first-run-code.ts",
-    "recovery-code": "node scripts/recovery-code.ts"
+    "recovery-code": "node scripts/recovery-code.ts",
+    "serve": "node scripts/serve.ts",
+    "restore": "node scripts/restore.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "1.2.0",
@@ -46,5 +48,9 @@
   },
   "engines": {
     "node": ">=24.21.0 <25"
+  },
+  "allowScripts": {
+    "better-sqlite3": false,
+    "esbuild": true
   }
 }

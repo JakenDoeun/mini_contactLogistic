@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { listBackups, saveBackup } from './backup.ts';
 import { openDatabase } from './connection.ts';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { applyPending, migrateDatabase, MigrationError, openVerifiedDatabase } from './migrate.ts';
@@ -309,4 +310,46 @@ test('recovery-code CLI: show only in a terminal and never creates; rotate repla
     (db.prepare('SELECT end_reason FROM recovery_codes ORDER BY id').all() as { end_reason: string }[]).map((r) => r.end_reason),
     ['rotated', 'revoked'],
   );
+});
+
+test('restore CLI: lists backups; refuses while serve runs; saves the current database first, then puts the chosen one back', (t) => {
+  const { dataDir } = tempDataDir(t);
+  const restore = (...args: string[]) =>
+    spawnSync(process.execPath, ['scripts/restore.ts', ...args], { cwd: PROJECT_ROOT, env: { ...process.env, DATA_DIR: dataDir }, encoding: 'utf8' });
+  assert.equal(migrateCli(dataDir).status, 0);
+  const dbPath = path.join(dataDir, 'branch.db');
+  const value = () => {
+    const db = openDatabase(dbPath, { readonly: true });
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'it.v'").get() as { value: string } | undefined;
+    db.close();
+    return row?.value;
+  };
+  const db = openDatabase(dbPath);
+  db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('it.v', '1', ?)").run(new Date().toISOString());
+  saveBackup(db, dataDir);
+  db.prepare("UPDATE settings SET value = '2' WHERE key = 'it.v'").run();
+  db.close();
+
+  const list = restore();
+  assert.equal(list.status, 0, list.stderr);
+  assert.match(list.stdout, / 1 {2}\d{4}-\d{2}-\d{2} \d{2}:\d{2} {2}backup/);
+  assert.equal(restore('9').status, 1);
+  fs.writeFileSync(path.join(dataDir, 'serve.pid'), String(process.pid));
+  const refused = restore('1');
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /running. Stop it first/);
+  assert.equal(value(), '2', 'nothing changed');
+  fs.rmSync(path.join(dataDir, 'serve.pid'));
+
+  const done = restore('1');
+  assert.equal(done.status, 0, done.stderr);
+  assert.equal(value(), '1', 'the backup is back');
+  const saved = listBackups(dataDir).find((b) => b.kind === 'before-restore');
+  assert.ok(saved, 'the database from before the restore was kept');
+  const before = openDatabase(saved.path, { readonly: true });
+  assert.equal((before.prepare("SELECT value FROM settings WHERE key = 'it.v'").get() as { value: string }).value, '2');
+  before.close();
+  const audit = openDatabase(dbPath, { readonly: true });
+  assert.ok(audit.prepare("SELECT 1 FROM audit_log WHERE action = 'backup.restored'").get());
+  audit.close();
 });

@@ -1,4 +1,5 @@
-// Approved Phase 1 schema (docs/phase1-schema.md, decisions 31–37): 18 tables, plus `recovery_codes` (Phase 2, 0002).
+// Approved Phase 1 schema (docs/phase1-schema.md, decisions 31–37): 18 tables, plus `recovery_codes` (Phase 2, 0002)
+// and `users.is_admin` (Phase 3, 0003).
 // Triggers (append-only tables, import status changes) are not expressible here; they live in the migration SQL.
 import { sql, type SQL } from 'drizzle-orm';
 import {
@@ -369,8 +370,14 @@ export const users = sqliteTable(
     passwordHash: text('password_hash').notNull(),
     disabled: integer('disabled').notNull().default(0),
     createdAt: text('created_at').notNull(),
+    // Plan Revision 4: only an admin changes the data retention setting. The first account is the admin.
+    isAdmin: integer('is_admin').notNull().default(0),
   },
-  (t) => [uniqueIndex('users_username_unique').on(t.username), check('users_disabled_bool', bool(t.disabled))],
+  (t) => [
+    uniqueIndex('users_username_unique').on(t.username),
+    check('users_disabled_bool', bool(t.disabled)),
+    check('users_is_admin_bool', bool(t.isAdmin)),
+  ],
 );
 
 export const sessions = sqliteTable(

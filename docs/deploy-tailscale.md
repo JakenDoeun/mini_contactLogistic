@@ -4,7 +4,7 @@ How staff phones reach the Campus Branch console securely, on any computer and a
 certificate on each phone. It replaced the Caddy-by-IP setup in `docs/local-https.md`, which was retired on 2026-10-16.
 Migration status and rollback: `docs/migration-tailscale.md`.
 
-> **Status (2026-10-16): live on spacek4k and confirmed on a phone** (camera scan, Settings 7/7); the Caddy LAN setup is retired
+> **Status (2026-10-16): live on office-pc and confirmed on a phone** (camera scan, Settings 7/7); the Caddy LAN setup is retired
 > (`docs/migration-tailscale.md`). Staff login is in place; parcel data is still sample data and no real SMS is sent.
 
 ## How it works
@@ -84,7 +84,7 @@ Settings › *Ready for phones?* checks each of these on the computer itself and
 | Running `tailscale serve` | Administrator terminal | `sudo`, or once `sudo tailscale set --operator=$USER` | Usually no sudo |
 | Start the app at boot | Task Scheduler | systemd unit with `WorkingDirectory` = app folder, `ExecStart=npm run start:lan` | launchd agent |
 
-## This computer (spacek4k, Linux)
+## This computer (office-pc, Linux)
 
 Done on 2026-10-12 (details in `docs/migration-tailscale.md`): HTTPS Certificates on, operator set, `tailscale serve --bg 3000` running.
 `npm run dev` now listens on 127.0.0.1 only, and `next.config.ts` allows the dev server to be opened through this computer's own
@@ -119,8 +119,8 @@ like these replaces the default allow-all policy: check that admins keep the acc
 
 ## Troubleshooting
 
-**"Server not found" in the computer's browsers, while phones open the address** (seen 2026-10-16 on spacek4k):
-another VPN or DNS filter owns the computer's DNS and does not know `*.ts.net` names. On spacek4k it was Cloudflare
+**"Server not found" in the computer's browsers, while phones open the address** (seen 2026-10-16 on office-pc):
+another VPN or DNS filter owns the computer's DNS and does not know `*.ts.net` names. On office-pc it was Cloudflare
 WARP: `/etc/resolv.conf` points at WARP's proxy (`127.0.2.2`), so `getent hosts <name>` prints nothing although
 `resolvectl query <name>` works. Do not repoint `/etc/resolv.conf` (WARP owns it). Either add the name to the hosts
 file (`100.x.y.z <name>`; `tailscale ip -4` shows the address; Windows: `C:\Windows\System32\drivers\etc\hosts`), add

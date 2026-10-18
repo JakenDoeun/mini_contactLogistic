@@ -8,7 +8,7 @@ Working record of the migration on this computer. Guide for any installation: `d
 |---|---|---|
 | 1. Audit and diagnose | Done | 2026-10-12 |
 | 2. Prepare (backups, config, app support, docs) | **Done** | 2026-10-12 |
-| 3. Tailscale Serve | **Done**: serving `https://spacek4k.tailc4ca3f.ts.net`, tailnet only | 2026-10-12 |
+| 3. Tailscale Serve | **Done**: serving `https://office-pc.your-tailnet.ts.net`, tailnet only | 2026-10-12 |
 | 4. Verify | **Done**: phone camera scan over Tailscale owner-confirmed PASS; Settings 7/7 | 2026-10-16 |
 | 5. Retire Caddy setup | **Done** (see Phase 5 below). Caddy stopped and not started by anything; binary, config, data and certificates kept | 2026-10-16 |
 | 6. Portable deployment scripts | Docs done; start/stop/health-check scripts not written | |
@@ -22,7 +22,7 @@ Working record of the migration on this computer. Guide for any installation: `d
 - That Caddy was a temporary debug process from a scratch config, not a service; it has since been stopped. There are no startup scripts for
   Caddy or the app. No other feature depends on Caddy.
 - The app ran as `next dev` on all interfaces (`*:3000`). No database: sample data in the browser. No login.
-- Tailscale 1.102.3 installed and signed in as `spacek4k.tailc4ca3f.ts.net`, MagicDNS on, HTTPS Certificates **not enabled**, no Serve config,
+- Tailscale 1.102.3 installed and signed in as `office-pc.your-tailnet.ts.net`, MagicDNS on, HTTPS Certificates **not enabled**, no Serve config,
   no operator user. It was offline during the audit (no internet) and is online since.
 
 ## Backups
@@ -61,17 +61,17 @@ operator set to `k4k` by the user (`sudo tailscale set --operator=$USER`).
 | `package.json` `dev` script | `next dev` → `next dev -H 127.0.0.1 -p 3000`: the app no longer listens on the LAN | Restore from the backup folder |
 | `next.config.ts` | `allowedDevOrigins` = host of `BRANCH_URL`, else this computer's own Tailscale name, read at start-up. Nothing hardcoded | Restore from the backup folder |
 | Dev server restarted | The user's `npm run dev` (all interfaces) was stopped and started again on 127.0.0.1 | — |
-| `tailscale serve --bg 3000` | `https://spacek4k.tailc4ca3f.ts.net` → `http://127.0.0.1:3000`, tailnet only, kept across restarts | `tailscale serve reset` |
+| `tailscale serve --bg 3000` | `https://office-pc.your-tailnet.ts.net` → `http://127.0.0.1:3000`, tailnet only, kept across restarts | `tailscale serve reset` |
 | Settings wording | Legacy Caddy row says "Kept for rollback" instead of an error while the Tailscale address is in use | — |
 
 Backups of `package.json` and `next.config.ts` from before this phase are in the backup folder.
 
 **Verified from this computer:**
-- Certificate: Let's Encrypt, CN and SAN `spacek4k.tailc4ca3f.ts.net`, valid Oct 12 2026 – Jan 10 2027, trusted by the system store (no `-k`).
+- Certificate: Let's Encrypt, CN and SAN `office-pc.your-tailnet.ts.net`, valid Oct 12 2026 – Jan 10 2027, trusted by the system store (no `-k`).
 - `tailscale serve status`: tailnet only; Funnel off.
 - Listeners: the app only on `127.0.0.1:3000`; port 443 only on the Tailscale addresses. `172.20.10.3:3000` and `:443` are refused from the LAN.
 - All routes return 200 over the Tailscale address: `/dashboard`, `/parcels`, `/scan`, `/import-arrivals`, `/notifications`, `/settings`, `/setup`, both APIs, `/branch-ca.crt`; `/` redirects as before.
-- `/api/branch-address` → mode `tailscale`; the Settings QR encodes `https://spacek4k.tailc4ca3f.ts.net/setup`.
+- `/api/branch-address` → mode `tailscale`; the Settings QR encodes `https://office-pc.your-tailnet.ts.net/setup`.
 - In Chrome (desktop, and phone-sized with an iPhone user agent), without ignoring certificate errors: Settings readiness all green;
   `/setup` shows "This phone is ready"; `/scan` is a secure context and `getUserMedia` succeeds with Chrome's *fake* camera; the scanner
   dialog opens. No page errors. No dev-origin warnings in the server log.

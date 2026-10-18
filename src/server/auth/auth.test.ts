@@ -163,18 +163,18 @@ test('session cookie: __Host- prefix, HttpOnly, Secure, SameSite=Lax, Path=/, no
 });
 
 test('origin check: the branch address or the same loopback host only', () => {
-  const branch = 'https://spacek4k.example.ts.net';
-  assert.equal(originAllowed(branch, 'spacek4k.example.ts.net', branch), true);
+  const branch = 'https://office-pc.example.ts.net';
+  assert.equal(originAllowed(branch, 'office-pc.example.ts.net', branch), true);
   assert.equal(originAllowed('http://127.0.0.1:3000', '127.0.0.1:3000', branch), true);
   assert.equal(originAllowed('http://localhost:3000', 'localhost:3000', null), true);
   for (const [origin, host] of [
     [null, '127.0.0.1:3000'],
     ['null', '127.0.0.1:3000'],
-    ['https://evil.example', 'spacek4k.example.ts.net'],
-    ['http://spacek4k.example.ts.net', 'spacek4k.example.ts.net'],
-    ['https://spacek4k.example.ts.net.evil.example', 'spacek4k.example.ts.net'],
+    ['https://evil.example', 'office-pc.example.ts.net'],
+    ['http://office-pc.example.ts.net', 'office-pc.example.ts.net'],
+    ['https://office-pc.example.ts.net.evil.example', 'office-pc.example.ts.net'],
     ['http://127.0.0.1:3001', '127.0.0.1:3000'],
-    ['http://127.0.0.1:3000', 'spacek4k.example.ts.net'],
+    ['http://127.0.0.1:3000', 'office-pc.example.ts.net'],
     ['http://127.0.0.1:3000/path', '127.0.0.1:3000'],
     ['not a url', '127.0.0.1:3000'],
   ] as const) {

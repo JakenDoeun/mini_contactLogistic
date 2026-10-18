@@ -112,7 +112,7 @@ TypeScript 6.0.3 are still the newest stable releases, kept as the **provisional
 | 7 pages × 4 widths, Next 15 (`main`) vs candidate | 28 / 28 each: HTTP 200, no console errors, no sideways scrolling |
 | Screenshot diff | 6 of 28 differ; all are sample-data order (same customers, rows swapped). Two candidate runs differ from each other on 18 of 28 by the same or more, so none is caused by the upgrade |
 | Candidate on 127.0.0.1:3000 behind Tailscale Serve | `/` 307, `/dashboard` `/settings` `/scan` `/api/branch-address` `/branch-ca.crt` 200, tailnet only (Funnel off) |
-| Settings checks (`/api/branch-status`) | 6 / 7 ok. **Live HTTPS check: fail** — `ENOTFOUND` for the MagicDNS name. The host resolves it (`resolvectl`: 100.106.173.28 on tailscale0); the server was started from Claude's sandbox, whose DNS does not see MagicDNS. Not attributed to the upgrade; needs confirming by the owner |
+| Settings checks (`/api/branch-status`) | 6 / 7 ok. **Live HTTPS check: fail** — `ENOTFOUND` for the MagicDNS name. The host resolves it (`resolvectl`: 100.x.y.z on tailscale0); the server was started from Claude's sandbox, whose DNS does not see MagicDNS. Not attributed to the upgrade; needs confirming by the owner |
 
 No regressions found; no code changed in this pass.
 

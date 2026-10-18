@@ -69,7 +69,7 @@ the session cookie also needs HTTPS or loopback.
 
 | Address | Who | Sign-in works |
 |---|---|---|
-| `https://spacek4k.tailc4ca3f.ts.net` (Tailscale Serve → `127.0.0.1:3000`) | staff laptop and phones on the tailnet | **Yes** |
+| `https://office-pc.your-tailnet.ts.net` (Tailscale Serve → `127.0.0.1:3000`) | staff laptop and phones on the tailnet | **Yes** |
 | `http://127.0.0.1:3000`, `http://localhost:3000` | the office computer itself | **Yes** |
 | The origin in `BRANCH_URL`, if set (it replaces the Tailscale name) | as configured | **Yes** |
 | Old Caddy LAN addresses, e.g. `https://192.168.1.10`, `https://172.20.10.3` | — | **No.** The sign-in page loads, but the sign-in request is refused (403, cross-site) by the origin rule (unit and integration tested; not sent through Caddy, which is not running) |
@@ -228,7 +228,7 @@ Replaced the earlier provisional values (12 hours idle, 7 days absolute).
 
 ## Device acceptance (owner-confirmed, 2026-10-16)
 
-Run by the owner on their own devices against the running server at `https://spacek4k.tailc4ca3f.ts.net` (Next.js
+Run by the owner on their own devices against the running server at `https://office-pc.your-tailnet.ts.net` (Next.js
 16.4.1). Reported by the owner as working as expected; not observed by Claude.
 
 | Check | Result |

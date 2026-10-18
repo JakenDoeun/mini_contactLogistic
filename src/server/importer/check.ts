@@ -219,7 +219,9 @@ export function classify(
   decisions: { conflict: Map<string, StaffDecision>; spelling: Map<string, StaffDecision>; leftOut: Set<string> },
   choice: DateChoice | null,
 ): { parcels: Classified[]; counts: Record<ParcelState, number>; dateChoiceNeeded: boolean } {
-  const dateChoiceNeeded = scanDates(parcels).length > 1;
+  // Several scan dates, or unreadable scan times (their own group), need an explicit choice (arrival-batch-date/v1).
+  const dates = scanDates(parcels);
+  const dateChoiceNeeded = dates.length > 1 || dates.some((d) => d.date === null);
   const out = parcels.map((p): Classified => {
     const left =
       decisions.leftOut.has(p.key) ||

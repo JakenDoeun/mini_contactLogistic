@@ -10,6 +10,14 @@ const DETAIL_KEYS = new Set([
   'retention_days', 'cutoff_date',
 ]);
 // Keys whose value must come from a closed set, so no free text can ride on them.
+// Finding L2: keys that once took any text now take one shape each, so no name can ride on them. A courier file's
+// name never goes in: file_name is only for the app's own backup files.
+const SHAPES: Record<string, (v: unknown) => boolean> = {
+  counts: (v) => typeof v === 'object' && v !== null && !Array.isArray(v) && Object.values(v).every((n) => Number.isInteger(n) && (n as number) >= 0),
+  rules: (v) => Array.isArray(v) && v.every((r) => typeof r === 'string' && /^[a-z0-9-]+\/v\d+$/.test(r)),
+  file_name: (v) => typeof v === 'string' && /^(backup|pre-migration|before-restore)-[0-9T:.+-]+\.db$/.test(v),
+  arrival_dates: (v) => Array.isArray(v) && v.every((d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)),
+};
 const CLOSED_SETS: Record<string, readonly (string | null)[]> = {
   item_kind: ['recipient_conflict', 'code_spelling', 'db_duplicate', 'not_chosen_scan_date', 'excluded_by_staff', 'unparseable_scan_time'],
   resolution_from: [null, 'chosen', 'left_out'],
@@ -34,6 +42,10 @@ function checkValue(key: string, value: unknown): void {
   // A hash is validated by its exact format: its digit runs often look like phone numbers (about 1 in 55 hashes).
   if (key === 'sha256') {
     if (typeof value !== 'string' || !SHA256.test(value)) throw new Error('audit detail "sha256" must be 64 lower-case hex characters');
+    return;
+  }
+  if (key in SHAPES) {
+    if (!SHAPES[key](value)) throw new Error(`audit detail "${key}" does not have its required shape`);
     return;
   }
   if (key in CLOSED_SETS) {

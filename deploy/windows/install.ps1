@@ -96,11 +96,14 @@ function Expand-Zip([string]$zip, [string]$dest) {
     Expand-Archive $zip -DestinationPath $dest -Force
   }
 }
-# Robocopy empties a folder even when node_modules paths are longer than Remove-Item handles.
+# Junctions are unlinked first: robocopy and Remove-Item would follow them and delete what they point to (the
+# Next.js build links its external packages with junctions). Robocopy then empties the folder even when node_modules
+# paths are longer than Remove-Item handles.
 function Remove-Folder([string]$dir) {
   if (-not (Test-Path $dir)) { return }
+  cmd /c "dir /s /b /al `"$dir`" 2>nul" | ForEach-Object { cmd /c "rmdir `"$_`"" }
   $empty = New-Item -ItemType Directory -Force -Path "$Work-empty"
-  robocopy $empty.FullName $dir /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+  robocopy $empty.FullName $dir /MIR /XJ /NFL /NDL /NJH /NJS /NP | Out-Null
   Remove-Item $dir -Recurse -Force
 }
 function Copy-Folder([string]$from, [string]$to, [string[]]$skip) {
@@ -168,7 +171,10 @@ if ($state -ne 'Running') {
     throw 'Tailscale is not signed in. Sign in from the Tailscale icon next to the clock, then run this script again.'
   }
 }
-Write-Host 'Tailscale is running.'
+# The app's own account cannot ask Tailscale for this name on Windows, so the task passes it to the app.
+$address = 'https://' + "$(((& $TailscaleExe status --json) -join "`n" | ConvertFrom-Json).Self.DNSName)".TrimEnd('.')
+if ($address -eq 'https://') { throw 'Tailscale reports no name for this computer. Turn on MagicDNS in the Tailscale admin console > DNS, then run this again.' }
+Write-Host "Tailscale is running; this computer is $address"
 
 # ---- 2. Node.js for the app (private copy, never the system one) ----------------------------------------------------
 Step "Node.js $NodeVersion"
@@ -219,6 +225,15 @@ Stop-App
 Remove-Folder "$AppDir.old"
 if (Test-Path $AppDir) { Rename-Item $AppDir 'app.old' }
 Rename-Item "$AppDir.new" 'app'
+# On Windows the build links its external packages (better-sqlite3) with junctions whose targets are absolute, so
+# they still point into app.new; point them at app.
+Get-ChildItem "$AppDir\.next\node_modules" -Force -ErrorAction SilentlyContinue | Where-Object { $_.LinkType -eq 'Junction' } |
+  ForEach-Object {
+    $target = "$($_.Target)".Replace("$AppDir.new\", "$AppDir\")
+    if (-not (Test-Path $target)) { throw "The build links $($_.Name) to $target, which does not exist." }
+    cmd /c "rmdir `"$($_.FullName)`""
+    New-Item -ItemType Junction -Path $_.FullName -Target $target | Out-Null
+  }
 
 # ---- 4. The app account ---------------------------------------------------------------------------------------------
 Step "Account $Account"
@@ -252,7 +267,7 @@ icacls "$AppDir\.next\cache" /grant "${Account}:(OI)(CI)M" | Out-Null
 
 # ---- 6. The task ------------------------------------------------------------------------------------------------------
 Step "Task '$TaskName'"
-$arguments = "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\serve.ts --data-dir=`"$DataDir`" --port=$Port --log=`"$LogFile`""
+$arguments = "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\serve.ts --data-dir=`"$DataDir`" --port=$Port --branch-url=$address --log=`"$LogFile`""
 $action = New-ScheduledTaskAction -Execute $NodeExe -Argument $arguments -WorkingDirectory $AppDir
 $trigger = New-ScheduledTaskTrigger -AtStartup
 # Priority 5 = normal; the default 7 also lowers disk priority.
@@ -315,7 +330,6 @@ Step 'Sharing it on the tailnet'
 Write-Host 'If Tailscale prints a link to enable HTTPS for your tailnet, open it, enable it, and this continues.'
 & $TailscaleExe serve --bg $Port
 if ($LASTEXITCODE -ne 0) { throw "tailscale serve failed. Fix what it printed above, then run this script again." }
-$address = 'https://' + ((& $TailscaleExe status --json) -join "`n" | ConvertFrom-Json).Self.DNSName.TrimEnd('.')
 Remove-Folder $Work
 
 # A new install has no account yet: the sign-in page just wrote the one-time code into the data folder.

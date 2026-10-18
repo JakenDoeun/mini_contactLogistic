@@ -11,17 +11,19 @@ import { openVerifiedDatabase, prepareDatabase } from '../src/server/db/migrate.
 import { resolveDataDir } from '../src/server/db/paths.ts';
 import { purgeExpired } from '../src/server/db/retention.ts';
 
-// A Windows scheduled task cannot set environment variables or show a console, so the folder, port and a log file
-// may also come as arguments.
+// A Windows scheduled task cannot set environment variables or show a console, so the folder, port, branch address
+// and a log file may also come as arguments. The address matters on Windows: Tailscale shows its status only to the
+// user who signed it in, so the app's own account cannot find its name there.
 let logFile = '';
+const ENV = { 'data-dir': 'DATA_DIR', port: 'PORT', 'branch-url': 'BRANCH_URL' } as const;
 for (const arg of process.argv.slice(2)) {
-  const m = /^--(data-dir|port|log)=(.+)$/.exec(arg);
+  const m = /^--(data-dir|port|branch-url|log)=(.+)$/.exec(arg);
   if (!m) {
-    console.error(`Unknown argument ${arg}. Usage: node scripts/serve.ts [--data-dir=<folder>] [--port=<port>] [--log=<file>]`);
+    console.error(`Unknown argument ${arg}. Usage: node scripts/serve.ts [--data-dir=<folder>] [--port=<port>] [--branch-url=https://<name>] [--log=<file>]`);
     process.exit(2);
   }
   if (m[1] === 'log') logFile = path.resolve(m[2]);
-  else process.env[m[1] === 'port' ? 'PORT' : 'DATA_DIR'] = m[2];
+  else process.env[ENV[m[1] as keyof typeof ENV]] = m[2];
 }
 const PORT = process.env.PORT || '3000';
 let logFd: number | null = null;

@@ -413,3 +413,42 @@ test('serve: migrates, starts the app, restarts it after a crash, and saves a ba
   assert.equal(fs.existsSync(path.join(dataDir, 'serve.pid')), false);
   assert.equal(fs.readdirSync(path.join(dataDir, 'backups')).filter((f) => f.startsWith('backup-')).length, 2);
 });
+
+test('serve: --log collects its own and the web app output; killing serve outright also ends the web app (Windows task stop)', async () => {
+  const dataDir = await dataFolder();
+  const port = await freePort();
+  const logFile = path.join(dataDir, 'logs', 'serve.log');
+  const serve = spawn(process.execPath, ['scripts/serve.ts', `--data-dir=${dataDir}`, `--port=${port}`, `--log=${logFile}`], {
+    cwd: buildDir,
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1', BRANCH_URL: '' },
+    stdio: 'ignore',
+  });
+  cleanups.push(() => void (serve.exitCode === null && serve.kill('SIGKILL')));
+  const answers = () => fetch(`http://127.0.0.1:${port}/login`, { redirect: 'manual' }).then(() => true, () => false);
+  for (let i = 0; i < 300 && !(await answers()); i++) await new Promise((r) => setTimeout(r, 100));
+  const [web] = execFileSync('pgrep', ['-P', String(serve.pid)], { encoding: 'utf8' }).trim().split('\n').map(Number);
+  cleanups.push(() => {
+    try {
+      process.kill(web, 'SIGKILL');
+    } catch {
+      // already gone, as it should be
+    }
+  });
+
+  const log = fs.readFileSync(logFile, 'utf8');
+  assert.match(log, /\[serve .*\] Backup saved \(start\)/);
+  assert.match(log, /Ready in/, 'the web app output is in the log too');
+
+  serve.kill('SIGKILL');
+  const gone = async () => {
+    try {
+      process.kill(web, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  for (let i = 0; i < 100 && !(await gone()); i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(await gone(), true, 'the web app exits within 10 s of its launcher');
+  assert.equal(await answers(), false, 'the port is free again');
+});

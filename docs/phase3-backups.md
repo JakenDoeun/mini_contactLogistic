@@ -24,12 +24,18 @@ minutes after the last change and the start-up backup cover it. Nothing saved is
 
 Build in a clean folder, never in a folder where `npm run dev` is running: `git clone`, `npm ci`, `npm run build`.
 
-**Windows (primary).** In PowerShell as administrator, from the built folder:
-`powershell -ExecutionPolicy Bypass -File deploy\windows\install.ps1`. It creates the hidden standard account
-`campusbranch` (random password given only to Task Scheduler), `C:\ProgramData\CampusBranch` (only that account,
+**Windows (primary).** Install Git for Windows, Node.js 24.21.0 (the .msi) and Tailscale (signed in, with "Run
+unattended" on), clone the repository, then in PowerShell as administrator, from the clone:
+`powershell -ExecutionPolicy Bypass -File deploy\windows\install.ps1`. The same command updates after `git pull`. It
+builds the clone (`npm ci`, `npm run build`), stops the app, copies it to `C:\Program Files\CampusBranch\app` (the
+previous version kept as `app.old`) with its own `node.exe`, creates the hidden standard account `campusbranch` (random
+password given only to Task Scheduler, "Log on as a batch job" right), `C:\ProgramData\CampusBranch` (only that account,
 Administrators and SYSTEM), and the task "Campus Branch" (at startup, whether or not anyone is logged on, no time limit,
-on battery too, restart on failure). It sets the critical battery action to Hibernate. Check "Set time automatically"
-is on, and run `tailscale serve --bg 3000` once.
+on battery too, restart on failure, normal priority). On mains power the computer no longer sleeps and closing the lid
+does nothing; on a critical battery it hibernates; automatic time is turned on if it was off. It then starts the app,
+waits until it answers, runs `tailscale serve --bg 3000`, and prints the address and, on a new install, the one-time
+code. The log is `C:\ProgramData\CampusBranch\logs\serve.log` (5 MB, one older file kept). If the task is ended
+outright, the web app follows its launcher within 2 seconds, so the port and the database are never left open.
 
 **Linux.** `sudo sh deploy/linux/install.sh [path to Node 24]`. It creates the non-login account `campus-branch`,
 `/var/lib/campus-branch` (0700), copies the app to `/opt/campus-branch/app` and Node to `/opt/campus-branch/node`, and
@@ -42,7 +48,8 @@ in Windows without any change to the app.
 
 1. Stop Campus Branch: Windows `Stop-ScheduledTask 'Campus Branch'`, Linux `sudo systemctl stop campus-branch`.
 2. List the backups (Cambodia time, newest first), from the app folder:
-   - Windows, PowerShell as administrator: `$env:DATA_DIR = "$env:ProgramData\CampusBranch"; npm run restore`
+   - Windows, PowerShell as administrator, in `C:\Program Files\CampusBranch\app`:
+     `$env:DATA_DIR = "$env:ProgramData\CampusBranch"; npm run restore`
    - Linux, as the app account so the files stay its own:
      `cd /opt/campus-branch/app && sudo -u campus-branch env DATA_DIR=/var/lib/campus-branch /opt/campus-branch/node/bin/node scripts/restore.ts`
 3. Run the same command with the backup's number at the end (`npm run restore -- 2`, or `... scripts/restore.ts 2`). The

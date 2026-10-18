@@ -11,23 +11,37 @@ import { openVerifiedDatabase, prepareDatabase } from '../src/server/db/migrate.
 import { resolveDataDir } from '../src/server/db/paths.ts';
 import { purgeExpired } from '../src/server/db/retention.ts';
 
-// A Windows scheduled task cannot set environment variables, so the folder and port may also come as arguments.
+// A Windows scheduled task cannot set environment variables or show a console, so the folder, port and a log file
+// may also come as arguments.
+let logFile = '';
 for (const arg of process.argv.slice(2)) {
-  const m = /^--(data-dir|port)=(.+)$/.exec(arg);
+  const m = /^--(data-dir|port|log)=(.+)$/.exec(arg);
   if (!m) {
-    console.error(`Unknown argument ${arg}. Usage: node scripts/serve.ts [--data-dir=<folder>] [--port=<port>]`);
+    console.error(`Unknown argument ${arg}. Usage: node scripts/serve.ts [--data-dir=<folder>] [--port=<port>] [--log=<file>]`);
     process.exit(2);
   }
-  process.env[m[1] === 'port' ? 'PORT' : 'DATA_DIR'] = m[2];
+  if (m[1] === 'log') logFile = path.resolve(m[2]);
+  else process.env[m[1] === 'port' ? 'PORT' : 'DATA_DIR'] = m[2];
 }
 const PORT = process.env.PORT || '3000';
-const log = (line: string) => console.log(`[serve ${new Date().toISOString()}] ${line}`);
+let logFd: number | null = null;
+if (logFile) {
+  fs.mkdirSync(path.dirname(logFile), { recursive: true });
+  // Keep one older file once the log passes 5 MB.
+  if (fs.existsSync(logFile) && fs.statSync(logFile).size > 5_000_000) fs.renameSync(logFile, `${logFile}.old`);
+  logFd = fs.openSync(logFile, 'a');
+}
+const log = (line: string) => {
+  const text = `[serve ${new Date().toISOString()}] ${line}`;
+  if (logFd === null) console.log(text);
+  else fs.writeSync(logFd, `${text}\n`);
+};
 
 const dataDir = resolveDataDir();
 try {
   await prepareDatabase(dataDir);
 } catch (e) {
-  console.error(`Database check failed; not starting: ${(e as Error).message}`);
+  log(`Database check failed; not starting: ${(e as Error).message}`);
   process.exit(1);
 }
 const db = openVerifiedDatabase(path.join(dataDir, 'branch.db'));
@@ -60,12 +74,20 @@ const timers = [setInterval(() => backups.tick(), 60_000), setInterval(retention
 
 // ---- the web app, restarted after a crash (5 s, doubling to 60 s; reset after a minute of running) ----
 const nextBin = createRequire(import.meta.url).resolve('next/dist/bin/next');
+// If this launcher is killed outright (Windows "End task", Stop-ScheduledTask, kill -9), the web app would keep the port
+// and the database open; it checks every 2 s that the launcher is alive and exits when it is not.
+const exitWithParent = `data:text/javascript,${encodeURIComponent(
+  'const p=process.ppid;setInterval(()=>{try{process.kill(p,0)}catch{process.exit(0)}},2000).unref()',
+)}`;
 let child: ChildProcess | null = null;
 let stopping = false;
 let delay = 5_000;
 function startApp() {
   const startedAt = Date.now();
-  child = spawn(process.execPath, [nextBin, 'start', '-H', '127.0.0.1', '-p', PORT], { stdio: 'inherit', env: { ...process.env, DATA_DIR: dataDir } });
+  child = spawn(process.execPath, ['--import', exitWithParent, nextBin, 'start', '-H', '127.0.0.1', '-p', PORT], {
+    stdio: logFd === null ? 'inherit' : ['ignore', logFd, logFd],
+    env: { ...process.env, DATA_DIR: dataDir },
+  });
   child.on('exit', (code, signal) => {
     child = null;
     if (stopping) return;

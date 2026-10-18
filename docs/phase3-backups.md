@@ -18,7 +18,8 @@ reinstalling and importing the courier file again (see "Rebuild" below), not by 
 | Admin | migration `drizzle/0003_retention.sql` | `users.is_admin`; the first account is the admin. The append-only tables refuse deletes except inside the retention job's transaction |
 
 The Windows shutdown can end the app without warning, so the backup on stop is not guaranteed there; the backup 5
-minutes after the last change and the start-up backup cover it. Nothing saved is lost either way (`FULL`).
+minutes after the last change and the start-up backup cover it. Nothing saved is lost either way (`FULL`). `Stop-ScheduledTask` does
+stop it cleanly (the launcher gets SIGHUP and saves its stop backup, seen on the test VM).
 
 ## Install (start at boot, no login, no terminal for staff)
 
@@ -101,9 +102,21 @@ On the devices, confirmed by the owner (Windows first, then Linux):
     `campusbranch`, 20 s before any sign-in; `/login` over Tailscale HTTPS 45 s after the reboot command; with the
     desktop user signed out, 3 of 3 checks over Tailscale HTTPS answered 200. To repeat on the branch laptop.
 - [ ] Ending the web app's process in Task Manager (or `kill`): it is back within 1 minute
+  - test VM, 2026-10-18: web app ended, back in 7 s (the launcher restarts it). Launcher ended: first stayed down (Task Scheduler's
+    "restart on failure" only covers a failed start); with the every-minute trigger back in 34 s.
 - [ ] The data folder cannot be opened by another account
+  - test VM, 2026-10-18: access list has SYSTEM, Administrators and campusbranch only, nothing inherited; no Users, Everyone or
+    Authenticated Users entry on the folder or on branch.db.
 - [ ] After a night switched off, a new backup appears within 5 minutes of boot if data changed
+  - test VM, 2026-10-18: after the power cut below, the first backup came 8 s after boot and held all 217 new rows.
 - [ ] Power pulled while saving: after restart every record shown as saved is there and the database checks ok
+  - test VM, 2026-10-18: 217 rows written one transaction each through connection.ts, power pulled with VBoxManage poweroff:
+    217 of 217 printed rows present, no gaps, integrity_check ok, 0 foreign-key problems. A VM power cut drops the
+    guest's caches, not the host disk's; repeat on the branch laptop.
 - [ ] Backups folder made unwritable: the red line appears after 2 failures; scanning and contacting still work
+  - test VM, 2026-10-18: write denied to campusbranch; red (failures >= 2) after the stop and start backups failed, the app and
+    the sign-in API kept answering; after unblocking one success reset it to 0.
 - [ ] Restore by following the steps above
+  - test VM, 2026-10-18: stopped as printed, a marker row added, backup 1 restored: marker gone, account kept, integrity ok, the
+    previous database kept as before-restore-*.db (marker in it), app answering after start.
 - [ ] Rebuild on a second machine within 30 minutes from the steps above

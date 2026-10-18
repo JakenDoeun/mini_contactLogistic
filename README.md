@@ -16,7 +16,7 @@ Work in progress, built in gated phases.
 | Pages (Dashboard, Parcels, Scan, Import Arrivals, Notifications, Settings) | Done; parcel, import and SMS data are still sample data |
 | SQLite database, migrations, start-up self-test | Done |
 | Staff login, first-run code, recovery code | Done |
-| Local backups, data retention, start at boot (Windows and Linux) | Branch `phase3-backups`, being tested |
+| Local backups, data retention, start at boot (Windows and Linux) | Done; checks on the branch laptop still to do |
 | Real imports, folder watcher, SMS gateway and queue | Not built yet |
 
 ## Requirements
@@ -36,6 +36,12 @@ npm run first-run-code      # prints the one-time code for creating the first ac
 The database lives outside the project, in `~/.local/share/campus-branch` (or the folder in `DATA_DIR`).
 
 Tests: `npm test` and `npm run test:integration`.
+
+## Install on Windows
+
+Download [`deploy/windows/install.ps1`](deploy/windows/install.ps1) and run
+`powershell -ExecutionPolicy Bypass -File install.ps1`. It installs what is missing (Tailscale, its own Node.js),
+builds the app, starts it at boot and prints the staff address. Details: `docs/phase3-backups.md`.
 
 ## Serve it on your tailnet
 

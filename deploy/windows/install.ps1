@@ -21,8 +21,7 @@
 #     and, on a new install, the one-time code for the first account.
 param(
   [string]$Repo = 'JakenDoeun/mini_contactLogistic',
-  # shortcut: phase3-backups holds the launcher until it is merged; switch the default to main after the merge.
-  [string]$Branch = 'phase3-backups',
+  [string]$Branch = 'main',
   [string]$InstallDir = "$env:ProgramFiles\CampusBranch",
   [string]$DataDir = "$env:ProgramData\CampusBranch",
   [string]$Account = 'campusbranch',

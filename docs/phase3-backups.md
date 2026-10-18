@@ -94,6 +94,9 @@ Automated (`npm test`, `npm run test:integration`) on Linux:
 On the devices, confirmed by the owner (Windows first, then Linux):
 
 - [ ] Cold boot with nobody logged in: the app answers on the Tailscale HTTPS address within 3 minutes
+  - 2026-10-18, test VM (VirtualBox, Windows 10 22H2, not the branch laptop): launcher up 5 s after boot as
+    `campusbranch`, 20 s before any sign-in; `/login` over Tailscale HTTPS 45 s after the reboot command; with the
+    desktop user signed out, 3 of 3 checks over Tailscale HTTPS answered 200. To repeat on the branch laptop.
 - [ ] Ending the web app's process in Task Manager (or `kill`): it is back within 1 minute
 - [ ] The data folder cannot be opened by another account
 - [ ] After a night switched off, a new backup appears within 5 minutes of boot if data changed

@@ -47,6 +47,11 @@ updates. It needs nothing installed first and checks the Node.js and Tailscale d
 The log is `C:\ProgramData\CampusBranch\logs\serve.log` (5 MB, one older file kept). If the task is ended outright, the
 web app follows its launcher within 2 seconds, so the port and the database are never left open.
 
+Two Windows specifics the installer handles: Tailscale shows its status only to the Windows user who signed it in,
+so the task passes the address to the app (`serve.ts --branch-url`, i.e. `BRANCH_URL`) and Settings checks that address
+live instead; and the build links better-sqlite3 into `.next\node_modules` with a junction whose target is absolute, so
+the installer re-points it after renaming `app.new` to `app` and unlinks junctions before deleting `app.old`.
+
 **Linux.** `sudo sh deploy/linux/install.sh [path to Node 24]`. It creates the non-login account `campus-branch`,
 `/var/lib/campus-branch` (0700), copies the app to `/opt/campus-branch/app` and Node to `/opt/campus-branch/node`, and
 enables `campus-branch.service` (`Restart=on-failure`, stop by SIGTERM with 30 s for the stop backup).

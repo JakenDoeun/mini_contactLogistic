@@ -43,6 +43,8 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 trap {
   Write-Host "`nInstallation stopped: $($_.Exception.Message)" -ForegroundColor Red
   Write-Host 'Fix the problem above, then run this script again; it continues where it can.' -ForegroundColor Red
+  # Stop-App disables the task; turn it back on so the version in place keeps running.
+  Enable-ScheduledTask -TaskName 'Campus Branch' -ErrorAction SilentlyContinue | Out-Null
   exit 1
 }
 # nodejs.org, GitHub and Tailscale accept TLS 1.2 or later only; older Windows PowerShell may not offer it by default.
@@ -118,7 +120,11 @@ function Copy-Folder([string]$from, [string]$to, [string[]]$skip) {
 }
 # Every app process runs the node.exe in $NodeDir, so this finds all of them, a web app left behind included.
 function Stop-App {
-  if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) { Stop-ScheduledTask -TaskName $TaskName }
+  # Disabled first: the every-minute trigger would start it again while files are being swapped.
+  if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
+    Disable-ScheduledTask -TaskName $TaskName | Out-Null
+    Stop-ScheduledTask -TaskName $TaskName
+  }
   $deadline = (Get-Date).AddSeconds(30)
   do {
     $left = @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object { $_.ExecutablePath -eq $NodeExe })
@@ -274,7 +280,10 @@ icacls "$AppDir\.next\cache" /grant "${Account}:(OI)(CI)M" | Out-Null
 Step "Task '$TaskName'"
 $arguments = "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\serve.ts --data-dir=`"$DataDir`" --port=$Port --branch-url=$address --log=`"$LogFile`""
 $action = New-ScheduledTaskAction -Execute $NodeExe -Argument $arguments -WorkingDirectory $AppDir
-$trigger = New-ScheduledTaskTrigger -AtStartup
+# At startup, and every minute: "restart on failure" covers only a task that fails to start, not a launcher that
+# dies later (ended in Task Manager, crashed); IgnoreNew makes the minute trigger do nothing while the app runs.
+$repeat = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+$trigger = @((New-ScheduledTaskTrigger -AtStartup), $repeat)
 # Priority 5 = normal; the default 7 also lowers disk priority.
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
   -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
@@ -380,15 +389,15 @@ Write-Host @"
 
  For the administrator (PowerShell as administrator):
    Update:   run this installer again
-   Stop:     Stop-ScheduledTask '$TaskName'
-   Start:    Start-ScheduledTask '$TaskName'
+   Stop:     Disable-ScheduledTask '$TaskName'; Stop-ScheduledTask '$TaskName'   (else it restarts within a minute)
+   Start:    Enable-ScheduledTask '$TaskName'; Start-ScheduledTask '$TaskName'
    Log:      $LogFile
    Data:     $DataDir   (database and backups; customer data, keep private)
-   Restore:  Stop-ScheduledTask '$TaskName'
+   Restore:  Disable-ScheduledTask '$TaskName'; Stop-ScheduledTask '$TaskName'
              cd '$AppDir'; `$env:DATA_DIR = '$DataDir'
              & '$NodeExe' --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\restore.ts      (lists backups)
              & '$NodeExe' --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\restore.ts 2    (puts back number 2)
-             Start-ScheduledTask '$TaskName'
+             Enable-ScheduledTask '$TaskName'; Start-ScheduledTask '$TaskName'
    Remove:   Unregister-ScheduledTask '$TaskName' -Confirm:`$false; Remove-LocalUser $Account
              then delete $InstallDir (and $DataDir, which holds the customer data)
 "@

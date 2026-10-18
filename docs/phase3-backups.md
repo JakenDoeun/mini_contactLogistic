@@ -38,7 +38,8 @@ updates. It needs nothing installed first and checks the Node.js and Tailscale d
    kept as `app.old`). A failed build leaves the running version untouched.
 4. The hidden standard account `campusbranch` (random password given only to Task Scheduler, "Log on as a batch job"
    right), `C:\ProgramData\CampusBranch` (only that account, Administrators and SYSTEM), and the task "Campus Branch"
-   (at startup, whether or not anyone is logged on, no time limit, on battery too, restart on failure, normal priority).
+   (at startup and every minute, whether or not anyone is logged on, no time limit, on battery too, normal priority; the
+   minute trigger restarts a launcher that died, since "restart on failure" only covers a task that fails to start).
 5. On mains power the computer no longer sleeps and closing the lid does nothing; on a critical battery it hibernates;
    automatic time is turned on if it was off.
 6. It starts the app, waits until it answers, runs `tailscale serve --bg 3000` (HTTPS must be enabled for the tailnet;
@@ -61,7 +62,8 @@ in Windows without any change to the app.
 
 ## Restore
 
-1. Stop Campus Branch: Windows `Stop-ScheduledTask 'Campus Branch'`, Linux `sudo systemctl stop campus-branch`.
+1. Stop Campus Branch: Windows `Disable-ScheduledTask 'Campus Branch'; Stop-ScheduledTask 'Campus Branch'` (disabled first, or
+   its every-minute trigger starts it again), Linux `sudo systemctl stop campus-branch`.
 2. List the backups (Cambodia time, newest first), from the app folder:
    - Windows, PowerShell as administrator:
      `cd "$env:ProgramFiles\CampusBranch\app"; $env:DATA_DIR = "$env:ProgramData\CampusBranch"; & ..\node\node.exe --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\restore.ts`
@@ -69,7 +71,8 @@ in Windows without any change to the app.
      `cd /opt/campus-branch/app && sudo -u campus-branch env DATA_DIR=/var/lib/campus-branch /opt/campus-branch/node/bin/node scripts/restore.ts`
 3. Run the same command with the backup's number at the end (`... scripts\restore.ts 2` on Windows, `... scripts/restore.ts 2` on Linux). The
    current database is kept as a before-restore copy first.
-4. Start Campus Branch again: `Start-ScheduledTask 'Campus Branch'`, or `sudo systemctl start campus-branch`.
+4. Start Campus Branch again: `Enable-ScheduledTask 'Campus Branch'; Start-ScheduledTask 'Campus Branch'`, or
+   `sudo systemctl start campus-branch`.
 
 ## Rebuild after losing the computer
 

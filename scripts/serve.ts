@@ -39,8 +39,9 @@ const log = (line: string) => {
   else fs.writeSync(logFd, `${text}\n`);
 };
 
-const dataDir = resolveDataDir();
+let dataDir = '';
 try {
+  dataDir = resolveDataDir();
   await prepareDatabase(dataDir);
 } catch (e) {
   log(`Database check failed; not starting: ${(e as Error).message}`);

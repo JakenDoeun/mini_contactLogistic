@@ -117,9 +117,9 @@ test('db:migrate exits 1 with the reason when the database or the folder is not 
 
 test('every script that starts the app runs db:migrate first and stops if it fails (finding M1)', (t) => {
   const scripts = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8')).scripts as Record<string, string>;
-  for (const name of ['dev', 'dev:https', 'start', 'start:lan']) {
-    assert.match(scripts[name], /^node scripts\/db-migrate\.ts && next (dev|start)\b/, name);
-  }
+  for (const name of ['dev', 'dev:https']) assert.match(scripts[name], /^node scripts\/db-migrate\.ts && next dev\b/, name);
+  // start and start:lan run the launcher, which migrates and self-tests first and passes DATA_DIR on (finding M2).
+  for (const name of ['start', 'start:lan', 'serve']) assert.equal(scripts[name], 'node scripts/serve.ts', name);
   for (const [name, cmd] of Object.entries(scripts)) {
     if (/\bnext (dev|start)\b/.test(cmd)) assert.match(cmd, /^node scripts\/db-migrate\.ts && /, `${name} starts the app without the database check`);
   }
@@ -129,7 +129,7 @@ test('every script that starts the app runs db:migrate first and stops if it fai
   fs.chmodSync(dataDir, 0o755);
   const result = spawnSync('npm', ['run', 'start:lan'], { cwd: PROJECT_ROOT, env: { ...process.env, DATA_DIR: dataDir }, encoding: 'utf8', timeout: 60_000 });
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Database migration failed: .*must be 0700/);
+  assert.match(`${result.stdout}${result.stderr}`, /Database check failed; not starting: .*must be 0700/);
   assert.doesNotMatch(`${result.stdout}${result.stderr}`, /Next\.js|Ready in/);
 });
 

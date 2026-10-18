@@ -59,7 +59,7 @@ in Windows without any change to the app.
 1. Stop Campus Branch: Windows `Stop-ScheduledTask 'Campus Branch'`, Linux `sudo systemctl stop campus-branch`.
 2. List the backups (Cambodia time, newest first), from the app folder:
    - Windows, PowerShell as administrator:
-     `cd "$env:ProgramFiles\CampusBranch\app"; $env:DATA_DIR = "$env:ProgramData\CampusBranch"; & ..\node\node.exe scripts\restore.ts`
+     `cd "$env:ProgramFiles\CampusBranch\app"; $env:DATA_DIR = "$env:ProgramData\CampusBranch"; & ..\node\node.exe --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\restore.ts`
    - Linux, as the app account so the files stay its own:
      `cd /opt/campus-branch/app && sudo -u campus-branch env DATA_DIR=/var/lib/campus-branch /opt/campus-branch/node/bin/node scripts/restore.ts`
 3. Run the same command with the backup's number at the end (`... scripts\restore.ts 2` on Windows, `... scripts/restore.ts 2` on Linux). The

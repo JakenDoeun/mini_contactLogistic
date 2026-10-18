@@ -134,7 +134,9 @@ function Test-BatchRight([string]$sid) {
   secedit /export /cfg $inf /areas USER_RIGHTS | Out-Null
   $line = "$(Get-Content $inf | Where-Object { $_ -match '^SeBatchLogonRight' })"
   Remove-Item $inf -Force -ErrorAction SilentlyContinue
-  return @{ Has = $line -match [regex]::Escape("*$sid"); Line = $line }
+  # secedit lists a local account by name, not by SID.
+  $holders = if ($line) { ($line -split '=', 2)[1] -split ',' | ForEach-Object { $_.Trim() } } else { @() }
+  return @{ Has = ($holders -contains "*$sid") -or ($holders -contains $Account); Line = $line }
 }
 
 # ---- 1. Tailscale: installed, unattended, signed in (the only step that may need you) --------------------------------
@@ -250,7 +252,7 @@ icacls "$AppDir\.next\cache" /grant "${Account}:(OI)(CI)M" | Out-Null
 
 # ---- 6. The task ------------------------------------------------------------------------------------------------------
 Step "Task '$TaskName'"
-$arguments = "scripts\serve.ts --data-dir=`"$DataDir`" --port=$Port --log=`"$LogFile`""
+$arguments = "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\serve.ts --data-dir=`"$DataDir`" --port=$Port --log=`"$LogFile`""
 $action = New-ScheduledTaskAction -Execute $NodeExe -Argument $arguments -WorkingDirectory $AppDir
 $trigger = New-ScheduledTaskTrigger -AtStartup
 # Priority 5 = normal; the default 7 also lowers disk priority.
@@ -260,9 +262,6 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
   -User "$env:COMPUTERNAME\$Account" -Password $plain -RunLevel Limited -Force | Out-Null
 $plain = $null
-if (-not (Test-BatchRight $sid).Has) {
-  Write-Warning "The account $Account lacks the 'Log on as a batch job' right, so the task may not start at boot. On Windows Pro: secpol.msc > Local Policies > User Rights Assignment > Log on as a batch job > add $Account."
-}
 
 # ---- 7. Power and time ------------------------------------------------------------------------------------------------
 Step 'Power and time'
@@ -290,21 +289,25 @@ w32tm /resync /nowait | Out-Null
 # ---- 8. Start, check, share ---------------------------------------------------------------------------------------------
 Step 'Starting Campus Branch'
 Start-ScheduledTask -TaskName $TaskName
+# Wait for the sign-in page itself; showing it also creates the one-time code on a new install.
 $up = $false
 for ($i = 0; $i -lt 60 -and -not $up; $i++) {
   Start-Sleep -Seconds 2
   try {
-    Invoke-WebRequest "http://127.0.0.1:$Port/login" -UseBasicParsing -TimeoutSec 5 | Out-Null
-    $up = $true
+    $up = (Invoke-WebRequest "http://127.0.0.1:$Port/login" -UseBasicParsing -TimeoutSec 10).StatusCode -eq 200
   } catch {
-    if ($_.Exception.Response) { $up = $true }
+    $up = $false
   }
 }
 if (-not $up) {
   $result = (Get-ScheduledTaskInfo -TaskName $TaskName).LastTaskResult
   Write-Host "Last lines of $LogFile`:"
   if (Test-Path $LogFile) { Get-Content $LogFile -Tail 40 }
-  throw "Campus Branch did not answer within 2 minutes (task result $result)."
+  # 0x80070569: the account may not log on as a batch job.
+  if ($result -eq 2147943785) {
+    throw "Windows refused to start the task as $Account (no 'Log on as a batch job' right). On Windows Pro: secpol.msc > Local Policies > User Rights Assignment > Log on as a batch job > add $Account, then run this again."
+  }
+  throw "Campus Branch did not answer within 2 minutes (task result $result). The log lines above say why."
 }
 Write-Host "The app answers on http://127.0.0.1:$Port"
 
@@ -315,19 +318,58 @@ if ($LASTEXITCODE -ne 0) { throw "tailscale serve failed. Fix what it printed ab
 $address = 'https://' + ((& $TailscaleExe status --json) -join "`n" | ConvertFrom-Json).Self.DNSName.TrimEnd('.')
 Remove-Folder $Work
 
-Step 'Done'
-Write-Host "Staff open: $address" -ForegroundColor Green
+# A new install has no account yet: the sign-in page just wrote the one-time code into the data folder.
 Push-Location $AppDir
-$env:DATA_DIR = $DataDir
-try { & $NodeExe scripts\first-run-code.ts } finally { Pop-Location; Remove-Item Env:\DATA_DIR }
+try {
+  $accounts = [int](& $NodeExe -e 'const D=require(''better-sqlite3'');const d=new D(process.argv[1],{readonly:true});console.log(d.prepare(''SELECT count(*) AS n FROM users'').get().n)' "$DataDir\branch.db")
+} finally {
+  Pop-Location
+}
+$codeFile = "$DataDir\first-run-code.txt"
+$code = if ($accounts -eq 0 -and (Test-Path $codeFile)) { (Get-Content $codeFile -Raw).Trim() } else { $null }
+if ($accounts -eq 0 -and -not $code) {
+  Write-Host "Last lines of $LogFile`:"
+  Get-Content $LogFile -Tail 30
+  throw 'The app runs but could not create the one-time code for the first account. The log lines above say why.'
+}
+
+Write-Host "`n================================================================" -ForegroundColor Green
+Write-Host " Campus Branch is installed and running" -ForegroundColor Green
+Write-Host "================================================================" -ForegroundColor Green
+Write-Host "`n Address for staff:  $address/login" -ForegroundColor Green
+if ($code) {
+  Write-Host @"
+
+ Create the first account (once, now):
+   1. Open $address/login in a browser on this computer,
+      or on any device signed in to the same Tailscale account.
+   2. Type this one-time code:
+
+          $code
+
+   3. Choose the admin user name and password. The code then stops working.
+   4. In Settings, "Ready for phones?" should show "Yes, over Tailscale HTTPS".
+"@
+} else {
+  Write-Host "`n Accounts are kept ($accounts). Sign in as before."
+}
 Write-Host @"
 
-Data and backups: $DataDir
-Log:              $LogFile
-Stop:    Stop-ScheduledTask '$TaskName'
-Start:   Start-ScheduledTask '$TaskName'
-Restore: stop it, then as administrator:
-         cd '$AppDir'; `$env:DATA_DIR = '$DataDir'; & '$NodeExe' scripts\restore.ts
-Remove:  Unregister-ScheduledTask '$TaskName' -Confirm:`$false; Remove-LocalUser $Account
-         then delete $InstallDir (and $DataDir, which holds the customer data)
+ Staff phones:
+   Install Tailscale on the phone and sign in with the same Tailscale account,
+   then open the address above, or scan the QR code under Settings > "Set up a staff phone".
+
+ For the administrator (PowerShell as administrator):
+   Update:   run this installer again
+   Stop:     Stop-ScheduledTask '$TaskName'
+   Start:    Start-ScheduledTask '$TaskName'
+   Log:      $LogFile
+   Data:     $DataDir   (database and backups; customer data, keep private)
+   Restore:  Stop-ScheduledTask '$TaskName'
+             cd '$AppDir'; `$env:DATA_DIR = '$DataDir'
+             & '$NodeExe' --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\restore.ts      (lists backups)
+             & '$NodeExe' --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\restore.ts 2    (puts back number 2)
+             Start-ScheduledTask '$TaskName'
+   Remove:   Unregister-ScheduledTask '$TaskName' -Confirm:`$false; Remove-LocalUser $Account
+             then delete $InstallDir (and $DataDir, which holds the customer data)
 "@

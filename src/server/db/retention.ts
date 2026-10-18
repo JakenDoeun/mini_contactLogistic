@@ -118,7 +118,9 @@ export function purgeExpired(db: Db, dataDir: string, now = new Date()): { cutof
   }
 
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  for (const file of storedFiles) removeInside(dataDir, file);
+  // Uploads of the same file share one stored copy (imports/<sha256>): it goes only when no import still uses it.
+  const stillUsed = db.prepare('SELECT 1 FROM imports WHERE stored_path = ?');
+  for (const file of new Set(storedFiles)) if (!stillUsed.get(file)) removeInside(dataDir, file);
   if (total) {
     // secure_delete zeroed the freed pages; this also drops the old page images still in the WAL file.
     db.pragma('wal_checkpoint(TRUNCATE)');

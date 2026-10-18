@@ -138,6 +138,15 @@ export const pinnedLookup =
  * the certificate is valid and trusted for the name, and the request reaches this app. With `ip`, the name is not
  * looked up in this computer's DNS (see pinnedLookup); the certificate is still checked against the name.
  */
+/** The probe's request reached this app: /api/branch-address answers with its phone addresses (branchAddresses). */
+export function answeredByThisApp(status: number, body: string) {
+  try {
+    return status === 200 && 'setup' in JSON.parse(body);
+  } catch {
+    return false;
+  }
+}
+
 export function probeHttps(hostname: string, ip?: string | null): Promise<HttpsProbe> {
   return new Promise((resolve) => {
     const lookup = ip ? { lookup: pinnedLookup(ip) as never } : {};
@@ -150,7 +159,7 @@ export function probeHttps(hostname: string, ip?: string | null): Promise<HttpsP
         resolve({
           ok: true,
           status: res.statusCode ?? 0,
-          thisApp: res.statusCode === 200 && body.includes('"mode"'),
+          thisApp: answeredByThisApp(res.statusCode ?? 0, body),
           issuer: [cert?.issuer?.O, cert?.issuer?.CN].filter(Boolean).join(' '),
           validTo: cert?.valid_to ? new Date(cert.valid_to).toISOString() : '',
         }),

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { diagnoseByAddress, diagnoseTailscale, parseServe, parseStatus, pinnedLookup, type HttpsProbe, type TailscaleStatus } from './tailscale.ts';
+import { answeredByThisApp, diagnoseByAddress, diagnoseTailscale, parseServe, parseStatus, pinnedLookup, type HttpsProbe, type TailscaleStatus } from './tailscale.ts';
+import { branchAddresses } from './branch-address.ts';
 
 // Shapes as printed by tailscale 1.102 (`status --json`, `serve status --json`), trimmed to the fields read.
 const HOST = 'office-pc.example-tailnet.ts.net';
@@ -95,6 +96,14 @@ test('diagnosis by address: Windows hides Tailscale status from the app account,
   const down = diagnoseByAddress({ ok: false, reason: 'refused', message: 'ECONNREFUSED' }, set, '3000', NOW);
   assert.deepEqual(states(down), { tailscale: 'warn', https: 'fail', address: 'ok' });
   assert.match(down[0].fix!, /Tailscale icon/);
+});
+
+test('the live check recognises this app by what /api/branch-address really returns', () => {
+  // The route answers with branchAddresses(); a check on a field it no longer sends failed every live check.
+  assert.equal(answeredByThisApp(200, JSON.stringify(branchAddresses(`https://${HOST}`))), true);
+  assert.equal(answeredByThisApp(200, JSON.stringify(branchAddresses(null))), true);
+  assert.equal(answeredByThisApp(200, '<html>another site</html>'), false);
+  assert.equal(answeredByThisApp(502, ''), false);
 });
 
 test('the live check uses the Tailscale IPv4 address, not this computer\'s DNS', () => {

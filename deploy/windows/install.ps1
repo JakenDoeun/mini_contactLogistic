@@ -60,6 +60,16 @@ $cpu = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $
 if (-not [Environment]::Is64BitOperatingSystem -or $cpu -notin @('AMD64', 'ARM64')) {
   throw "Campus Branch needs 64-bit Windows on an x64 or ARM64 processor; this is $cpu."
 }
+# Node.js 24 and Tailscale need Windows 10 version 1809 (build 17763) or later.
+$build = [Environment]::OSVersion.Version.Build
+if ($build -lt 17763) {
+  throw "This Windows is too old (build $build). Update it in Settings > Update & Security > Windows Update to Windows 10 version 1809 or later, then run this again."
+}
+# Downloads, the build beside the running version and the previous version need about 3 GB.
+$freeGB = [math]::Floor((Get-PSDrive ($env:ProgramFiles.Substring(0, 1))).Free / 1GB)
+if ($freeGB -lt 3) {
+  throw "Only $freeGB GB is free on drive $($env:ProgramFiles.Substring(0, 2)); about 3 GB is needed. Free some space, then run this again."
+}
 $NodeArch = if ($cpu -eq 'ARM64') { 'arm64' } else { 'x64' }
 $TailscaleArch = if ($cpu -eq 'ARM64') { 'arm64' } else { 'amd64' }
 
@@ -174,6 +184,8 @@ if ((Test-Path $NodeExe) -and (& $NodeExe --version).Trim() -eq "v$NodeVersion")
 }
 $env:Path = "$NodeDir;$env:Path"
 $env:NEXT_TELEMETRY_DISABLED = '1'
+# This npm is pinned with Node.js above; its "new version available" notice does not apply.
+$env:npm_config_update_notifier = 'false'
 
 # ---- 3. The app: download (or take the clone), build beside the running version, swap ------------------------------
 Step 'Getting the app'

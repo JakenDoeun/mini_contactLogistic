@@ -32,7 +32,8 @@ updates. It needs nothing installed first and checks the Node.js and Tailscale d
    not on the tailnet yet, `tailscale up` prints a sign-in link (the only step that needs a person).
 2. Its own Node.js 24.21.0 in `C:\Program Files\CampusBranch\node` (the zip from nodejs.org); a system Node.js or Git is
    never needed or touched.
-3. The app: the GitHub branch zip (or the clone the script sits in) copied to `app.new`, `npm ci` and `npm run build`
+3. The app: the GitHub branch zip (or the clone the script sits in) copied to `app.new`, `npm ci` (no compiler or Python:
+   `allowScripts` in package.json stops better-sqlite3 from compiling and it loads its bundled binary) and `npm run build`
    there while the old version keeps running, then the app is stopped and `app.new` becomes `app` (the previous version
    kept as `app.old`). A failed build leaves the running version untouched.
 4. The hidden standard account `campusbranch` (random password given only to Task Scheduler, "Log on as a batch job"

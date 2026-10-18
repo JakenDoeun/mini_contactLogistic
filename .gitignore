@@ -22,6 +22,8 @@ data/
 backups/
 uploads/
 imports/
+# The import API's route folder is code, not data: only this exact path is let through.
+!src/app/api/imports/
 logs/
 *.log
 *.db

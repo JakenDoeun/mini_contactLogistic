@@ -24,18 +24,27 @@ minutes after the last change and the start-up backup cover it. Nothing saved is
 
 Build in a clean folder, never in a folder where `npm run dev` is running: `git clone`, `npm ci`, `npm run build`.
 
-**Windows (primary).** Install Git for Windows, Node.js 24.21.0 (the .msi) and Tailscale (signed in, with "Run
-unattended" on), clone the repository, then in PowerShell as administrator, from the clone:
-`powershell -ExecutionPolicy Bypass -File deploy\windows\install.ps1`. The same command updates after `git pull`. It
-builds the clone (`npm ci`, `npm run build`), stops the app, copies it to `C:\Program Files\CampusBranch\app` (the
-previous version kept as `app.old`) with its own `node.exe`, creates the hidden standard account `campusbranch` (random
-password given only to Task Scheduler, "Log on as a batch job" right), `C:\ProgramData\CampusBranch` (only that account,
-Administrators and SYSTEM), and the task "Campus Branch" (at startup, whether or not anyone is logged on, no time limit,
-on battery too, restart on failure, normal priority). On mains power the computer no longer sleeps and closing the lid
-does nothing; on a critical battery it hibernates; automatic time is turned on if it was off. It then starts the app,
-waits until it answers, runs `tailscale serve --bg 3000`, and prints the address and, on a new install, the one-time
-code. The log is `C:\ProgramData\CampusBranch\logs\serve.log` (5 MB, one older file kept). If the task is ended
-outright, the web app follows its launcher within 2 seconds, so the port and the database are never left open.
+**Windows (primary).** Download `deploy/windows/install.ps1` alone (or use it from a clone) and run
+`powershell -ExecutionPolicy Bypass -File install.ps1`; it asks for administrator rights itself. The same command
+updates. It needs nothing installed first and checks the Node.js and Tailscale downloads against their published SHA-256:
+
+1. Tailscale: installed if missing, set to "Run unattended" (policy `UnattendedMode = always`), and, if this computer is
+   not on the tailnet yet, `tailscale up` prints a sign-in link (the only step that needs a person).
+2. Its own Node.js 24.21.0 in `C:\Program Files\CampusBranch\node` (the zip from nodejs.org); a system Node.js or Git is
+   never needed or touched.
+3. The app: the GitHub branch zip (or the clone the script sits in) copied to `app.new`, `npm ci` and `npm run build`
+   there while the old version keeps running, then the app is stopped and `app.new` becomes `app` (the previous version
+   kept as `app.old`). A failed build leaves the running version untouched.
+4. The hidden standard account `campusbranch` (random password given only to Task Scheduler, "Log on as a batch job"
+   right), `C:\ProgramData\CampusBranch` (only that account, Administrators and SYSTEM), and the task "Campus Branch"
+   (at startup, whether or not anyone is logged on, no time limit, on battery too, restart on failure, normal priority).
+5. On mains power the computer no longer sleeps and closing the lid does nothing; on a critical battery it hibernates;
+   automatic time is turned on if it was off.
+6. It starts the app, waits until it answers, runs `tailscale serve --bg 3000` (HTTPS must be enabled for the tailnet;
+   Tailscale prints the link if not), and prints the staff address and, on a new install, the one-time code.
+
+The log is `C:\ProgramData\CampusBranch\logs\serve.log` (5 MB, one older file kept). If the task is ended outright, the
+web app follows its launcher within 2 seconds, so the port and the database are never left open.
 
 **Linux.** `sudo sh deploy/linux/install.sh [path to Node 24]`. It creates the non-login account `campus-branch`,
 `/var/lib/campus-branch` (0700), copies the app to `/opt/campus-branch/app` and Node to `/opt/campus-branch/node`, and
@@ -48,11 +57,11 @@ in Windows without any change to the app.
 
 1. Stop Campus Branch: Windows `Stop-ScheduledTask 'Campus Branch'`, Linux `sudo systemctl stop campus-branch`.
 2. List the backups (Cambodia time, newest first), from the app folder:
-   - Windows, PowerShell as administrator, in `C:\Program Files\CampusBranch\app`:
-     `$env:DATA_DIR = "$env:ProgramData\CampusBranch"; npm run restore`
+   - Windows, PowerShell as administrator:
+     `cd "$env:ProgramFiles\CampusBranch\app"; $env:DATA_DIR = "$env:ProgramData\CampusBranch"; & ..\node\node.exe scripts\restore.ts`
    - Linux, as the app account so the files stay its own:
      `cd /opt/campus-branch/app && sudo -u campus-branch env DATA_DIR=/var/lib/campus-branch /opt/campus-branch/node/bin/node scripts/restore.ts`
-3. Run the same command with the backup's number at the end (`npm run restore -- 2`, or `... scripts/restore.ts 2`). The
+3. Run the same command with the backup's number at the end (`... scripts\restore.ts 2` on Windows, `... scripts/restore.ts 2` on Linux). The
    current database is kept as a before-restore copy first.
 4. Start Campus Branch again: `Start-ScheduledTask 'Campus Branch'`, or `sudo systemctl start campus-branch`.
 

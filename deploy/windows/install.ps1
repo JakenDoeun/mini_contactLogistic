@@ -1,101 +1,213 @@
-# Campus Branch: install or update on Windows 10/11, Home or Pro (plan Revision 4).
+# Campus Branch: install or update on Windows 10 (1803 or later) or 11, Home or Pro, x64 or ARM64 (plan Revision 4).
 #
-# Before the first run: install Git for Windows, Node.js 24.21.0 (the Windows .msi from nodejs.org) and Tailscale; sign
-# Tailscale in to your tailnet; clone this repository. Then, in PowerShell as administrator, from the clone:
+# Download this one file and run it; it fetches and checks everything else:
 #
-#   powershell -ExecutionPolicy Bypass -File deploy\windows\install.ps1
+#   powershell -ExecutionPolicy Bypass -File install.ps1
 #
-# To update later: git pull in the clone, then the same command. It:
-#  1. checks Node.js, then runs npm ci and npm run build in the clone;
-#  2. stops the running app and copies the build to C:\Program Files\CampusBranch\app and Node.js to ...\node
-#     (the previous version is kept as app.old);
-#  3. creates the standard local account "campusbranch" that only runs the app (random password given only to Task
-#     Scheduler, hidden from the sign-in screen) and lets it run a task with nobody signed in;
-#  4. creates the data folder C:\ProgramData\CampusBranch that only that account, Administrators and SYSTEM can open;
-#  5. registers the task "Campus Branch": at startup with nobody signed in, no time limit, restart on failure;
-#  6. keeps the computer awake on mains power (no sleep; closing the lid does nothing), hibernates on a critical
+# Run the same command again to update. It asks for administrator rights if needed, then:
+#  1. installs Tailscale if missing (checked against its published SHA-256), keeps it running with nobody signed in
+#     ("Run unattended"), and asks you to sign in once if this computer is not on your tailnet yet;
+#  2. downloads the app (the GitHub branch below, or uses the clone this script sits in) and its own Node.js 24.21.0
+#     (checked against nodejs.org's SHA-256 list) into C:\Program Files\CampusBranch; no system Node.js or Git needed;
+#  3. builds it next to the running version, then stops the app and swaps the folders (the previous one kept as
+#     app.old), so the app is down only for seconds;
+#  4. creates the standard local account "campusbranch" that only runs the app (random password given only to Task
+#     Scheduler, hidden from the sign-in screen) with the right to run while nobody is signed in;
+#  5. creates the data folder C:\ProgramData\CampusBranch that only that account, Administrators and SYSTEM can open;
+#  6. registers the task "Campus Branch": at startup with nobody signed in, no time limit, restart on failure;
+#  7. keeps the computer awake on mains power (no sleep; closing the lid does nothing), hibernates on a critical
 #     battery, and turns on automatic time if it was off;
-#  7. starts the app, waits until it answers, shares it on the tailnet with Tailscale Serve, then prints its address
+#  8. starts the app, waits until it answers, shares it on the tailnet with Tailscale Serve, then prints its address
 #     and, on a new install, the one-time code for the first account.
-#Requires -RunAsAdministrator
 param(
+  [string]$Repo = 'JakenDoeun/mini_contactLogistic',
+  # shortcut: phase3-backups holds the launcher until it is merged; switch the default to main after the merge.
+  [string]$Branch = 'phase3-backups',
   [string]$InstallDir = "$env:ProgramFiles\CampusBranch",
   [string]$DataDir = "$env:ProgramData\CampusBranch",
   [string]$Account = 'campusbranch',
   [int]$Port = 3000
 )
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue' # the progress bar makes downloads in Windows PowerShell 5.1 very slow
+
+# ---- Administrator rights: reopen this script elevated, in a window that stays open ---------------------------------
+$principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+  $forward = @('-NoProfile', '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
+  foreach ($p in $PSBoundParameters.GetEnumerator()) { $forward += @("-$($p.Key)", "`"$($p.Value)`"") }
+  Write-Host 'Asking for administrator rights; the installation continues in the new window.'
+  Start-Process powershell.exe -Verb RunAs -ArgumentList $forward
+  exit
+}
+trap {
+  Write-Host "`nInstallation stopped: $($_.Exception.Message)" -ForegroundColor Red
+  Write-Host 'Fix the problem above, then run this script again; it continues where it can.' -ForegroundColor Red
+  exit 1
+}
+# nodejs.org, GitHub and Tailscale accept TLS 1.2 or later only; older Windows PowerShell may not offer it by default.
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+$NodeVersion = '24.21.0'
 $TaskName = 'Campus Branch'
-$Source = (Resolve-Path "$PSScriptRoot\..\..").Path
 $AppDir = "$InstallDir\app"
-$NodeExe = "$InstallDir\node\node.exe"
+$NodeDir = "$InstallDir\node"
+$NodeExe = "$NodeDir\node.exe"
 $LogFile = "$DataDir\logs\serve.log"
+$TailscaleExe = "$env:ProgramFiles\Tailscale\tailscale.exe"
+$Work = "$env:TEMP\campusbranch-install"
+$cpu = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+if (-not [Environment]::Is64BitOperatingSystem -or $cpu -notin @('AMD64', 'ARM64')) {
+  throw "Campus Branch needs 64-bit Windows on an x64 or ARM64 processor; this is $cpu."
+}
+$NodeArch = if ($cpu -eq 'ARM64') { 'arm64' } else { 'x64' }
+$TailscaleArch = if ($cpu -eq 'ARM64') { 'arm64' } else { 'amd64' }
 
 function Step([string]$text) { Write-Host "`n== $text" -ForegroundColor Cyan }
-function Run([string]$exe, [string[]]$arguments) {
-  & $exe @arguments
-  if ($LASTEXITCODE -ne 0) { throw "$exe $($arguments -join ' ') failed (exit code $LASTEXITCODE)." }
+function Get-File([string]$url, [string]$sha256) {
+  New-Item -ItemType Directory -Force -Path $Work | Out-Null
+  $file = Join-Path $Work ([IO.Path]::GetFileName(([uri]$url).AbsolutePath))
+  Write-Host "Downloading $url"
+  Invoke-WebRequest $url -OutFile $file -UseBasicParsing
+  if ($sha256 -and (Get-FileHash $file -Algorithm SHA256).Hash -ne $sha256) {
+    Remove-Item $file -Force
+    throw "The download of $url does not match its published SHA-256; it was deleted. Try again later."
+  }
+  return $file
+}
+function Expand-Zip([string]$zip, [string]$dest) {
+  Remove-Folder $dest
+  New-Item -ItemType Directory -Force -Path $dest | Out-Null
+  $tar = "$env:SystemRoot\System32\tar.exe"
+  if (Test-Path $tar) {
+    & $tar -xf $zip -C $dest
+    if ($LASTEXITCODE -ne 0) { throw "Could not unpack $zip." }
+  } else {
+    Expand-Archive $zip -DestinationPath $dest -Force
+  }
 }
 # Robocopy empties a folder even when node_modules paths are longer than Remove-Item handles.
 function Remove-Folder([string]$dir) {
   if (-not (Test-Path $dir)) { return }
-  $empty = New-Item -ItemType Directory -Force -Path "$env:TEMP\campusbranch-empty"
+  $empty = New-Item -ItemType Directory -Force -Path "$Work-empty"
   robocopy $empty.FullName $dir /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
   Remove-Item $dir -Recurse -Force
 }
+function Copy-Folder([string]$from, [string]$to, [string[]]$skip) {
+  $exclude = if ($skip) { @('/XD') + $skip } else { @() }
+  robocopy $from $to /MIR /NFL /NDL /NJH /NJS /NP @exclude | Out-Null
+  if ($LASTEXITCODE -ge 8) { throw "Copying $from to $to failed (robocopy exit code $LASTEXITCODE)." }
+}
+# Every app process runs the node.exe in $NodeDir, so this finds all of them, a web app left behind included.
+function Stop-App {
+  if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) { Stop-ScheduledTask -TaskName $TaskName }
+  $deadline = (Get-Date).AddSeconds(30)
+  do {
+    $left = @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object { $_.ExecutablePath -eq $NodeExe })
+    $left | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    if ($left.Count) { Start-Sleep -Seconds 1 }
+  } while ($left.Count -and (Get-Date) -lt $deadline)
+  if ($left.Count) { throw "Campus Branch is still running ($($left.Count) node.exe). End it in Task Manager." }
+}
+function Get-TailscaleState {
+  $ErrorActionPreference = 'Continue' # a warning on stderr must not count as a failure here
+  try { return ((& $TailscaleExe status --json 2>$null) -join "`n" | ConvertFrom-Json).BackendState } catch { return $null }
+}
+# New-Item -Force on an existing registry key would erase its other values, so only create a missing key.
+function Set-RegistryValue([string]$key, [string]$name, $value, [string]$type) {
+  if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+  New-ItemProperty -Path $key -Name $name -Value $value -PropertyType $type -Force | Out-Null
+}
 function Test-BatchRight([string]$sid) {
-  $inf = "$env:TEMP\campusbranch-rights-check.inf"
+  $inf = "$Work\rights-check.inf"
+  New-Item -ItemType Directory -Force -Path $Work | Out-Null
   secedit /export /cfg $inf /areas USER_RIGHTS | Out-Null
   $line = "$(Get-Content $inf | Where-Object { $_ -match '^SeBatchLogonRight' })"
   Remove-Item $inf -Force -ErrorAction SilentlyContinue
   return @{ Has = $line -match [regex]::Escape("*$sid"); Line = $line }
 }
 
-# ---- 1. Node.js and the build ----------------------------------------------------------------------------------------
-Step 'Checking Node.js and building the app'
-$node = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
-if (-not $node) {
-  throw 'Node.js is not installed. Install Node.js 24.21.0 (the Windows .msi from nodejs.org), open a new PowerShell as administrator and run this again.'
+# ---- 1. Tailscale: installed, unattended, signed in (the only step that may need you) --------------------------------
+Step 'Tailscale'
+# Run unattended: Tailscale keeps running with nobody signed in, so phones reach the app after a reboot.
+$policy = 'HKLM:\SOFTWARE\Policies\Tailscale'
+$policyChanged = (Get-ItemProperty $policy -ErrorAction SilentlyContinue).UnattendedMode -ne 'always'
+Set-RegistryValue $policy 'UnattendedMode' 'always' 'String'
+if (-not (Test-Path $TailscaleExe)) {
+  $index = Invoke-RestMethod 'https://pkgs.tailscale.com/stable/?mode=json' -UseBasicParsing
+  $msiName = $index.MSIs.$TailscaleArch
+  if (-not $msiName) { throw "Tailscale offers no installer for $TailscaleArch." }
+  $sum = (Get-Content (Get-File "https://pkgs.tailscale.com/stable/$msiName.sha256") -Raw).Trim().Split()[0]
+  $msi = Get-File "https://pkgs.tailscale.com/stable/$msiName" $sum
+  Write-Host "Installing $msiName"
+  $p = Start-Process msiexec.exe -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart') -Wait -PassThru
+  if ($p.ExitCode -notin @(0, 3010)) { throw "The Tailscale installer failed (exit code $($p.ExitCode))." }
+} elseif ($policyChanged) {
+  Restart-Service Tailscale
 }
-$version = [version]((& $node --version).Trim().TrimStart('v'))
-if ($version.Major -ne 24 -or $version -lt [version]'24.21.0') {
-  throw "Node.js 24.21.0 or a later 24.x is required; found $version at $node."
+$state = $null
+for ($i = 0; $i -lt 30 -and -not $state; $i++) { Start-Sleep -Seconds 2; $state = Get-TailscaleState }
+if (-not $state) { throw 'The Tailscale service does not answer. Restart the computer and run this script again.' }
+if ($state -ne 'Running') {
+  Write-Host 'Sign this computer in to your tailnet: open the link printed below in a browser and sign in.' -ForegroundColor Yellow
+  Write-Host '(Use the same Tailscale account as the staff phones. The script continues by itself afterwards.)'
+  & $TailscaleExe up --unattended
+  if ($LASTEXITCODE -ne 0 -or (Get-TailscaleState) -ne 'Running') {
+    throw 'Tailscale is not signed in. Sign in from the Tailscale icon next to the clock, then run this script again.'
+  }
 }
-if (-not (Test-Path "$Source\package-lock.json") -or -not (Test-Path "$Source\scripts\serve.ts")) {
-  throw "$Source is not a Campus Branch clone. Run this script from the clone: deploy\windows\install.ps1"
+Write-Host 'Tailscale is running.'
+
+# ---- 2. Node.js for the app (private copy, never the system one) ----------------------------------------------------
+Step "Node.js $NodeVersion"
+if ((Test-Path $NodeExe) -and (& $NodeExe --version).Trim() -eq "v$NodeVersion") {
+  Write-Host "Already in $NodeDir"
+} else {
+  $name = "node-v$NodeVersion-win-$NodeArch"
+  $sums = Get-Content (Get-File "https://nodejs.org/dist/v$NodeVersion/SHASUMS256.txt")
+  $sum = ($sums | Where-Object { $_ -match "\s$name\.zip$" }) -split '\s+' | Select-Object -First 1
+  if (-not $sum) { throw "nodejs.org lists no $name.zip." }
+  $zip = Get-File "https://nodejs.org/dist/v$NodeVersion/$name.zip" $sum
+  Expand-Zip $zip "$Work\node"
+  Stop-App
+  Copy-Folder "$Work\node\$name" $NodeDir
 }
+$env:Path = "$NodeDir;$env:Path"
 $env:NEXT_TELEMETRY_DISABLED = '1'
-Push-Location $Source
+
+# ---- 3. The app: download (or take the clone), build beside the running version, swap ------------------------------
+Step 'Getting the app'
+$clone = Join-Path $PSScriptRoot '..\..'
+if (Test-Path (Join-Path $clone 'scripts\serve.ts')) {
+  $from = (Resolve-Path $clone).Path
+  Write-Host "Using the clone $from"
+} else {
+  $zip = Get-File "https://github.com/$Repo/archive/refs/heads/$Branch.zip"
+  Expand-Zip $zip "$Work\source"
+  $from = (Get-ChildItem "$Work\source" -Directory | Select-Object -First 1).FullName
+  if (-not (Test-Path "$from\scripts\serve.ts")) { throw "Branch $Branch of $Repo has no scripts\serve.ts; it is not a Campus Branch version that installs." }
+}
+Copy-Folder $from "$AppDir.new" @('.git', 'node_modules', '.next')
+
+Step 'Building (a few minutes)'
+Push-Location "$AppDir.new"
 try {
-  Run 'npm.cmd' @('ci', '--no-audit', '--no-fund')
-  Run 'npm.cmd' @('run', 'build')
+  & "$NodeDir\npm.cmd" ci --no-audit --no-fund
+  if ($LASTEXITCODE -ne 0) { throw "npm ci failed (exit code $LASTEXITCODE)." }
+  & "$NodeDir\npm.cmd" run build
+  if ($LASTEXITCODE -ne 0) { throw "The build failed (exit code $LASTEXITCODE); the running version is unchanged." }
 } finally {
   Pop-Location
 }
 
-# ---- 2. Stop the running app and copy the new version ---------------------------------------------------------------
-Step 'Stopping the running app'
-if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) { Stop-ScheduledTask -TaskName $TaskName }
-# Every app process runs the node.exe copied below, so this finds all of them.
-$deadline = (Get-Date).AddSeconds(30)
-do {
-  $left = @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object { $_.ExecutablePath -eq $NodeExe })
-  $left | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-  if ($left.Count) { Start-Sleep -Seconds 1 }
-} while ($left.Count -and (Get-Date) -lt $deadline)
-if ($left.Count) { throw "The app is still running ($($left.Count) node.exe). Close it in Task Manager and run this again." }
-
-Step "Copying the app to $InstallDir"
-New-Item -ItemType Directory -Force -Path "$InstallDir\node" | Out-Null
-Copy-Item $node $NodeExe -Force
-robocopy $Source "$AppDir.new" /MIR /XD "$Source\.git" /NFL /NDL /NJH /NJS /NP | Out-Null
-if ($LASTEXITCODE -ge 8) { throw "Copying the app failed (robocopy exit code $LASTEXITCODE)." }
+Step 'Swapping in the new version'
+Stop-App
 Remove-Folder "$AppDir.old"
 if (Test-Path $AppDir) { Rename-Item $AppDir 'app.old' }
 Rename-Item "$AppDir.new" 'app'
 
-# ---- 3. The app account ---------------------------------------------------------------------------------------------
-Step "Setting up the account $Account"
+# ---- 4. The app account ---------------------------------------------------------------------------------------------
+Step "Account $Account"
 $bytes = New-Object byte[] 24
 [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
 $plain = [Convert]::ToBase64String($bytes) + 'a1!'
@@ -105,23 +217,18 @@ if (Get-LocalUser -Name $Account -ErrorAction SilentlyContinue) {
 } else {
   New-LocalUser -Name $Account -Password $secure -PasswordNeverExpires -UserMayNotChangePassword -AccountNeverExpires -Description 'Runs Campus Branch' | Out-Null
 }
-$hide = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList'
-New-Item -Path $hide -Force | Out-Null
-New-ItemProperty -Path $hide -Name $Account -Value 0 -PropertyType DWord -Force | Out-Null
-
+Set-RegistryValue 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList' $Account 0 'DWord'
 # A task that runs with nobody signed in needs the "Log on as a batch job" right.
 $sid = (Get-LocalUser -Name $Account).SID.Value
 $right = Test-BatchRight $sid
 if (-not $right.Has) {
-  $inf = "$env:TEMP\campusbranch-rights"
   $line = if ($right.Line) { "$($right.Line),*$sid" } else { "SeBatchLogonRight = *$sid" }
-  Set-Content "$inf.inf" -Encoding Unicode -Value @('[Unicode]', 'Unicode=yes', '[Version]', 'signature="$CHICAGO$"', 'Revision=1', '[Privilege Rights]', $line)
-  secedit /configure /db "$inf.sdb" /cfg "$inf.inf" /areas USER_RIGHTS /quiet | Out-Null
-  Remove-Item "$inf.*" -Force -ErrorAction SilentlyContinue
+  Set-Content "$Work\rights.inf" -Encoding Unicode -Value @('[Unicode]', 'Unicode=yes', '[Version]', 'signature="$CHICAGO$"', 'Revision=1', '[Privilege Rights]', $line)
+  secedit /configure /db "$Work\rights.sdb" /cfg "$Work\rights.inf" /areas USER_RIGHTS /quiet | Out-Null
 }
 
-# ---- 4. Data folder: only the app account, Administrators (S-1-5-32-544) and SYSTEM (S-1-5-18) ---------------------
-Step "Locking the data folder $DataDir"
+# ---- 5. Data folder: only the app account, Administrators (S-1-5-32-544) and SYSTEM (S-1-5-18) ---------------------
+Step "Data folder $DataDir"
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 icacls $DataDir /inheritance:r /grant:r "${Account}:(OI)(CI)M" '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Could not set the permissions of $DataDir (icacls exit code $LASTEXITCODE)." }
@@ -129,8 +236,8 @@ if ($LASTEXITCODE -ne 0) { throw "Could not set the permissions of $DataDir (ica
 New-Item -ItemType Directory -Force -Path "$AppDir\.next\cache" | Out-Null
 icacls "$AppDir\.next\cache" /grant "${Account}:(OI)(CI)M" | Out-Null
 
-# ---- 5. The task ------------------------------------------------------------------------------------------------------
-Step "Registering the task '$TaskName'"
+# ---- 6. The task ------------------------------------------------------------------------------------------------------
+Step "Task '$TaskName'"
 $arguments = "scripts\serve.ts --data-dir=`"$DataDir`" --port=$Port --log=`"$LogFile`""
 $action = New-ScheduledTaskAction -Execute $NodeExe -Argument $arguments -WorkingDirectory $AppDir
 $trigger = New-ScheduledTaskTrigger -AtStartup
@@ -145,15 +252,17 @@ if (-not (Test-BatchRight $sid).Has) {
   Write-Warning "The account $Account lacks the 'Log on as a batch job' right, so the task may not start at boot. On Windows Pro: secpol.msc > Local Policies > User Rights Assignment > Log on as a batch job > add $Account."
 }
 
-# ---- 6. Power and time ------------------------------------------------------------------------------------------------
-Step 'Power and time settings'
+# ---- 7. Power and time ------------------------------------------------------------------------------------------------
+Step 'Power and time'
 # On mains power the computer never sleeps and closing the lid does nothing, so phones can reach the app all day.
 powercfg /change standby-timeout-ac 0
 powercfg /change hibernate-timeout-ac 0
 powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0
 # On a critical battery it hibernates (2) instead of shutting off.
-powercfg /hibernate on
-if ($LASTEXITCODE -ne 0) { Write-Warning 'This computer cannot hibernate; on an empty battery it will shut down instead.' }
+$ErrorActionPreference = 'Continue'
+powercfg /hibernate on 2>$null | Out-Null
+$ErrorActionPreference = 'Stop'
+if ($LASTEXITCODE -ne 0) { Write-Host 'This computer cannot hibernate; on an empty battery it shuts down instead.' }
 else { powercfg /setdcvalueindex SCHEME_CURRENT SUB_BATTERY BATACTIONCRIT 2 }
 powercfg /setactive SCHEME_CURRENT
 # SMS checks compare this clock with the gateway phone, so the time must be set automatically.
@@ -166,7 +275,7 @@ Set-Service w32time -StartupType Automatic
 Start-Service w32time
 w32tm /resync /nowait | Out-Null
 
-# ---- 7. Start, check, share ---------------------------------------------------------------------------------------------
+# ---- 8. Start, check, share ---------------------------------------------------------------------------------------------
 Step 'Starting Campus Branch'
 Start-ScheduledTask -TaskName $TaskName
 $up = $false
@@ -181,39 +290,21 @@ for ($i = 0; $i -lt 60 -and -not $up; $i++) {
 }
 if (-not $up) {
   $result = (Get-ScheduledTaskInfo -TaskName $TaskName).LastTaskResult
-  Write-Warning "Campus Branch did not answer within 2 minutes (task result $result). Last lines of $LogFile`:"
+  Write-Host "Last lines of $LogFile`:"
   if (Test-Path $LogFile) { Get-Content $LogFile -Tail 40 }
-  throw 'Campus Branch did not start.'
+  throw "Campus Branch did not answer within 2 minutes (task result $result)."
 }
 Write-Host "The app answers on http://127.0.0.1:$Port"
 
 Step 'Sharing it on the tailnet'
-$ts = @("$env:ProgramFiles\Tailscale\tailscale.exe", (Get-Command tailscale.exe -ErrorAction SilentlyContinue).Source) |
-  Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-$address = $null
-if (-not $ts) {
-  Write-Warning "Tailscale is not installed. Install it, sign in, then run: tailscale serve --bg $Port"
-} else {
-  & $ts serve --bg $Port
-  if ($LASTEXITCODE -ne 0) { Write-Warning "tailscale serve failed. Sign in to Tailscale, then run: tailscale serve --bg $Port" }
-  try {
-    $address = 'https://' + ((& $ts status --json) -join "`n" | ConvertFrom-Json).Self.DNSName.TrimEnd('.')
-  } catch {
-    Write-Warning 'Could not read this computer''s Tailscale name (tailscale status).'
-  }
-  # Without "Run unattended", Tailscale stops when nobody is signed in, so phones lose the app after a reboot.
-  try {
-    $prefs = (& $ts debug prefs) -join "`n" | ConvertFrom-Json
-    if ($prefs.PSObject.Properties.Name -contains 'ForceDaemon' -and -not $prefs.ForceDaemon) {
-      Write-Warning 'Turn on Tailscale "Run unattended" (Tailscale icon > Settings > Run unattended), or the app is unreachable after a reboot until someone signs in.'
-    }
-  } catch {
-    Write-Host 'Check once: Tailscale icon > Settings > "Run unattended" is on.'
-  }
-}
+Write-Host 'If Tailscale prints a link to enable HTTPS for your tailnet, open it, enable it, and this continues.'
+& $TailscaleExe serve --bg $Port
+if ($LASTEXITCODE -ne 0) { throw "tailscale serve failed. Fix what it printed above, then run this script again." }
+$address = 'https://' + ((& $TailscaleExe status --json) -join "`n" | ConvertFrom-Json).Self.DNSName.TrimEnd('.')
+Remove-Folder $Work
 
 Step 'Done'
-if ($address) { Write-Host "Staff open: $address" -ForegroundColor Green }
+Write-Host "Staff open: $address" -ForegroundColor Green
 Push-Location $AppDir
 $env:DATA_DIR = $DataDir
 try { & $NodeExe scripts\first-run-code.ts } finally { Pop-Location; Remove-Item Env:\DATA_DIR }
@@ -221,10 +312,10 @@ Write-Host @"
 
 Data and backups: $DataDir
 Log:              $LogFile
-Stop:   Stop-ScheduledTask '$TaskName'
-Start:  Start-ScheduledTask '$TaskName'
-Restore a backup (stop it first, as administrator, in $AppDir):
-        `$env:DATA_DIR = '$DataDir'; npm run restore
-Remove: Unregister-ScheduledTask '$TaskName' -Confirm:`$false; Remove-LocalUser $Account; then delete $InstallDir
-        (and $DataDir, which holds the customer data)
+Stop:    Stop-ScheduledTask '$TaskName'
+Start:   Start-ScheduledTask '$TaskName'
+Restore: stop it, then as administrator:
+         cd '$AppDir'; `$env:DATA_DIR = '$DataDir'; & '$NodeExe' scripts\restore.ts
+Remove:  Unregister-ScheduledTask '$TaskName' -Confirm:`$false; Remove-LocalUser $Account
+         then delete $InstallDir (and $DataDir, which holds the customer data)
 "@

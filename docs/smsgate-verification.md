@@ -38,6 +38,9 @@ never pasted into files, chat or shell history; results are written into the tab
 | 10 | Background | battery saver on, screen off 1 hour, run test 2 | Still answers and sends |
 | 11 | Long and Khmer | ~250-character Latin text; one short Khmer text | Parts, encoding, how status reports multipart |
 | 12 | Delivery report | from tests 2 and 11 | Whether Delivered ever arrives on this carrier |
+| 13 | Status after reboot | after test 9, look up test 2's `$ID` again (test 3's command) | Same final status as before the reboot, or gone |
+| 14 | "Delete after" | in SMSGate settings set "Delete after, days" = 1; the next day look up test 2's `$ID` and check the app's message list. In `$GW/docs`, look for a delete path | What is removed and when; whether the app can delete a message itself |
+| 15 | Phone's time | `date -u; curl -si -u "$GW_USER:$GW_PASS" "$GW$GET/$ID"` | Whether the answer carries the phone's time (a `Date` header or a time field) and how far it is from the computer's |
 
 ## Decide after the tests
 
@@ -45,6 +48,10 @@ never pasted into files, chat or shell history; results are written into the tab
 - No idempotency: never resubmit a request that may have reached the phone; timeouts go straight to Unconfirmed for staff.
 - No lookup by ID: use the list endpoint or signed webhooks if they work; otherwise statuses stop at "Submitted", shown plainly.
 - No recovery after reboot: daily phone check becomes a staff task; the health check warns before a batch starts.
+- Status lost after reboot (13): the queue treats a message it cannot look up as Check phone, never as failed or resent.
+- "Delete after" does not remove what it should (14): proposal for the owner: the app deletes through the API if it
+  can, otherwise staff clear the phone's message list on a set day.
+- No phone time in answers (15): proposal for the owner: the clock check compares the computer with internet time only.
 - Several missing: revisit the gateway choice before Phase 9. A paid provider is never switched to automatically.
 
 ## Results
@@ -64,3 +71,6 @@ never pasted into files, chat or shell history; results are written into the tab
 | 10 | | |
 | 11 | | |
 | 12 | | |
+| 13 | | |
+| 14 | | |
+| 15 | | |

@@ -51,7 +51,7 @@ export function Dashboard() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild>
-            <Link href="/scan">
+            <Link href="/scan?camera=1">
               <ScanBarcode aria-hidden />
               Scan Parcel
             </Link>

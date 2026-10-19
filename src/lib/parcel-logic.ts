@@ -141,6 +141,14 @@ export function addNewParcels(existing: Parcel[], incoming: Parcel[]) {
   return [...existing, ...incoming.filter((p) => !known.has(p.code) && known.add(p.code))];
 }
 
+/** What the card's buttons would do, in one line: "Not messaged yet · one SMS covers all 3 parcels on this number today". */
+export function contactLine(toMessage: number, size: number, day: string) {
+  const all = `${size} parcels on this number ${day}`;
+  if (toMessage === size) return size === 1 ? 'Not messaged yet' : `Not messaged yet · one SMS covers all ${all}`;
+  if (toMessage === 0) return size === 1 ? 'Messaged or reached already' : `Messaged or reached already · all ${all}`;
+  return `${toMessage} of ${all} not messaged yet`;
+}
+
 /** One label for what a message covers, used wherever an SMS is shown. */
 export const smsScope = (count: number) => (count === 1 ? 'Individual SMS · 1 parcel' : `Combined SMS · ${count} parcels`);
 

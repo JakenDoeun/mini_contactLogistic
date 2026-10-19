@@ -6,6 +6,7 @@ import { Boxes, Flag, MessageSquare, Pencil, Phone, Plus, Send } from 'lucide-re
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  contactLine,
   contactStatusOf,
   eligibleForMessage,
   eventsFor,
@@ -22,23 +23,24 @@ import { updatePhone, type ParcelData } from '@/lib/mock/parcel-service';
 import { formatDateTime } from '@/lib/utils';
 import { ContactPanel } from './contact-panel';
 import { ContactBadge, PhoneText, SmsBadge } from './parcel-status';
-import { batchLabel, GroupBadge, GroupList, groupLabel, toNotifyLine } from './phone-group';
+import { batchLabel, GroupList } from './phone-group';
 
-/** One parcel with its phone line: details, related parcels, contact and history. Shared by search and scan. */
+/**
+ * One parcel with its phone line, the same on Scan, Parcels and Notifications.
+ * Contact comes first: who it is and how to tell them. Below it, the parcel's facts only.
+ */
 export function ParcelDetail({
   parcel,
   data,
   Title = 'h2',
   onSelect,
-  actions,
-  label = 'Tracking code',
+  label = 'Parcel',
 }: {
   parcel: Parcel;
   data: ParcelData;
   Title?: React.ElementType;
   onSelect?: (code: string) => void;
-  actions?: React.ReactNode;
-  /** Small text above the code, e.g. "Scanned parcel" to set it apart from its related parcels. */
+  /** Small text before the code, e.g. "Scanned" to confirm what the camera read. */
   label?: string;
 }) {
   const group = phoneGroup(parcel, data.parcels); // this arrival batch only
@@ -46,79 +48,76 @@ export function ParcelDetail({
   // Other days' parcels on the same number stay out of this group and its SMS, but staff can still find them.
   const key = phoneKey(parcel.phone);
   const otherDays = key ? data.parcels.filter((p) => phoneKey(p.phone) === key && !group.includes(p)).length : 0;
+  const history = eventsFor(parcel.code, data.events);
 
   return (
     <div className="@container">
-      <div className="grid gap-5 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] @3xl:items-start">
+      <div className="grid gap-5 @3xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] @3xl:items-start">
+        <section aria-labelledby="contact-heading" className="rounded-md border bg-card px-4 py-4 sm:px-5">
+          <p className="text-xs text-muted-foreground">
+            {label} <span className="font-mono">{parcel.code}</span>
+          </p>
+          <Title id="contact-heading" tabIndex={-1} className="mt-0.5 text-xl font-semibold outline-none">
+            {parcel.recipient}
+          </Title>
+          <PhoneField key={parcel.code} parcel={parcel} />
+          {key && <p className="mt-2 font-medium">{contactLine(eligibleForMessage(group, data.events).length, group.length, batchLabel(parcel.arrivalDate))}</p>}
+          <div className="mt-4">
+            <ContactPanel parcel={parcel} group={group} events={data.events} />
+          </div>
+        </section>
+
         <div className="flex min-w-0 flex-col gap-5">
-          <section aria-label="Parcel" className="rounded-md border bg-card px-4 py-4 sm:px-5">
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <Title className="font-mono text-xl font-semibold break-all">{parcel.code}</Title>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <SmsBadge status={smsStatusOf(parcel.code, data.events)} />
-              <ContactBadge status={contactStatusOf(parcel.code, data.events)} />
-              <GroupBadge size={group.length} />
-            </div>
-            {actions && <div className="mt-4">{actions}</div>}
-            <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
-              <dt className="text-muted-foreground">Recipient</dt>
-              <dd>{parcel.recipient}</dd>
-              <dt className="self-center text-muted-foreground">Phone</dt>
-              <dd>
-                <PhoneField key={parcel.code} parcel={parcel} />
+          <section aria-labelledby="parcel-heading" className="rounded-md border bg-card px-4 py-4 sm:px-5">
+            <h3 id="parcel-heading" className="font-semibold">
+              Parcel
+            </h3>
+            <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2.5">
+              <dt className="text-muted-foreground">Status</dt>
+              <dd className="flex flex-wrap gap-1.5">
+                <SmsBadge status={smsStatusOf(parcel.code, data.events)} />
+                <ContactBadge status={contactStatusOf(parcel.code, data.events)} />
               </dd>
+              <dt className="text-muted-foreground">Arrived</dt>
+              <dd>{arrivedText(parcel.arrivalDate)}</dd>
               <dt className="text-muted-foreground">Imported</dt>
-              <dd className="font-mono">{formatDateTime(parcel.importedAt)}</dd>
-              <dt className="text-muted-foreground">From file</dt>
-              <dd className="font-mono break-all">{parcel.sourceFile}</dd>
+              <dd>
+                {formatDateTime(parcel.importedAt)}
+                <span className="block text-sm break-all text-muted-foreground">{parcel.sourceFile}</span>
+              </dd>
             </dl>
+
+            {related.length > 0 && (
+              <div className="mt-5">
+                <h4 className="flex items-center gap-2 text-sm font-medium">
+                  <Boxes className="size-4 text-info" aria-hidden />
+                  Same phone, {batchLabel(parcel.arrivalDate)}: {related.length} more
+                </h4>
+                <GroupList parcels={related} events={data.events} onSelect={onSelect} className="mt-2" />
+              </div>
+            )}
+            {otherDays > 0 && (
+              <p className="mt-3 text-sm text-muted-foreground">
+                {otherDays} more {otherDays === 1 ? 'parcel' : 'parcels'} on this number from other arrival days, not part of this message.{' '}
+                <Link href={`/parcels?q=${key}`} className="font-medium text-primary underline-offset-4 hover:underline">
+                  Show all
+                </Link>
+              </p>
+            )}
           </section>
 
-          {related.length > 0 && <RelatedParcels parcel={parcel} group={group} related={related} events={data.events} onSelect={onSelect} />}
-          {otherDays > 0 && (
-            <p className="-mt-2 px-1 text-sm text-muted-foreground">
-              {otherDays} more {otherDays === 1 ? 'parcel' : 'parcels'} on this number from other arrival days, not part of this message.{' '}
-              <Link href={`/parcels?q=${key}`} className="font-medium text-primary underline-offset-4 hover:underline">
-                Show all
-              </Link>
-            </p>
-          )}
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-5">
-          <ContactPanel parcel={parcel} group={group} events={data.events} />
-          <History events={eventsFor(parcel.code, data.events)} />
+          {history.length > 0 && <History events={history} />}
         </div>
       </div>
     </div>
   );
 }
 
-function RelatedParcels({
-  parcel,
-  group,
-  related,
-  events,
-  onSelect,
-}: {
-  parcel: Parcel;
-  group: Parcel[];
-  related: Parcel[];
-  events: ContactEvent[];
-  onSelect?: (code: string) => void;
-}) {
-  return (
-    <section aria-labelledby="related-heading" className="rounded-md border border-info/25 bg-info-tint px-4 py-4 sm:px-5">
-      <h3 id="related-heading" className="flex items-start gap-2 font-semibold text-info">
-        <Boxes className="mt-0.5 size-4 shrink-0" aria-hidden />
-        Also arrived {batchLabel(parcel.arrivalDate)} for {formatPhone(parcel.phone)}: {related.length} more parcel{related.length === 1 ? '' : 's'}
-      </h3>
-      <p className="mt-0.5 pl-6 text-sm">
-        {groupLabel(group.length)}, matched by phone number, not name. {toNotifyLine(eligibleForMessage(group, events).length, group.length)}.
-      </p>
-      <GroupList parcels={related} events={events} onSelect={onSelect} className="mt-3 border-info/20" />
-    </section>
-  );
+/** "Today, Oct 19" or "Oct 12": the arrival batch, never the import time. */
+function arrivedText(day: string) {
+  const label = batchLabel(day);
+  const date = new Date(`${day}T00:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return label === date ? date : `${label[0].toUpperCase()}${label.slice(1)}, ${date}`;
 }
 
 function PhoneField({ parcel }: { parcel: Parcel }) {

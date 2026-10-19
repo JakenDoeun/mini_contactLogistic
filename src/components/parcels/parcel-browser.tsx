@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, MessageSquare, Phone, ScanBarcode, Search, Send, X } from 'lucide-react';
+import { ChevronRight, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
@@ -17,7 +17,6 @@ import {
   phoneGroup,
   phoneKey,
   smsStatusOf,
-  telegramLink,
   type Parcel,
   type ParcelFilter,
 } from '@/lib/parcel-logic';
@@ -409,53 +408,11 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
         <SheetContent className="max-w-2xl bg-background" aria-describedby={undefined}>
           {openParcel && data && (
             <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-14 pb-6 sm:px-6">
-              <ParcelDetail parcel={openParcel} data={data} Title={SheetTitle} onSelect={setOpen} actions={<QuickActions parcel={openParcel} />} />
+              <ParcelDetail parcel={openParcel} data={data} Title={SheetTitle} onSelect={setOpen} />
             </div>
           )}
         </SheetContent>
       </Sheet>
     </>
-  );
-}
-
-/** Shortcuts only: sending, recording and history live in the contact panel below. */
-function QuickActions({ parcel }: { parcel: Parcel }) {
-  const scan = (
-    <Button asChild variant="outline" size="sm">
-      <Link href="/scan">
-        <ScanBarcode aria-hidden />
-        Scan Parcel
-      </Link>
-    </Button>
-  );
-  if (!phoneKey(parcel.phone)) return <div className="flex flex-wrap gap-2">{scan}</div>; // nothing to call or message yet
-  return (
-    <div className="flex flex-wrap gap-2">
-      <Button asChild variant="outline" size="sm">
-        <a href={`tel:${normalizePhone(parcel.phone)}`}>
-          <Phone aria-hidden />
-          Call
-        </a>
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => {
-          const box = document.getElementById('contact-heading');
-          box?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          (document.getElementById('sms-preview') ?? box)?.focus({ preventScroll: true });
-        }}
-      >
-        <Send aria-hidden />
-        SMS
-      </Button>
-      <Button asChild variant="outline" size="sm">
-        <a href={telegramLink(parcel.phone)} target="_blank" rel="noreferrer">
-          <MessageSquare aria-hidden />
-          Telegram
-        </a>
-      </Button>
-      {scan}
-    </div>
   );
 }

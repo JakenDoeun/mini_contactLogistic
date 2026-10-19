@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  contactLine,
   composeMessage,
   groupByPhone,
   contactStatusOf,
@@ -139,4 +140,11 @@ test("a phone line's summary shows its most urgent SMS and contact status, each 
   assert.equal(groupSmsStatus(['C'], events), 'not-sent');
   assert.equal(groupContactStatus(['B'], events), 'contacted');
   assert.equal(groupContactStatus(['A', 'B'], events), 'needs-contact'); // A still has to be reached
+});
+
+test('the contact line says what one SMS would cover, without repeating the count', () => {
+  assert.equal(contactLine(1, 1, 'today'), 'Not messaged yet');
+  assert.equal(contactLine(3, 3, 'today'), 'Not messaged yet · one SMS covers all 3 parcels on this number today');
+  assert.equal(contactLine(1, 3, 'yesterday'), '1 of 3 parcels on this number yesterday not messaged yet');
+  assert.equal(contactLine(0, 2, 'today'), 'Messaged or reached already · all 2 parcels on this number today');
 });

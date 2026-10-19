@@ -28,6 +28,14 @@ and 5.
   - *Needs your attention*: the work list; files waiting in the watched folder come from `GET /api/folder`.
   - *Imports today*: rows in the file → Shopee rows → parcels → new, summed over today's confirmed imports
     (`GET /api/imports`), then why the rest were not added (already stored, left out in review) and the latest file.
+- **One parcel view, contact first** (owner, 2026-10-19; designed with the taste skill's app-screen rules): Scan,
+  Parcels and Notifications show the same view. Card one is who and how: the name, the phone, one line on what is
+  done ("Not messaged yet · one SMS covers all 3 parcels on this number today"), the message, **Send SMS**, Call and
+  Telegram (Telegram copies the message first). What happened is asked only after a call or Telegram. Card two is the
+  parcel's facts and the other parcels on the same phone that day. On a phone, Send SMS now sits on the first screen
+  (about 685 px down instead of about 1,480). The Dashboard's Scan Parcel opens the camera at once (`/scan?camera=1`).
+  The sample codes and the Parcels quick-action buttons are gone; the note field went with them (Revision 4: no
+  call or Telegram notes).
 - **Removed**: the sample import service, the preview modes and the old sample import logic. `import-logic.ts` keeps only
   the browser-side file rules.
 - **Still in memory until Phase 9**: messages, calls and the SMS queue. They reset on reload, and the pages say so. Until
@@ -44,14 +52,14 @@ and 5.
 - Browser, scratch build (headless Chromium): Dashboard and Parcels at 1440 and 390 px wide with no horizontal overflow
   (two Dashboard cards overflowed at phone width in the first round; fixed and rechecked). `impeccable detect`: no
   findings.
-- Totals on the branch: 163 unit, 17 integration, type check clean.
+- Totals on the branch: 164 unit, 17 integration, type check clean.
 
 ## Gate
 
 Recorded, not ticked: ticks wait for the owner. The real-data part waits for the branch laptop (owner, 2026-10-19:
 branch-laptop testing after all phases).
 
-- [ ] A real camera scan on Scan Parcel finds a stored parcel and opens its phone group. Synthetic parcels are enough;
-  this can be done on the dev server.
+- [x] A real camera scan on Scan Parcel finds a stored parcel and opens its phone group (owner, 2026-10-19: works;
+  weaker on bent labels or labels that are not flat).
 - [ ] One real day's export, after import, shows the right phone groups on Parcels for that Arrival Batch Date, and
   the Dashboard counts match.

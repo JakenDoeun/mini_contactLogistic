@@ -6,7 +6,6 @@ import { Boxes, Flag, MessageSquare, Pencil, Phone, Plus, Send } from 'lucide-re
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  arrivalDay,
   contactStatusOf,
   eligibleForMessage,
   eventsFor,
@@ -112,7 +111,7 @@ function RelatedParcels({
     <section aria-labelledby="related-heading" className="rounded-md border border-info/25 bg-info-tint px-4 py-4 sm:px-5">
       <h3 id="related-heading" className="flex items-start gap-2 font-semibold text-info">
         <Boxes className="mt-0.5 size-4 shrink-0" aria-hidden />
-        Also arrived {batchLabel(arrivalDay(parcel.importedAt))} for {formatPhone(parcel.phone)}: {related.length} more parcel{related.length === 1 ? '' : 's'}
+        Also arrived {batchLabel(parcel.arrivalDate)} for {formatPhone(parcel.phone)}: {related.length} more parcel{related.length === 1 ? '' : 's'}
       </h3>
       <p className="mt-0.5 pl-6 text-sm">
         {groupLabel(group.length)}, matched by phone number, not name. {toNotifyLine(eligibleForMessage(group, events).length, group.length)}.
@@ -127,6 +126,7 @@ function PhoneField({ parcel }: { parcel: Parcel }) {
   const [value, setValue] = useState(parcel.phone);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   if (!editing) {
     return (
@@ -163,12 +163,19 @@ function PhoneField({ parcel }: { parcel: Parcel }) {
   return (
     <form
       className="flex flex-wrap items-start gap-2"
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
         if (!isValidPhone(value)) return setError('Enter a full phone number, for example 012 345 678.');
-        updatePhone(parcel.code, value);
-        setEditing(false);
-        setSaved(true);
+        setSaving(true);
+        try {
+          await updatePhone(parcel, value);
+          setEditing(false);
+          setSaved(true);
+        } catch (err) {
+          setError(`Not saved. ${(err as Error).message}`);
+        } finally {
+          setSaving(false);
+        }
       }}
     >
       <div className="min-w-40 flex-1">
@@ -194,8 +201,8 @@ function PhoneField({ parcel }: { parcel: Parcel }) {
           </p>
         )}
       </div>
-      <Button type="submit" size="sm">
-        Save
+      <Button type="submit" size="sm" disabled={saving}>
+        {saving ? 'Saving…' : 'Save'}
       </Button>
       <Button
         type="button"

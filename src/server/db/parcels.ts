@@ -67,3 +67,15 @@ export function editParcelPhone(db: Db, parcelId: number, newRaw: string | null,
     });
   })();
 }
+
+/** Every stored parcel, newest arrival first, in the shape the Parcels, Scan and Dashboard pages use. */
+export function listParcels(db: Db) {
+  return db
+    .prepare(
+      `SELECT p.id, p.tracking_code AS code, p.recipient_name AS recipient, coalesce(p.phone_raw, '') AS phone,
+         p.arrival_date AS arrivalDate, p.created_at AS importedAt, i.original_filename AS sourceFile
+       FROM parcels p JOIN imports i ON i.id = p.first_import_id
+       ORDER BY p.arrival_date DESC, p.id DESC`,
+    )
+    .all() as { id: number; code: string; recipient: string; phone: string; arrivalDate: string; importedAt: string; sourceFile: string }[];
+}

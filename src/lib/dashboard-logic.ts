@@ -10,6 +10,7 @@ import {
   groupByPhone,
   phoneKey,
   smsInFlight,
+  smsStatusOf,
   type ContactEvent,
   type Parcel,
   type PhoneGroup,
@@ -39,7 +40,7 @@ export function workList(parcels: Parcel[], events: ContactEvent[]): WorkList {
   const toMessage = all
     .filter((g) => g.phone !== '') // no valid phone: listed under noPhone instead
     .map((g) => {
-      const group = parcels.filter((p) => phoneKey(p.phone) === g.phone && arrivalDay(p.importedAt) === g.day);
+      const group = parcels.filter((p) => phoneKey(p.phone) === g.phone && p.arrivalDate === g.day);
       const eligible = new Set(eligibleForMessage(group, events).map((p) => p.code));
       return { ...g, size: g.codes.length, codes: g.codes.filter((c) => eligible.has(c)) }; // keeps newest first
     })
@@ -92,6 +93,33 @@ export function planNotify(parcels: Parcel[], events: ContactEvent[], now: Date,
   return {
     today: items.filter((i) => i.day === today),
     older: items.filter((i) => i.day !== today),
-    noPhoneToday: parcels.filter((p) => arrivalDay(p.importedAt) === today && phoneKey(p.phone) === null),
+    noPhoneToday: parcels.filter((p) => p.arrivalDate === today && phoneKey(p.phone) === null),
   };
+}
+
+/** Where today's parcels stand, each counted once, most settled first. Feeds the Dashboard's progress bar. */
+export interface DayProgress {
+  /** SMS accepted or delivered, or the customer reached by staff. */
+  done: number;
+  /** An SMS waiting at the gateway. */
+  sending: number;
+  /** The latest SMS failed or was never confirmed. */
+  retry: number;
+  /** No usable phone number, so nobody can message them. */
+  noPhone: number;
+  notYet: number;
+}
+
+export function dayProgress(parcels: Parcel[], events: ContactEvent[], day: string): DayProgress {
+  const out: DayProgress = { done: 0, sending: 0, retry: 0, noPhone: 0, notYet: 0 };
+  for (const p of parcels) {
+    if (p.arrivalDate !== day) continue;
+    const sms = smsStatusOf(p.code, events);
+    if (sms === 'sent' || sms === 'delivered' || contactStatusOf(p.code, events) === 'contacted') out.done++;
+    else if (sms === 'queued' || sms === 'sending') out.sending++;
+    else if (sms === 'failed' || sms === 'unconfirmed') out.retry++;
+    else if (phoneKey(p.phone) === null) out.noPhone++;
+    else out.notYet++;
+  }
+  return out;
 }

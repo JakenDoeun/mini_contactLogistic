@@ -1,16 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { planNotify, workList } from './dashboard-logic.ts';
-import { contactStatusOf, smsStatusOf, type ContactEvent, type Parcel } from './parcel-logic.ts';
+import { dayProgress, planNotify, workList } from './dashboard-logic.ts';
+import { arrivalDay, contactStatusOf, smsStatusOf, type ContactEvent, type Parcel } from './parcel-logic.ts';
 
-const parcel = (code: string, recipient: string, phone: string, h = 1): Parcel => ({
-  code,
-  recipient,
-  phone,
-  importedAt: new Date(Date.UTC(2026, 9, 12, 12 - h)).toISOString(),
-  sourceFile: 'a.xlsx',
-});
 let n = 0;
+const parcel = (code: string, recipient: string, phone: string, h = 1): Parcel => {
+  const importedAt = new Date(Date.UTC(2026, 9, 12, 12 - h)).toISOString();
+  return { id: ++n, code, recipient, phone, arrivalDate: arrivalDay(importedAt), importedAt, sourceFile: 'a.xlsx' };
+};
 const event = (codes: string[], extra: Partial<ContactEvent>): ContactEvent => ({
   id: `e${n++}`,
   at: new Date(Date.UTC(2026, 9, 12, n)).toISOString(),
@@ -119,4 +116,25 @@ test('re-importing yesterday\'s file adds nothing to today and sends nothing', (
   const events = [event(['Y1'], { smsStatus: 'delivered' })];
   const plan = planNotify(parcels, events, now);
   assert.deepEqual([plan.today.length, plan.older.length], [0, 0]);
+});
+
+test("day progress: each of the day's parcels counted once, the most settled state first; other days ignored", () => {
+  const day = arrivalDay(new Date(Date.UTC(2026, 9, 12, 11)).toISOString());
+  const parcels = [
+    parcel('D1', 'A', '012 000 001'), // SMS sent
+    parcel('D2', 'B', '012 000 002'), // reached by phone, also has a failed SMS: reached wins
+    parcel('D3', 'C', '012 000 003'), // queued
+    parcel('D4', 'D', '012 000 004'), // unconfirmed
+    parcel('D5', 'E', ''), // no phone
+    parcel('D6', 'F', '012 000 006'), // nothing yet
+    parcel('OLD', 'G', '012 000 007', 40), // an earlier day
+  ];
+  const events = [
+    event(['D1'], { smsStatus: 'sent' }),
+    event(['D2'], { smsStatus: 'failed' }),
+    event(['D2'], { channel: 'call', outcome: 'answered', smsStatus: undefined }),
+    event(['D3'], { smsStatus: 'queued' }),
+    event(['D4'], { smsStatus: 'unconfirmed' }),
+  ];
+  assert.deepEqual(dayProgress(parcels, events, day), { done: 2, sending: 1, retry: 1, noPhone: 1, notYet: 1 });
 });

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { normalizeCode, phoneGroup } from '@/lib/parcel-logic';
-import { useParcelData } from '@/lib/mock/parcel-service';
+import { useParcelData, useParcelError } from '@/lib/mock/parcel-service';
 import { cameraSupport } from '@/lib/scanner/camera-barcode';
 import { CameraScanner } from './camera-scanner';
 import { ParcelDetail } from './parcel-detail';
@@ -20,6 +20,7 @@ const SAMPLE_CODES = ['CB1187420096', 'CB5528814023', 'CB9014425560'];
 
 export function ScanParcel() {
   const data = useParcelData();
+  const loadError = useParcelError();
   const input = useRef<HTMLInputElement>(null);
   const cameraButton = useRef<HTMLButtonElement>(null);
   const [value, setValue] = useState('');
@@ -109,7 +110,11 @@ export function ScanParcel() {
         {parcel && data ? `Found ${parcel.code}. ${relatedLine(phoneGroup(parcel, data.parcels).length - 1)}` : ''}
       </p>
       <div className="mt-6">
-        {!scanned ? null : !data ? (
+        {!scanned ? null : loadError ? (
+          <p role="alert" className="rounded-md border bg-card px-5 py-6 text-destructive">
+            The parcel list could not be loaded, so this code cannot be looked up. {loadError}
+          </p>
+        ) : !data ? (
           <Skeleton className="h-40 w-full" />
         ) : !parcel ? (
           <div role="alert" className="rounded-md border bg-card px-5 py-6">

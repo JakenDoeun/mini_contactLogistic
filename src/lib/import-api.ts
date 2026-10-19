@@ -2,6 +2,7 @@
 // requests and turns error codes into sentences staff can act on.
 import type { BrowseResult, DetectedFile, folderState, ScanResult } from '@/server/folder/folder';
 import type { ImportListItem, Review } from '@/server/importer/store';
+import type { Parcel } from '@/lib/parcel-logic';
 
 export type { DetectedFile, ImportListItem, Review, ScanResult };
 export type FolderState = ReturnType<typeof folderState> & { isAdmin: boolean };
@@ -13,7 +14,7 @@ const MESSAGES: Record<string, string> = {
   too_large: 'The file is larger than 10 MB. Export a shorter date range.',
   no_file: 'The file was empty when it arrived. Choose it again.',
   cross_site: 'This request came from another site and was refused. Open the branch address directly.',
-  not_found: 'This import no longer exists.',
+  not_found: 'This import or parcel no longer exists. Reload the page.',
   not_checked: 'This import was already confirmed or discarded.',
   not_waiting: 'This file was already reviewed or taken off the list.',
   frozen: 'This import was already confirmed or discarded, so its decisions can no longer change.',
@@ -85,3 +86,8 @@ export const browseFolder = (at: string | null) =>
   call<Extract<BrowseResult, { ok: true }>>(`/api/folder/browse${at === null ? '' : `?path=${encodeURIComponent(at)}`}`);
 export const saveFolderSettings =(body: { path: string; auto: boolean; intervalSeconds: number }) =>
   call<FolderState>('/api/settings/folder', { method: 'PUT', ...send(body) });
+
+// ---- Parcels (Phase 6) ----
+
+export const listParcels = () => call<{ parcels: Parcel[] }>('/api/parcels').then((r) => r.parcels);
+export const saveParcelPhone = (id: number, phone: string) => call<{ ok: true }>(`/api/parcels/${id}/phone`, { method: 'PUT', ...send({ phone }) });

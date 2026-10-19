@@ -452,7 +452,6 @@ function ConfirmNotify({
   const items: NotifyItem[] = plan ? [...plan.today, ...(older ? plan.older : [])] : [];
   const parcels = items.reduce((n, i) => n + i.codes.length, 0);
   const combined = items.filter((i) => i.codes.length > 1).length;
-  const gateway = getSettings().gatewayUrl;
   const close = () => {
     setOlder(false);
     onClose();
@@ -466,7 +465,7 @@ function ConfirmNotify({
             <header className="border-b px-6 pt-5 pb-4 pr-14">
               <SheetTitle>Notify today&apos;s customers?</SheetTitle>
               <SheetDescription>
-                Simulated: messages go to a sample gateway in this browser tab{gateway ? `, not to ${gateway}` : ''}. No SMS leaves this device.
+                Simulated: messages go to a sample gateway in this browser tab. No SMS leaves this device.
               </SheetDescription>
             </header>
             <div className="flex-1 overflow-y-auto px-6 py-5">

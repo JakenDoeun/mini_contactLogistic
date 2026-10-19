@@ -13,11 +13,13 @@ Work in progress, built in gated phases.
 
 | Part | State |
 |---|---|
-| Pages (Dashboard, Parcels, Scan, Import Arrivals, Notifications, Settings) | Done; parcel, import and SMS data are still sample data |
+| Pages (Dashboard, Parcels, Scan, Import Arrivals, Notifications, Settings) | Done; parcels and imports are real, messages and calls are still simulated |
 | SQLite database, migrations, start-up self-test | Done |
 | Staff login, first-run code, recovery code | Done |
 | Local backups, data retention, start at boot (Windows and Linux) | Done; checks on the branch laptop still to do |
-| Real imports, folder watcher, SMS gateway and queue | Not built yet |
+| Real imports and the watched folder | Done; checks on the branch laptop still to do |
+| SMS gateway connection and test SMS | Built (Phase 8), tested on the Android Emulator |
+| SMS sending queue | Not built yet (Phase 9) |
 
 ## Requirements
 
@@ -31,6 +33,7 @@ Work in progress, built in gated phases.
 npm ci
 npm run dev                 # migrates the database, then http://127.0.0.1:3000
 npm run first-run-code      # prints the one-time code for creating the first account
+npm run gateway -- set      # connects the SMS gateway phone (asks its address, username and password)
 ```
 
 The database lives outside the project, in `~/.local/share/campus-branch` (or the folder in `DATA_DIR`).

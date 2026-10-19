@@ -15,6 +15,7 @@
     "db:seed": "node scripts/db-seed.ts",
     "user": "node scripts/user.ts",
     "first-run-code": "node scripts/first-run-code.ts",
+    "gateway": "node scripts/gateway.ts",
     "recovery-code": "node scripts/recovery-code.ts",
     "serve": "node scripts/serve.ts",
     "restore": "node scripts/restore.ts"

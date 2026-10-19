@@ -10,8 +10,6 @@ export interface Settings {
   /** What to do when a file with the same fingerprint was imported before. */
   duplicateFile: 'warn' | 'block';
   templates: { single: string; combined: string };
-  gatewayUrl: string;
-  gatewaySim: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -22,8 +20,6 @@ export const DEFAULT_SETTINGS: Settings = {
   phoneColumn: 'Phone',
   duplicateFile: 'warn',
   templates: DEFAULT_TEMPLATES,
-  gatewayUrl: '',
-  gatewaySim: '',
 };
 
 export const CHECK_INTERVALS = [30, 60, 120, 300];
@@ -46,7 +42,7 @@ export function templateError(text: string) {
 }
 
 export function gatewayUrlError(url: string) {
-  if (!url.trim()) return null; // optional until a gateway exists
+  if (!url.trim()) return null; // npm run gateway asks for it separately
   try {
     const u = new URL(url.trim());
     return u.protocol === 'http:' || u.protocol === 'https:' ? null : 'Use an http:// or https:// address.';

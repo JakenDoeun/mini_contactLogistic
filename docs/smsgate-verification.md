@@ -50,7 +50,8 @@ never pasted into files, chat or shell history; results are written into the tab
 - No recovery after reboot: daily phone check becomes a staff task; the health check warns before a batch starts.
 - Status lost after reboot (13): the queue treats a message it cannot look up as Check phone, never as failed or resent.
 - "Delete after" does not remove what it should (14): proposal for the owner: the app deletes through the API if it
-  can, otherwise staff clear the phone's message list on a set day.
+  can, otherwise staff clear the phone's message list on a set day. **Decided 2026-10-19 (owner): delete after 7
+  days**; the app sets it (Phase 8). Android's own SMS store is cleared by staff.
 - No phone time in answers (15): proposal for the owner: the clock check compares the computer with internet time only.
 - Several missing: revisit the gateway choice before Phase 9. A paid provider is never switched to automatically.
 

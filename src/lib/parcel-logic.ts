@@ -8,9 +8,12 @@ export type Channel = 'sms' | 'call' | 'telegram' | 'flag';
 export type Outcome = 'answered' | 'no-answer' | 'messaged' | 'follow-up';
 
 export interface Parcel {
+  id: number;
   code: string;
   recipient: string; // display only: names vary between exports
   phone: string; // as saved; compare with normalizePhone
+  /** The Arrival Batch Date chosen at import, YYYY-MM-DD: what parcels are grouped by. */
+  arrivalDate: string;
   importedAt: string;
   sourceFile: string; // the export file it was imported from
 }
@@ -39,7 +42,7 @@ export function normalizePhone(raw: string) {
 
 export const isValidPhone = (raw: string) => /^0\d{8,9}$/.test(normalizePhone(raw));
 
-/** The arrival batch a parcel belongs to: the local day of its import, as YYYY-MM-DD. */
+/** A moment's local day as YYYY-MM-DD, comparable with a parcel's arrivalDate. */
 export function arrivalDay(iso: string) {
   const d = new Date(iso);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -95,8 +98,7 @@ export function groupContactStatus(codes: string[], events: ContactEvent[]): Con
  */
 export function phoneGroup(parcel: Parcel, parcels: Parcel[]) {
   const key = phoneKey(parcel.phone);
-  const day = arrivalDay(parcel.importedAt);
-  return parcels.filter((p) => p.code === parcel.code || (key !== null && phoneKey(p.phone) === key && arrivalDay(p.importedAt) === day));
+  return parcels.filter((p) => p.code === parcel.code || (key !== null && phoneKey(p.phone) === key && p.arrivalDate === parcel.arrivalDate));
 }
 
 export type ParcelFilter = 'all' | 'needs-contact' | 'sms-failed' | 'follow-up' | 'contacted' | 'no-phone';
@@ -113,7 +115,7 @@ export function inFilter(parcel: Parcel, events: ContactEvent[], filter: ParcelF
 /** Parcels on one phone line in one arrival batch, newest first. Grouped by phone, never by name; the newest name is shown. */
 export interface PhoneGroup {
   phone: string;
-  /** The arrival batch, from arrivalDay. */
+  /** The arrival batch: the parcels' arrivalDate. */
   day: string;
   recipient: string;
   codes: string[];
@@ -124,7 +126,7 @@ export function groupByPhone(parcels: Parcel[]): PhoneGroup[] {
   const groups = new Map<string, PhoneGroup>();
   for (const p of [...parcels].sort((a, b) => b.importedAt.localeCompare(a.importedAt))) {
     const phone = phoneKey(p.phone);
-    const day = arrivalDay(p.importedAt);
+    const day = p.arrivalDate;
     const key = phone ? `${day}|${phone}` : `no-phone:${p.code}`;
     const g = groups.get(key);
     if (g) g.codes.push(p.code);
@@ -137,6 +139,14 @@ export function groupByPhone(parcels: Parcel[]): PhoneGroup[] {
 export function addNewParcels(existing: Parcel[], incoming: Parcel[]) {
   const known = new Set(existing.map((p) => p.code));
   return [...existing, ...incoming.filter((p) => !known.has(p.code) && known.add(p.code))];
+}
+
+/** What the card's buttons would do, in one line: "Not messaged yet · one SMS covers all 3 parcels on this number today". */
+export function contactLine(toMessage: number, size: number, day: string) {
+  const all = `${size} parcels on this number ${day}`;
+  if (toMessage === size) return size === 1 ? 'Not messaged yet' : `Not messaged yet · one SMS covers all ${all}`;
+  if (toMessage === 0) return size === 1 ? 'Messaged or reached already' : `Messaged or reached already · all ${all}`;
+  return `${toMessage} of ${all} not messaged yet`;
 }
 
 /** One label for what a message covers, used wherever an SMS is shown. */

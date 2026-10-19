@@ -48,3 +48,9 @@ Thumbs.db
 # Login codes live in the data folder outside the project; never commit a copy.
 first-run-code.txt
 recovery-code.txt*
+
+# Third-party design skills installed locally (npx skills add); not part of the app.
+.agents/
+skills-lock.json
+.claude/skills/*
+!.claude/skills/graphify/

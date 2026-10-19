@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, MessageSquare, Phone, ScanBarcode, Search, Send, X } from 'lucide-react';
+import { ChevronRight, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
@@ -16,14 +16,12 @@ import {
   normalizePhone,
   phoneGroup,
   phoneKey,
-  arrivalDay,
   smsStatusOf,
-  telegramLink,
   type Parcel,
   type ParcelFilter,
 } from '@/lib/parcel-logic';
 import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@/lib/date-range';
-import { useParcelData } from '@/lib/mock/parcel-service';
+import { reloadParcels, useParcelData, useParcelError } from '@/lib/mock/parcel-service';
 import { DateFilter } from '@/components/shared/date-filter';
 import { SampleDataNotice } from '@/components/shared/sample-data-notice';
 import { cn, formatDateTime } from '@/lib/utils';
@@ -46,7 +44,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // A customer group is one phone number in one arrival batch, the same unit a combined SMS covers.
 const batchKey = (p: Parcel) => {
   const phone = phoneKey(p.phone);
-  return phone && `${arrivalDay(p.importedAt)}|${phone}`;
+  return phone && `${p.arrivalDate}|${phone}`;
 };
 const groupCount = (parcels: Parcel[]) => new Set(parcels.flatMap((p) => batchKey(p) ?? [])).size;
 const TODAY: DateRange = { preset: 'today' };
@@ -62,8 +60,10 @@ function matches(p: Parcel, q: string) {
   );
 }
 
-export function ParcelBrowser({ initialQuery, initialFilter, loadFailed }: { initialQuery: string; initialFilter?: string; loadFailed?: boolean }) {
+export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { initialQuery: string; initialFilter?: string; previewError?: boolean }) {
   const data = useParcelData();
+  const loadError = useParcelError();
+  const loadFailed = previewError || !!loadError;
   const [query, setQuery] = useState(initialQuery);
   const [filter, setFilter] = useState<ParcelFilter>(FILTERS.find((f) => f.key === initialFilter)?.key ?? 'all');
   // The day's arrival batch is the default. Arriving with a search or a filter link means looking something up: all dates.
@@ -82,8 +82,9 @@ export function ParcelBrowser({ initialQuery, initialFilter, loadFailed }: { ini
     if (key) onLine.set(key, (onLine.get(key) ?? 0) + 1);
   }
   const sizeOf = (p: Parcel) => onLine.get(batchKey(p) ?? '') ?? 1; // no valid phone: never grouped
-  // Counts follow the date, so "Needs contact" reads as "needs contact among parcels imported then".
-  const dated = data?.parcels.filter((p) => inDateRange(p.importedAt, dates)) ?? [];
+  // Counts follow the date, so "Needs contact" reads as "needs contact among parcels that arrived then".
+  const arrivedIn = (p: Parcel) => inDateRange(`${p.arrivalDate}T00:00:00`, dates); // local midnight of the arrival day
+  const dated = data?.parcels.filter(arrivedIn) ?? [];
   const count = (f: ParcelFilter) => dated.filter((p) => inFilter(p, events, f)).length;
 
   const rows = data
@@ -96,7 +97,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, loadFailed }: { ini
   const narrowed = filter !== 'all' || query.trim() !== '' || dates.preset !== 'today';
   // Search stays within the chosen dates, but says when the same search finds parcels on other days.
   const elsewhere =
-    data && query.trim() && !anyDate ? data.parcels.filter((p) => !inDateRange(p.importedAt, dates) && inFilter(p, events, filter) && matches(p, query)).length : 0;
+    data && query.trim() && !anyDate ? data.parcels.filter((p) => !arrivedIn(p) && inFilter(p, events, filter) && matches(p, query)).length : 0;
   const active = FILTERS.find((f) => f.key === filter)!;
   const reset = () => {
     setQuery('');
@@ -200,7 +201,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, loadFailed }: { ini
       </div>
 
       <SampleDataNotice>
-        Sample parcels plus anything imported in this browser tab. Not a database yet: reloading the page resets imports and phone edits.
+        Parcels and phone numbers are saved. Messages, calls and follow-up notes are not saved yet: they reset when the page reloads, and no SMS leaves this device.
       </SampleDataNotice>
 
       {!loadFailed && (
@@ -237,9 +238,9 @@ export function ParcelBrowser({ initialQuery, initialFilter, loadFailed }: { ini
         {loadFailed ? (
           <div role="alert" className="px-5 py-10">
             <p className="font-medium">The parcel list could not be loaded</p>
-            <p className="mt-1 text-muted-foreground">Nothing was changed. Check that the office computer is on, then try again.</p>
-            <Button asChild variant="outline" className="mt-4">
-              <Link href="/parcels">Try again</Link>
+            <p className="mt-1 text-muted-foreground">{loadError ?? 'Nothing was changed. Check that the office computer is on, then try again.'}</p>
+            <Button variant="outline" className="mt-4" onClick={reloadParcels}>
+              Try again
             </Button>
           </div>
         ) : (
@@ -250,7 +251,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, loadFailed }: { ini
                   <>
                     <span className="font-medium text-foreground">
                       {plural(rows.length, 'parcel')}
-                      {dates.preset === 'today' ? ' arriving today' : anyDate ? '' : ` imported ${rangePhrase(dates)}`}
+                      {dates.preset === 'today' ? ' arriving today' : anyDate ? '' : ` arrived ${rangePhrase(dates)}`}
                     </span>
                     {view === 'grouped' && <> · {plural(groupCount(rows), 'customer group')}</>}
                     {filter !== 'all' && <> · {active.label}</>}
@@ -294,7 +295,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, loadFailed }: { ini
                   <>
                     <p className="font-medium">
                       No parcel matches &ldquo;{query.trim()}&rdquo;{filter !== 'all' && ` in ${active.label}`}
-                      {!anyDate && `, imported ${rangePhrase(dates)}`}
+                      {!anyDate && `, arrived ${rangePhrase(dates)}`}
                     </p>
                     <p className="mt-1 text-muted-foreground">Check the tracking code, or search by the recipient&apos;s phone number instead.</p>
                   </>
@@ -306,13 +307,13 @@ export function ParcelBrowser({ initialQuery, initialFilter, loadFailed }: { ini
                 ) : (
                   <>
                     <p className="font-medium">
-                      {filter !== 'all' ? active.empty : dates.preset === 'today' ? 'No arrivals imported today yet' : 'No parcels imported in this period'}
+                      {filter !== 'all' ? active.empty : dates.preset === 'today' ? 'No arrivals imported today yet' : 'No parcels arrived in this period'}
                     </p>
                     {!anyDate && (
                       <p className="mt-1 text-muted-foreground">
                         {dates.preset === 'today'
                           ? "Import today's arrival export to start notifying customers. Earlier days are under the date filter."
-                          : `Showing parcels imported ${rangePhrase(dates)}. Try a wider date range.`}
+                          : `Showing parcels that arrived ${rangePhrase(dates)}. Try a wider date range.`}
                       </p>
                     )}
                   </>
@@ -407,53 +408,11 @@ export function ParcelBrowser({ initialQuery, initialFilter, loadFailed }: { ini
         <SheetContent className="max-w-2xl bg-background" aria-describedby={undefined}>
           {openParcel && data && (
             <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-14 pb-6 sm:px-6">
-              <ParcelDetail parcel={openParcel} data={data} Title={SheetTitle} onSelect={setOpen} actions={<QuickActions parcel={openParcel} />} />
+              <ParcelDetail parcel={openParcel} data={data} Title={SheetTitle} onSelect={setOpen} />
             </div>
           )}
         </SheetContent>
       </Sheet>
     </>
-  );
-}
-
-/** Shortcuts only: sending, recording and history live in the contact panel below. */
-function QuickActions({ parcel }: { parcel: Parcel }) {
-  const scan = (
-    <Button asChild variant="outline" size="sm">
-      <Link href="/scan">
-        <ScanBarcode aria-hidden />
-        Scan Parcel
-      </Link>
-    </Button>
-  );
-  if (!phoneKey(parcel.phone)) return <div className="flex flex-wrap gap-2">{scan}</div>; // nothing to call or message yet
-  return (
-    <div className="flex flex-wrap gap-2">
-      <Button asChild variant="outline" size="sm">
-        <a href={`tel:${normalizePhone(parcel.phone)}`}>
-          <Phone aria-hidden />
-          Call
-        </a>
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => {
-          const box = document.getElementById('contact-heading');
-          box?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          (document.getElementById('sms-preview') ?? box)?.focus({ preventScroll: true });
-        }}
-      >
-        <Send aria-hidden />
-        SMS
-      </Button>
-      <Button asChild variant="outline" size="sm">
-        <a href={telegramLink(parcel.phone)} target="_blank" rel="noreferrer">
-          <MessageSquare aria-hidden />
-          Telegram
-        </a>
-      </Button>
-      {scan}
-    </div>
   );
 }

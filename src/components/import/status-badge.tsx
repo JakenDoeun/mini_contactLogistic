@@ -1,10 +1,8 @@
-import { Ban, CircleCheck, CircleMinus, CircleX, Clock, FlaskConical, Hand, PauseCircle, Radio, TriangleAlert, type LucideIcon } from 'lucide-react';
+import { Ban, CircleCheck, CircleMinus, CircleX, Clock, Hand, PauseCircle, Radio, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import type { ImportListItem } from '@/lib/import-api';
-import type { ImportStatus } from '@/lib/import-logic';
-import type { MonitorStatus } from '@/lib/mock/import-service';
 
-type State = ImportStatus | ImportListItem['status'] | MonitorStatus | 'manual';
+type State = ImportListItem['status'] | 'active' | 'inactive' | 'manual' | 'error';
 
 // One label set for every state on the page: an icon and a word, never colour alone.
 const STATES: Record<State, { label: string; icon: LucideIcon; variant: 'success' | 'warning' | 'destructive' | 'info' | 'neutral' }> = {
@@ -17,7 +15,6 @@ const STATES: Record<State, { label: string; icon: LucideIcon; variant: 'success
   inactive: { label: 'Inactive', icon: PauseCircle, variant: 'neutral' },
   manual: { label: 'Manual', icon: Hand, variant: 'neutral' },
   error: { label: 'Error', icon: TriangleAlert, variant: 'destructive' },
-  preview: { label: 'Preview', icon: FlaskConical, variant: 'info' },
 };
 
 export function StatusBadge({ status, className }: { status: State; className?: string }) {

@@ -10,7 +10,6 @@ import {
   groupContactStatus,
   groupSmsStatus,
   phoneKey,
-  arrivalDay,
   type ContactEvent,
   type Parcel,
 } from '@/lib/parcel-logic';
@@ -53,7 +52,7 @@ export function PhoneGroups({
   const groups = groupByPhone(rows)
     .filter((g) => g.phone) // missing or invalid numbers are never grouped: listed on their own below
     .map((g) => {
-      const members = batch.filter((p) => phoneKey(p.phone) === g.phone && arrivalDay(p.importedAt) === g.day).sort(newestFirst);
+      const members = batch.filter((p) => phoneKey(p.phone) === g.phone && p.arrivalDate === g.day).sort(newestFirst);
       const eligible = eligibleForMessage(members, events);
       return { ...g, members, eligible, shown: g.codes.length };
     })

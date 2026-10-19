@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  contactLine,
   composeMessage,
+  groupByPhone,
   contactStatusOf,
   eligibleForMessage,
   normalizePhone,
@@ -17,11 +19,21 @@ import {
   type Parcel,
 } from './parcel-logic.ts';
 
-const p = (code: string, recipient: string, phone: string): Parcel => ({ code, recipient, phone, importedAt: '2026-10-10T08:00:00Z', sourceFile: 'a.xlsx' });
+let id = 0;
+const p = (code: string, recipient: string, phone: string, arrivalDate = '2026-10-10'): Parcel => ({
+  id: ++id, code, recipient, phone, arrivalDate, importedAt: '2026-10-10T08:00:00Z', sourceFile: 'a.xlsx',
+});
 const ev = (id: string, at: string, e: Partial<ContactEvent>): ContactEvent => ({ id, at, channel: 'sms', phone: '', parcelCodes: [], ...e });
 
 test('phone formats normalize to one line', () => {
   for (const raw of ['+855 12 345 678', '012-345-678', '12345678', '(012) 345 678']) assert.equal(normalizePhone(raw), '012345678');
+});
+
+test('groups by Arrival Batch Date, not import time: the same line on another day is never one group', () => {
+  const today = p('A', 'Sokha', '012 345 678', '2026-10-10');
+  const yesterday = p('B', 'Sokha', '012 345 678', '2026-10-09'); // imported at the same moment, batch dated a day earlier
+  assert.deepEqual(phoneGroup(today, [today, yesterday]).map((x) => x.code), ['A']);
+  assert.deepEqual(groupByPhone([today, yesterday]).map((g) => [g.day, g.codes]), [['2026-10-10', ['A']], ['2026-10-09', ['B']]]);
 });
 
 test('groups by phone, never by name', () => {
@@ -128,4 +140,11 @@ test("a phone line's summary shows its most urgent SMS and contact status, each 
   assert.equal(groupSmsStatus(['C'], events), 'not-sent');
   assert.equal(groupContactStatus(['B'], events), 'contacted');
   assert.equal(groupContactStatus(['A', 'B'], events), 'needs-contact'); // A still has to be reached
+});
+
+test('the contact line says what one SMS would cover, without repeating the count', () => {
+  assert.equal(contactLine(1, 1, 'today'), 'Not messaged yet');
+  assert.equal(contactLine(3, 3, 'today'), 'Not messaged yet · one SMS covers all 3 parcels on this number today');
+  assert.equal(contactLine(1, 3, 'yesterday'), '1 of 3 parcels on this number yesterday not messaged yet');
+  assert.equal(contactLine(0, 2, 'today'), 'Messaged or reached already · all 2 parcels on this number today');
 });

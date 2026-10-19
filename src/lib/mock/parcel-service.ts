@@ -1,8 +1,8 @@
-// Mock parcel database and contact log. Swapping these bodies for API calls leaves the components untouched.
-// shortcut: data lives in module memory, so it survives page changes but resets on reload; the backend replaces it.
+// Parcels come from the branch database (Phase 6). The contact log (SMS, calls, notes) is still a mock until Phase 9.
+// shortcut: contact events live in module memory, so they survive page changes but reset on reload; Phase 9 replaces them.
 import { useSyncExternalStore } from 'react';
-import { SAMPLE_PARCELS } from './sample-parcels';
-import { addNewParcels, normalizePhone, type Channel, type ContactEvent, type Outcome, type Parcel, type SmsStatus } from '@/lib/parcel-logic';
+import { listParcels, saveParcelPhone } from '@/lib/import-api';
+import { normalizePhone, type Channel, type ContactEvent, type Outcome, type Parcel, type SmsStatus } from '@/lib/parcel-logic';
 
 export interface ParcelData {
   parcels: Parcel[];
@@ -16,86 +16,48 @@ export interface SmsBatch {
   startedAt: string;
 }
 
-const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// One sample import per batch time; the 23-hour batch was a manual CSV upload.
-function batchFile(at: Date, h: number) {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const day = `${pad(at.getMonth() + 1)}${pad(at.getDate())}`;
-  return h === 23 ? `arrivals_late_${day}.csv` : `arrivals_export_${day}_${pad(at.getHours())}${pad(at.getMinutes())}.xlsx`;
-}
-
-function seed(): ParcelData {
-  const parcels = SAMPLE_PARCELS.map(([code, recipient, phone, h]) => {
-    const at = new Date(Date.now() - h * 3600_000);
-    return { code, recipient, phone, importedAt: at.toISOString(), sourceFile: batchFile(at, h) };
-  });
-  const ev = (h: number, channel: Channel, codes: string[], extra: Partial<ContactEvent>): ContactEvent => ({
-    id: `seed-${codes[0]}-${h}-${channel}`,
-    at: hoursAgo(h),
-    channel,
-    phone: normalizePhone(parcels.find((p) => p.code === codes[0])!.phone),
-    parcelCodes: codes,
-    ...extra,
-  });
-  const events = [
-    ev(25, 'sms', ['CB7730192245'], { smsStatus: 'delivered', result: 'Delivery report received from the gateway.' }),
-    ev(25, 'sms', ['CB5528814023'], { smsStatus: 'failed', result: 'Gateway rejected the number.' }),
-    ev(24, 'call', ['CB5528814023'], { outcome: 'answered', result: 'Will collect tomorrow.' }),
-    ev(48, 'sms', ['CB3365701198', 'CB6602917734'], { smsStatus: 'unconfirmed', result: 'Sent, but no delivery report came back.' }),
-    ev(25, 'sms', ['CB8843016652'], { smsStatus: 'sent', result: 'Accepted by the gateway.' }),
-    ev(24, 'call', ['CB8843016652'], { outcome: 'no-answer' }),
-    ev(4, 'call', ['CB8843016652'], { outcome: 'no-answer' }),
-    ev(2, 'sms', ['CB4419830027'], { smsStatus: 'queued', result: 'Waiting for the gateway.' }),
-    ev(48, 'sms', ['CB7461120983'], { smsStatus: 'delivered', result: 'Delivery report received from the gateway.' }),
-    ev(22, 'telegram', ['CB9952007461'], { outcome: 'messaged', result: 'Message copied to Telegram.' }),
-  ];
-  return { parcels, events, batch: null };
-}
-
-// The sample records every page starts from; the import history is built from the same seed.
-let initial: ParcelData | null = null;
-export const seedData = () => (initial ??= seed());
-
 let data: ParcelData | null = null;
-let loading: Promise<void> | null = null;
+let error: string | null = null;
 const listeners = new Set<() => void>();
+const notify = () => listeners.forEach((l) => l());
 
 function commit(next: ParcelData) {
   data = next;
-  listeners.forEach((l) => l());
+  notify();
 }
 
-/** Live parcel data; null until the first load finishes. */
-export function useParcelData() {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      loading ??= wait(500).then(() => {
-        commit(data ?? seedData());
-        // A sample SMS left waiting at the gateway goes through the same worker as everything else.
-        enqueue(data!.events.filter((e) => e.smsStatus === 'queued').map((e) => e.id));
-      });
-      return () => listeners.delete(l);
+// Each page that opens reloads the list, so parcels confirmed on Import Arrivals show without a page reload.
+export function reloadParcels() {
+  listParcels().then(
+    (parcels) => {
+      error = null;
+      commit({ events: [], batch: null, ...data, parcels });
     },
-    () => data,
-    () => null,
+    (e: Error) => {
+      error = e.message;
+      notify();
+    },
   );
 }
 
-/** Every parcel record now, including ones imported this session. */
-export const currentParcels = () => (data ?? seedData()).parcels;
-
-/** Saves a confirmed import. Codes already on record are left as they are, phone and history included. */
-export function addParcels(incoming: Parcel[]) {
-  const base = data ?? seedData();
-  commit({ ...base, parcels: addNewParcels(base.parcels, incoming) });
+function subscribe(l: () => void) {
+  if (listeners.size === 0) reloadParcels();
+  listeners.add(l);
+  return () => void listeners.delete(l);
 }
 
-export function updatePhone(code: string, phone: string) {
-  if (!data) return;
-  commit({ ...data, parcels: data.parcels.map((p) => (p.code === code ? { ...p, phone: phone.trim() } : p)) });
+/** Live parcel data; null until the first load finishes. */
+export const useParcelData = () => useSyncExternalStore(subscribe, () => data, () => null);
+
+/** Why the parcel list could not be loaded, or null. */
+export const useParcelError = () => useSyncExternalStore(subscribe, () => error, () => null);
+
+/** Saves a staff phone edit on the server, then shows it. Throws with a sentence staff can act on. */
+export async function updatePhone(parcel: Parcel, phone: string) {
+  await saveParcelPhone(parcel.id, phone.trim());
+  if (data) commit({ ...data, parcels: data.parcels.map((p) => (p.id === parcel.id ? { ...p, phone: phone.trim() } : p)) });
 }
 
 function append(event: Omit<ContactEvent, 'id' | 'at'>) {

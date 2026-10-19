@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { SAMPLE_PARCELS } from '../../lib/mock/sample-parcels.ts';
 import { writeAudit } from './audit.ts';
 import type { Db } from './connection.ts';
-import { editParcelPhone, insertNewParcels } from './parcels.ts';
+import { editParcelPhone, insertNewParcels, listParcels } from './parcels.ts';
 import { seedDemoData } from './seed.ts';
 import { createTestDb } from './test-db.ts';
 
@@ -158,4 +158,18 @@ test('demo seed: fictional sample parcels once, and never into a database with r
   addImport(other.db, { source: 'manual' });
   assert.throws(() => seedDemoData(other.db, now), /non-seed imports/);
   assert.equal((other.db.prepare('SELECT count(*) AS n FROM parcels').get() as { n: number }).n, 0);
+});
+
+test('listParcels: newest arrival first, with its file name, current phone and Arrival Batch Date', async (t) => {
+  const { db, cleanup } = await createTestDb();
+  t.after(cleanup);
+  const older = addImport(db, { original_filename: 'monday.xlsx' });
+  const newer = addImport(db, { original_filename: 'tuesday.xlsx' });
+  insertNewParcels(db, older, [{ trackingCode: 'S1', recipientName: 'Test A', phoneRaw: null, arrivalDate: '2026-10-12' }], AT);
+  const { inserted } = insertNewParcels(db, newer, [{ trackingCode: 'S2', recipientName: 'Test B', phoneRaw: '012 345 678', arrivalDate: '2026-10-13' }], AT);
+  editParcelPhone(db, inserted[0], '097 111 222', null);
+  assert.deepEqual(listParcels(db), [
+    { id: inserted[0], code: 'S2', recipient: 'Test B', phone: '097 111 222', arrivalDate: '2026-10-13', importedAt: AT, sourceFile: 'tuesday.xlsx' },
+    { id: inserted[0] - 1, code: 'S1', recipient: 'Test A', phone: '', arrivalDate: '2026-10-12', importedAt: AT, sourceFile: 'monday.xlsx' },
+  ]);
 });

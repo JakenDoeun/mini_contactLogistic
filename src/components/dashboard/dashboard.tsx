@@ -2,19 +2,18 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { ArrowRight, CircleCheck, FileUp, FolderSearch, ScanBarcode } from 'lucide-react';
+import { ArrowRight, CircleCheck, CircleDashed, CircleX, FileUp, FolderSearch, PhoneOff, ScanBarcode, Send, type LucideIcon } from 'lucide-react';
 import { ContactBadge, SmsBadge } from '@/components/parcels/parcel-status';
 import { batchLabel, GroupBadge, toNotifyLine } from '@/components/parcels/phone-group';
 import { StatusBadge } from '@/components/import/status-badge';
 import { SampleDataNotice } from '@/components/shared/sample-data-notice';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { workList, type WorkGroup } from '@/lib/dashboard-logic';
-import { summarizeDay, type ImportRecord } from '@/lib/import-logic';
-import { getImportHistory, getMonitorState } from '@/lib/mock/import-service';
-import { useParcelData } from '@/lib/mock/parcel-service';
-import { formatPhone, smsScope, type ContactStatus, type SmsStatus } from '@/lib/parcel-logic';
-import { formatDateTime } from '@/lib/utils';
+import { dayProgress, workList, type DayProgress, type WorkGroup } from '@/lib/dashboard-logic';
+import { getFolder, listImports, type ImportListItem } from '@/lib/import-api';
+import { useParcelData, useParcelError } from '@/lib/mock/parcel-service';
+import { arrivalDay, formatPhone, smsScope, type ContactStatus, type SmsStatus } from '@/lib/parcel-logic';
+import { cn, formatDateTime } from '@/lib/utils';
 
 const SHOWN = 4;
 // Groups are per arrival batch; earlier batches say which day they came in.
@@ -27,15 +26,19 @@ const tally = (groups: { codes: string[] }[], unit = 'customer') =>
 /** Today's work for the one staff member on shift: what needs doing, each item linked to where it gets done. */
 export function Dashboard() {
   const data = useParcelData();
-  const [imports, setImports] = useState<ImportRecord[] | null>(null);
+  const parcelError = useParcelError();
+  const [imports, setImports] = useState<ImportListItem[] | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const [waiting, setWaiting] = useState<number | null>(null);
 
   useEffect(() => {
-    getImportHistory('normal').then(setImports, () => setImports([]));
-    getMonitorState('normal').then((m) => setWaiting(m.waiting), () => setWaiting(0));
+    listImports().then(setImports, (e: Error) => setImportError(e.message));
+    // Same rule as the folder panel on Import Arrivals: found, not yet opened for review.
+    getFolder().then((f) => setWaiting(f.files.filter((x) => x.state === 'waiting' && !x.importStatus).length), () => setWaiting(0));
   }, []);
 
   const work = data ? workList(data.parcels, data.events) : null;
+  const day = arrivalDay(new Date().toISOString());
   const today = new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
@@ -48,7 +51,7 @@ export function Dashboard() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild>
-            <Link href="/scan">
+            <Link href="/scan?camera=1">
               <ScanBarcode aria-hidden />
               Scan Parcel
             </Link>
@@ -62,17 +65,87 @@ export function Dashboard() {
         </div>
       </div>
 
-      <SampleDataNotice>Parcels, messages and imports are examples kept in this browser tab. No SMS leaves this device yet.</SampleDataNotice>
+      <SampleDataNotice>Parcels and imports are real. Messages and calls are not saved yet, and no SMS leaves this device.</SampleDataNotice>
 
-      <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <Attention work={work} waiting={waiting} />
-        <ImportsToday records={imports} />
+      <TodayArrivals progress={data ? dayProgress(data.parcels, data.events, day) : null} error={parcelError} />
+
+      {/* minmax(0, …) lets long code lists truncate instead of widening the column past a phone screen. */}
+      <div className="mt-6 grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <Attention work={work} waiting={waiting} error={parcelError} />
+        <ImportsToday records={imports} error={importError} />
       </div>
     </>
   );
 }
 
-function Attention({ work, waiting }: { work: ReturnType<typeof workList> | null; waiting: number | null }) {
+// Most settled first, so the bar fills from the left as the day's work gets done. Icon and word on every state.
+const STAGES: { key: keyof DayProgress; label: string; icon: LucideIcon; fill: string; ink: string }[] = [
+  { key: 'done', label: 'Messaged or reached', icon: CircleCheck, fill: 'bg-success', ink: 'text-success' },
+  { key: 'sending', label: 'At the gateway', icon: Send, fill: 'bg-info', ink: 'text-info' },
+  { key: 'retry', label: 'SMS to retry', icon: CircleX, fill: 'bg-destructive', ink: 'text-destructive' },
+  { key: 'noPhone', label: 'No phone number', icon: PhoneOff, fill: 'bg-warning', ink: 'text-warning' },
+  { key: 'notYet', label: 'Not messaged yet', icon: CircleDashed, fill: 'bg-muted-foreground/30', ink: 'text-muted-foreground' },
+];
+
+/** How far today's arrival batch has got: one stacked bar, with the counts spelled out beside it. */
+function TodayArrivals({ progress, error }: { progress: DayProgress | null; error: string | null }) {
+  const total = progress ? STAGES.reduce((n, s) => n + progress[s.key], 0) : 0;
+  const shown = STAGES.filter((s) => progress && progress[s.key] > 0);
+
+  return (
+    <section aria-labelledby="arrivals-heading" className="mt-6 rounded-md border bg-card px-5 py-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 id="arrivals-heading" className="text-base font-semibold">
+          Today&apos;s arrivals
+        </h2>
+        {progress && total > 0 && (
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{progress.done}</span> of {plural(total, 'parcel')} messaged or reached
+          </p>
+        )}
+      </div>
+
+      {error ? (
+        <p role="alert" className="mt-3 text-destructive">
+          The parcel list could not be loaded. {error}
+        </p>
+      ) : !progress ? (
+        <div className="mt-4 space-y-3" aria-busy="true" aria-label="Loading">
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-5 w-2/3" />
+        </div>
+      ) : total === 0 ? (
+        <p className="mt-2 text-muted-foreground">
+          No parcels have arrived today yet. They show here once the morning&apos;s file is confirmed in{' '}
+          <Link href="/import-arrivals" className="font-medium text-primary underline-offset-4 hover:underline">
+            Import Arrivals
+          </Link>
+          .
+        </p>
+      ) : (
+        <>
+          {/* Decorative: the list below carries every number, so screen readers read that instead. */}
+          <div className="mt-4 flex h-3 gap-0.5" aria-hidden>
+            {shown.map((s) => (
+              <span key={s.key} className={cn('rounded-sm', s.fill)} style={{ flexGrow: progress[s.key] }} title={`${s.label}: ${progress[s.key]}`} />
+            ))}
+          </div>
+          <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+            {STAGES.map((s) => (
+              <li key={s.key} className={cn('flex items-center gap-1.5', progress[s.key] === 0 && 'text-muted-foreground')}>
+                <s.icon className={cn('size-4', progress[s.key] > 0 ? s.ink : 'text-muted-foreground')} aria-hidden />
+                <span className="font-mono font-medium">{progress[s.key]}</span>
+                {s.label}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
+function Attention({ work, waiting, error }: { work: ReturnType<typeof workList> | null; waiting: number | null; error: string | null }) {
   const loading = !work || waiting === null;
   const empty = !loading && !waiting && !work.retry.length && !work.toMessage.length && !work.followUp.length && !work.noPhone.length;
 
@@ -82,7 +155,11 @@ function Attention({ work, waiting }: { work: ReturnType<typeof workList> | null
         Needs your attention
       </h2>
 
-      {loading ? (
+      {error ? (
+        <p role="alert" className="border-t px-5 py-4 text-sm text-destructive">
+          The work list needs the parcel list, which could not be loaded. Reload the page to try again.
+        </p>
+      ) : loading ? (
         <div className="space-y-3 border-t px-5 py-5" aria-busy="true" aria-label="Loading">
           <Skeleton className="h-5 w-2/3" />
           <Skeleton className="h-5 w-full" />
@@ -264,55 +341,76 @@ const More = ({ shown, total }: { shown: number; total: number }) =>
     </li>
   ) : null;
 
-function ImportsToday({ records }: { records: ImportRecord[] | null }) {
-  const day = records ? summarizeDay(records, new Date()) : null;
-  const latest = records?.length ? [...records].sort((a, b) => b.importedAt.localeCompare(a.importedAt))[0] : null;
-  const cells: [string, number | undefined][] = [
-    ['Files', day?.files],
-    ['New parcels', day?.newRecords],
-    ['Duplicates skipped', day?.duplicates],
+const confirmedToday = (r: ImportListItem) => r.status === 'imported' && !!r.confirmedAt && arrivalDay(r.confirmedAt) === arrivalDay(new Date().toISOString());
+
+/** Today's confirmed files as one line: what came in, what the Shopee rule kept, and what was new. */
+function ImportsToday({ records, error }: { records: ImportListItem[] | null; error: string | null }) {
+  const today = records?.filter(confirmedToday) ?? [];
+  const sum = (k: 'rowsTotal' | 'rowsShopee' | 'parcels' | 'added' | 'duplicates') => today.reduce((n, r) => n + r[k], 0);
+  const steps: [string, number][] = [
+    ['Rows in file', sum('rowsTotal')],
+    ['Shopee rows', sum('rowsShopee')],
+    ['Parcels', sum('parcels')],
+    ['New', sum('added')],
   ];
+  const latest = records?.[0] ?? null;
+  // Parcels that did not become new ones: already in the database, or left out (or held for another scan date) in review.
+  const leftOut = sum('parcels') - sum('added') - sum('duplicates');
+  const skipped = [sum('duplicates') > 0 && `${sum('duplicates')} already stored`, leftOut > 0 && `${leftOut} left out in review`].filter(Boolean);
 
   return (
     <section aria-labelledby="imports-heading" className="rounded-md border bg-card">
       <div className="flex items-baseline justify-between gap-3 px-5 pt-5 pb-3">
         <h2 id="imports-heading" className="text-base font-semibold">
           Imports today
+          {records && <span className="ml-2 text-sm font-normal text-muted-foreground">{plural(today.length, 'file')}</span>}
         </h2>
         <Link href="/import-arrivals" className="text-sm font-medium text-primary underline-offset-4 hover:underline">
           Import Arrivals
         </Link>
       </div>
-      <dl className="grid grid-cols-3 border-y [&>div:not(:last-child)]:border-r">
-        {cells.map(([label, n]) => (
-          <div key={label} className="px-5 py-3">
-            <dt className="text-xs text-muted-foreground">{label}</dt>
-            <dd className="mt-0.5 font-mono text-xl font-medium">{n ?? <Skeleton className="mt-1 h-7 w-10" />}</dd>
+      {error ? (
+        <p role="alert" className="border-t px-5 py-4 text-sm text-destructive">
+          The import history could not be loaded. {error}
+        </p>
+      ) : (
+        <>
+          {/* Each step keeps part of the one before it, so the line reads left to right as the file narrows down. */}
+          <ol className="grid grid-cols-2 border-y sm:grid-cols-4">
+            {steps.map(([label, n], i) => (
+              <li key={label} className={cn('px-4 py-3', i % 2 === 1 && 'border-l', i >= 2 && 'border-t sm:border-t-0', i === 2 && 'sm:border-l')}>
+                <span className="block text-xs text-muted-foreground">{label}</span>
+                <span className={cn('mt-0.5 block font-mono text-xl font-medium', i === 3 && today.length > 0 && 'text-success')}>
+                  {records ? n : <Skeleton className="mt-1 h-7 w-10" />}
+                </span>
+              </li>
+            ))}
+          </ol>
+          {records && skipped.length > 0 && <p className="border-b px-5 py-2 text-sm text-muted-foreground">Not added: {skipped.join(' · ')}.</p>}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-sm">
+            {!records ? (
+              <Skeleton className="h-5 w-full" />
+            ) : !latest ? (
+              <span className="text-muted-foreground">No imports yet.</span>
+            ) : (
+              <>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs text-muted-foreground">
+                    Latest ·{' '}
+                    <time dateTime={latest.confirmedAt ?? latest.checkedAt} className="font-mono">
+                      {formatDateTime(latest.confirmedAt ?? latest.checkedAt)}
+                    </time>
+                  </span>
+                  <span className="block truncate font-mono" title={latest.fileName}>
+                    {latest.fileName}
+                  </span>
+                </span>
+                <StatusBadge status={latest.status} />
+              </>
+            )}
           </div>
-        ))}
-      </dl>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-sm">
-        {!records ? (
-          <Skeleton className="h-5 w-full" />
-        ) : !latest ? (
-          <span className="text-muted-foreground">No imports yet.</span>
-        ) : (
-          <>
-            <span className="min-w-0 flex-1">
-              <span className="block text-xs text-muted-foreground">
-                Latest ·{' '}
-                <time dateTime={latest.importedAt} className="font-mono">
-                  {formatDateTime(latest.importedAt)}
-                </time>
-              </span>
-              <span className="block truncate font-mono" title={latest.fileName}>
-                {latest.fileName}
-              </span>
-            </span>
-            <StatusBadge status={latest.status} />
-          </>
-        )}
-      </div>
+        </>
+      )}
     </section>
   );
 }

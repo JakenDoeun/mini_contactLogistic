@@ -66,7 +66,7 @@ Settings › *Ready for phones?* checks each of these on the computer itself and
 3. **Configuration.** Copy `deploy/branch.env.example` to `.env.local` in the app folder. Set `BRANCH_URL=https://<this computer's name>`,
    or leave it unset to have it read automatically once Serve runs.
 4. **Start the app** so it listens on this computer only: `npm run start:lan` (127.0.0.1:3000). Do not open port 3000 in the firewall.
-   To start it with Windows: Task Scheduler › Create Task › "At log on" › Action `cmd /c npm run start:lan`, "Start in" = the app folder.
+   To install it on Windows with start at boot, use `deploy/windows/install.ps1` (docs/phase3-backups.md).
 5. **Share it on the tailnet** (once, as an administrator):
    `tailscale serve --bg 3000`
    `--bg` keeps the setting across restarts. Check with `tailscale serve status`: it lists `https://<name>` → `http://127.0.0.1:3000`.

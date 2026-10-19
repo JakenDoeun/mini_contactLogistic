@@ -3,41 +3,22 @@
 import { useRef, useState } from 'react';
 import { AlertCircle, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ACCEPTED_EXTENSIONS, validateFile, type FileMeta } from '@/lib/import-logic';
+import { ACCEPTED_EXTENSIONS, validateFile } from '@/lib/import-logic';
 import { cn } from '@/lib/utils';
 
-/** Content fingerprint, so a re-exported copy under another name is still recognised. */
-async function fingerprint(file: File) {
-  // shortcut: crypto.subtle only exists on https (and localhost); plain http falls back to size + date.
-  if (!crypto.subtle) return `meta-${file.size}-${file.lastModified}`;
-  const hash = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-  return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-/** Picks one export file and hands it to the review flow. Nothing is checked or saved here. */
-export function UploadPanel({ disabled, onPick }: { disabled: boolean; onPick: (meta: FileMeta) => void }) {
+/** Picks one export file and hands it to the review flow, which uploads it. Only name, type and size are checked here. */
+export function UploadPanel({ disabled, onPick }: { disabled: boolean; onPick: (file: File) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [rejection, setRejection] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  async function pick(files: FileList | null) {
+  function pick(files: FileList | null) {
     setRejection(null);
     if (!files?.length) return;
     if (files.length > 1) return setRejection('One file at a time, please. Drop a single export file.');
-    const file = files[0];
-    const error = validateFile(file);
+    const error = validateFile(files[0]);
     if (error) return setRejection(error);
-    try {
-      onPick({
-        fileName: file.name,
-        size: file.size,
-        modifiedAt: new Date(file.lastModified).toISOString(),
-        source: 'manual',
-        fingerprint: await fingerprint(file),
-      });
-    } catch {
-      setRejection(`${file.name} could not be opened. Close it in Excel, then try again.`);
-    }
+    onPick(files[0]);
   }
 
   return (

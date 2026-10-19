@@ -372,6 +372,53 @@ test('backups and data: any staff member saves a backup; only the admin changes 
   assert.equal((await putDays(7, adminCookie)).status, 200);
 });
 
+test('imports: upload, review, staff decisions and Confirm through the real API (Phase 4)', async () => {
+  const db = openDatabase(path.join(site.dataDir, 'branch.db'));
+  const { id: staffId } = db.prepare("SELECT id FROM users WHERE username = 'first.staff'").get() as { id: number };
+  const cookie = `__Host-cb_session=${createSession(db, staffId)}`;
+  db.close();
+  const fixture = (name: string) => new Blob([fs.readFileSync(path.join(REPO, 'test/fixtures', name))]);
+  const upload = (name: string, as: string, init: { cookie?: string; origin?: string | null } = { cookie }) => {
+    const form = new FormData();
+    form.append('file', fixture(name), as);
+    return send('/api/imports/check', { method: 'POST', body: form, ...init });
+  };
+  const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+
+  assert.equal((await upload('scan-record-mixed.csv', 'a.csv', {})).status, 401, 'signed out');
+  assert.equal((await upload('scan-record-mixed.csv', 'a.csv', { cookie, origin: 'https://evil.example' })).status, 403);
+  const checked = await upload('scan-record-mixed-xlsx-named.xls', 'C:\\fakepath\\Scan_record.xls');
+  assert.equal(checked.status, 201);
+  const { importId, status } = await checked.json();
+  assert.equal(status, 'checked');
+
+  const review = await (await send(`/api/imports/${importId}?choice=single_scan_date`, { cookie })).json();
+  assert.deepEqual(review.counts, { unique: 10, db_duplicate: 0, left_out: 0, blocked: 3, ready: 7 });
+  assert.equal(review.fileName, 'Scan_record.xls');
+  assert.equal(review.canConfirm, false);
+  const blocking = review.items.filter((i: { blocking: boolean }) => i.blocking) as { id: number }[];
+  assert.equal(blocking.length, 3);
+  const decide = (id: number, body: unknown) => send(`/api/imports/review-items/${id}`, { method: 'PUT', body: JSON.stringify(body), headers: { 'content-type': 'application/json' }, cookie });
+  assert.equal((await decide(blocking[0].id, { resolution: 'chosen', chosen: { name: 'Not In File', phone: '012345678' } })).status, 400);
+  for (const i of blocking) assert.equal((await decide(i.id, { resolution: 'left_out' })).status, 200);
+
+  const body = { arrivalBatchDate: today, dateChoice: 'single_scan_date', batchDateChosen: true };
+  assert.equal((await postJson(`/api/imports/${importId}/confirm`, body, { cookie, origin: 'https://evil.example' })).status, 403);
+  const confirmed = await postJson(`/api/imports/${importId}/confirm`, body, { cookie });
+  assert.equal(confirmed.status, 200);
+  assert.deepEqual(await confirmed.json(), { ok: true, added: 7 });
+  assert.equal((await postJson(`/api/imports/${importId}/confirm`, body, { cookie })).status, 409, 'a second Confirm adds nothing');
+  const history = (await (await send('/api/imports', { cookie })).json()).imports as { id: number; status: string; added: number }[];
+  assert.deepEqual([history[0].id, history[0].status, history[0].added], [importId, 'imported', 7]);
+  const check = siteDb();
+  assert.equal(check.prepare('SELECT count(*) FROM parcels WHERE first_import_id = ? AND arrival_date = ?').pluck().get(importId, today), 7);
+  check.close();
+
+  const bad = await upload('headers-no-send-outlet.xlsx', 'b.xlsx');
+  assert.equal(bad.status, 422);
+  assert.deepEqual(Object.keys(await bad.json()).sort(), ['errorCode', 'importId', 'message', 'status']);
+});
+
 test('serve: migrates, starts the app, restarts it after a crash, and saves a backup when stopped (Phase 3)', async () => {
   const dataDir = await dataFolder();
   const port = await freePort();
@@ -451,4 +498,43 @@ test('serve: --log collects its own and the web app output; killing serve outrig
   for (let i = 0; i < 100 && !(await gone()); i++) await new Promise((r) => setTimeout(r, 100));
   assert.equal(await gone(), true, 'the web app exits within 10 s of its launcher');
   assert.equal(await answers(), false, 'the port is free again');
+});
+
+test('serve: with automatic checks on, files saved while stopped and while running are found, never imported (Phase 5 gate)', async () => {
+  const dataDir = await dataFolder(Infinity);
+  const watched = path.join(dataDir, 'watched');
+  fs.mkdirSync(watched);
+  const db = openDatabase(path.join(dataDir, 'branch.db'));
+  db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('folder.settings', ?, ?)").run(
+    JSON.stringify({ path: watched, auto: true, intervalSeconds: 30 }),
+    new Date().toISOString(),
+  );
+  fs.copyFileSync(path.join(REPO, 'test/fixtures/scan-record-mixed.xlsx'), path.join(watched, 'while-stopped.xlsx'));
+  const port = await freePort();
+  let out = '';
+  const serve = spawn(process.execPath, ['scripts/serve.ts', `--data-dir=${dataDir}`, `--port=${port}`], {
+    cwd: buildDir,
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1', BRANCH_URL: '' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  serve.stdout!.on('data', (d) => (out += d));
+  serve.stderr!.on('data', (d) => (out += d));
+  cleanups.push(() => void (serve.exitCode === null && serve.kill('SIGKILL')));
+  const found = async (name: string, seconds: number) => {
+    for (let i = 0; i < seconds * 2; i++) {
+      if (db.prepare("SELECT state FROM detected_files WHERE path = ?").pluck().get(path.join(watched, name)) === 'waiting') return;
+      if (serve.exitCode !== null) throw new Error(`serve exited:\n${out}`);
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    throw new Error(`${name} was not found within ${seconds} s:\n${out}`);
+  };
+  await found('while-stopped.xlsx', 30);
+  fs.copyFileSync(path.join(REPO, 'test/fixtures/scan-record-two-days.xlsx'), path.join(watched, 'while-running.xlsx'));
+  await found('while-running.xlsx', 60);
+  assert.match(out, /Folder check: 1 new file\(s\) waiting for review/);
+  assert.equal(db.prepare('SELECT count(*) FROM imports').pluck().get(), 0, 'found files wait for staff; nothing is imported');
+  db.close();
+  const exited = new Promise((resolve) => serve.once('exit', resolve));
+  serve.kill('SIGTERM');
+  await exited;
 });

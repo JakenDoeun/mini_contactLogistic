@@ -1,14 +1,15 @@
 import { FolderOpen, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { ImportRecord } from '@/lib/import-logic';
+import type { ImportListItem } from '@/lib/import-api';
 import { formatDateTime } from '@/lib/utils';
+import { importAction, importTime } from './import-history';
 import { StatusBadge } from './status-badge';
 
 // The most recent single file, whatever day it arrived. Daily totals stay in DaySummary.
-export function LatestImport({ record, onView }: { record: ImportRecord | null | undefined; onView: (r: ImportRecord) => void }) {
+export function LatestImport({ record, onView }: { record: ImportListItem | null | undefined; onView: (r: ImportListItem) => void }) {
   const Source = record?.source === 'manual' ? Upload : FolderOpen;
-  const action = record?.status === 'failed' ? 'See why' : 'View details';
+  const action = record ? importAction(record.status) : '';
 
   return (
     <section aria-labelledby="latest-heading" className="flex flex-col">
@@ -30,13 +31,13 @@ export function LatestImport({ record, onView }: { record: ImportRecord | null |
                 <Source className="size-3.5" aria-hidden />
                 {record.source === 'manual' ? 'Manual upload' : 'Watched folder'}
                 <span aria-hidden>·</span>
-                <time dateTime={record.importedAt} className="font-mono">
-                  {formatDateTime(record.importedAt)}
+                <time dateTime={importTime(record)} className="font-mono">
+                  {formatDateTime(importTime(record))}
                 </time>
-                {record.status !== 'failed' && (
+                {record.status === 'imported' && (
                   <>
                     <span aria-hidden>·</span>
-                    {record.newRecords} added, {record.duplicateCodes.length} skipped
+                    {record.added} added, {record.duplicates} already in records
                   </>
                 )}
               </p>

@@ -6,8 +6,8 @@
     "dev": "node scripts/db-migrate.ts && next dev -H 127.0.0.1 -p 3000",
     "dev:https": "node scripts/db-migrate.ts && next dev --experimental-https -H 0.0.0.0",
     "build": "next build",
-    "start": "node scripts/db-migrate.ts && next start",
-    "start:lan": "node scripts/db-migrate.ts && next start -H 127.0.0.1 -p 3000",
+    "start": "node scripts/serve.ts",
+    "start:lan": "node scripts/serve.ts",
     "test": "node --test \"src/**/*.test.ts\"",
     "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.ts\"",
     "db:generate": "drizzle-kit generate",
@@ -34,7 +34,8 @@
     "next": "16.4.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "tailwind-merge": "3.7.0"
+    "tailwind-merge": "3.7.0",
+    "xlsx": "file:vendor/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",

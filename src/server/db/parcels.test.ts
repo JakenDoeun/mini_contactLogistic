@@ -68,10 +68,10 @@ test('audit log entries never hold names, phone numbers or message text', async 
   editParcelPhone(db, id, 'not a phone', null);
 
   assert.throws(() => writeAudit(db, { action: 'parcel.phone_edited', entity: 'parcel', entityIds: [id], outcome: 'ok', detail: { new_phone: '012345678' } }), /not allowed/);
-  assert.throws(() => writeAudit(db, { action: 'import.checked', entity: 'import', entityIds: [1], outcome: 'ok', detail: { file_name: 'list 012 345 678.xlsx' } }), /phone number/);
+  assert.throws(() => writeAudit(db, { action: 'import.checked', entity: 'import', entityIds: [1], outcome: 'ok', detail: { file_name: 'list 012 345 678.xlsx' } }), /required shape/);
   assert.throws(() => writeAudit(db, { action: 'import.checked', entity: 'import', entityIds: [1], outcome: 'ok', detail: { error_code: '+855 12 345 678' } }), /phone number/);
   assert.throws(() => writeAudit(db, { action: 'import.checked', entity: 'import', entityIds: ['Sokha Chan' as unknown as number], outcome: 'ok' }), /record IDs/);
-  writeAudit(db, { action: 'import.checked', entity: 'import', entityIds: [1], outcome: 'ok', detail: { file_name: 'Scan_record 20261010.xls', sha256: 'ab'.repeat(32) } });
+  writeAudit(db, { action: 'import.checked', entity: 'import', entityIds: [1], outcome: 'ok', detail: { file_name: 'backup-2026-10-10T08-00-00-000+07.db', sha256: 'ab'.repeat(32) } });
 
   const rows = db.prepare('SELECT action, entity_ids, detail FROM audit_log').all() as { action: string; entity_ids: string; detail: string }[];
   assert.ok(rows.length >= 5);
@@ -115,8 +115,28 @@ test('audit sha256 is checked by its exact format, not by the phone pattern', as
   for (const bad of [reproduced.toUpperCase(), reproduced.slice(1), `${reproduced}0`, '012 345 678', 42, null]) {
     assert.throws(() => audit(bad), /64 lower-case hex/, String(bad));
   }
-  // Phone-shaped text under any other key is still refused.
-  assert.throws(() => writeAudit(db, { action: 'import.checked', entity: 'import', entityIds: [1], outcome: 'ok', detail: { file_name: reproduced } }), /phone number/);
+  // Phone-shaped text under any other free-text key is still refused.
+  assert.throws(() => writeAudit(db, { action: 'import.checked', entity: 'import', entityIds: [1], outcome: 'ok', detail: { source: reproduced } }), /phone number/);
+});
+
+test('audit counts, rules and file_name take one shape each, so no name can ride on them (finding L2)', async (t) => {
+  const { db, cleanup } = await createTestDb();
+  t.after(cleanup);
+  const audit = (detail: Record<string, unknown>) => writeAudit(db, { action: 'import.checked', entity: 'import', entityIds: [1], outcome: 'ok', detail });
+  audit({ counts: { ready: 7, blocked: 3 }, rules: ['send-outlet-shopee-shpe/v1'], arrival_dates: ['2026-10-10'] });
+  audit({ file_name: 'backup-2026-10-18T23-16-29-325+07.db' });
+  for (const bad of [
+    { counts: { ready: 'Sokha Chan' } },
+    { counts: { ready: -1 } },
+    { counts: ['Sokha'] },
+    { rules: ['Sokha Chan'] },
+    { rules: 'send-outlet-shopee-shpe/v1' },
+    { file_name: 'Sokha Chan parcels.xlsx' },
+    { file_name: 'Scan_record.xls' },
+    { arrival_dates: ['Sokha'] },
+  ]) {
+    assert.throws(() => audit(bad), /required shape/, JSON.stringify(bad));
+  }
 });
 
 test('demo seed: fictional sample parcels once, and never into a database with real imports', async (t) => {

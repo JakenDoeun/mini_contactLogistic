@@ -13,7 +13,8 @@
 #     app.old), so the app is down only for seconds;
 #  4. creates the standard local account "campusbranch" that only runs the app (random password given only to Task
 #     Scheduler, hidden from the sign-in screen) with the right to run while nobody is signed in;
-#  5. creates the data folder C:\ProgramData\CampusBranch that only that account, Administrators and SYSTEM can open;
+#  5. creates the data folder C:\ProgramData\CampusBranch that only that account, Administrators and SYSTEM can open,
+#     and the shared folder "Campus Branch Imports" (Public Documents, with a desktop shortcut) for the courier export;
 #  6. registers the task "Campus Branch": at startup with nobody signed in, no time limit, restart on failure;
 #  7. keeps the computer awake on mains power (no sleep; closing the lid does nothing), hibernates on a critical
 #     battery, and turns on automatic time if it was off;
@@ -266,6 +267,15 @@ Step "Data folder $DataDir"
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 icacls $DataDir /inheritance:r /grant:r "${Account}:(OI)(CI)M" '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Could not set the permissions of $DataDir (icacls exit code $LASTEXITCODE)." }
+# The watched folder's default (src/server/folder/folder.ts): staff signed in at this computer save the courier export
+# here, and the app's account can read it. It holds customer data, so it is not open to everyone.
+$ImportsDir = "$env:PUBLIC\Documents\Campus Branch Imports"
+New-Item -ItemType Directory -Force -Path $ImportsDir | Out-Null
+icacls $ImportsDir /inheritance:r /grant:r "${Account}:(OI)(CI)RX" '*S-1-5-32-545:(OI)(CI)M' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Could not set the permissions of $ImportsDir (icacls exit code $LASTEXITCODE)." }
+$shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut("$env:PUBLIC\Desktop\Campus Branch Imports.lnk")
+$shortcut.TargetPath = $ImportsDir
+$shortcut.Save()
 # Next.js may write its cache inside the build; the rest of the app folder stays read-only for the account.
 New-Item -ItemType Directory -Force -Path "$AppDir\.next\cache" | Out-Null
 icacls "$AppDir\.next\cache" /grant "${Account}:(OI)(CI)M" | Out-Null
@@ -387,6 +397,7 @@ Write-Host @"
    Start:    Enable-ScheduledTask '$TaskName'; Start-ScheduledTask '$TaskName'
    Log:      $LogFile
    Data:     $DataDir   (database and backups; customer data, keep private)
+   Imports:  $ImportsDir   (save the courier export here, then Scan Folder Now)
    Restore:  Disable-ScheduledTask '$TaskName'; Stop-ScheduledTask '$TaskName'
              cd '$AppDir'; `$env:DATA_DIR = '$DataDir'
              & '$NodeExe' --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\restore.ts      (lists backups)

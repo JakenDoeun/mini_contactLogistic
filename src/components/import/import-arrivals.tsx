@@ -1,102 +1,92 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { summarizeDay, type ImportRecord } from '@/lib/import-logic';
-import { getImportHistory, getMonitorState, type MonitorState, type PreviewMode } from '@/lib/mock/import-service';
-import { useSettings } from '@/lib/mock/use-settings';
+import type { DaySummary as Summary } from '@/lib/import-logic';
+import { listImports, type ImportListItem } from '@/lib/import-api';
 import { cn } from '@/lib/utils';
 import { DaySummary } from './day-summary';
 import { FolderMonitor } from './folder-monitor';
-import { ImportDetailSheet } from './import-detail-sheet';
 import { ImportFlow, type FlowRequest } from './import-flow';
 import { ImportHistory } from './import-history';
 import { LatestImport } from './latest-import';
 import { UploadPanel } from './upload-panel';
 
-const newestFirst = (records: ImportRecord[]) => [...records].sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
 
-export function ImportArrivals({ mode }: { mode: PreviewMode }) {
-  const settings = useSettings();
-  const [history, setHistory] = useState<ImportRecord[] | null>(null);
+function summarize(items: ImportListItem[]): Summary {
+  const today = items.filter((r) => r.status === 'imported' && isToday(r.confirmedAt));
+  return {
+    files: today.length,
+    newRecords: today.reduce((n, r) => n + r.added, 0),
+    duplicates: today.reduce((n, r) => n + r.duplicates, 0),
+  };
+}
+
+export function ImportArrivals() {
+  const [history, setHistory] = useState<ImportListItem[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [monitor, setMonitor] = useState<MonitorState | null>(null);
-  const [monitorError, setMonitorError] = useState<string | null>(null);
   const [flow, setFlow] = useState<FlowRequest | null>(null);
-  const [open, setOpen] = useState<ImportRecord | null>(null);
+  const [folderKey, setFolderKey] = useState(0); // reloads the folder list after a review changes it
 
   const loadHistory = useCallback(() => {
-    setHistory(null);
     setHistoryError(null);
-    getImportHistory(mode).then(setHistory, (e: Error) => setHistoryError(e.message));
-  }, [mode]);
+    listImports().then(setHistory, (e: Error) => setHistoryError(e.message));
+  }, []);
 
-  const loadMonitor = useCallback(() => {
-    getMonitorState(mode).then(setMonitor, (e: Error) => setMonitorError(e.message));
-  }, [mode]);
+  useEffect(loadHistory, [loadHistory]);
 
-  useEffect(() => {
-    loadHistory();
-    setMonitor(null);
-    loadMonitor();
-  }, [loadHistory, loadMonitor]);
-
-  const summary = history ? summarizeDay(history, new Date()) : null;
-  // undefined while loading, null when there is nothing yet.
-  const latest = history ? (newestFirst(history)[0] ?? null) : undefined;
+  const view = (r: ImportListItem) => setFlow({ kind: 'open', id: r.id });
 
   return (
     <>
-      <PageHeading history={history} waiting={monitor?.waiting ?? 0} />
+      <PageHeading history={history} />
 
-      {/* Two ways in, one review: a file staff choose, or one found in the watched folder. */}
       <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="flex min-w-0 flex-col gap-6">
-          <UploadPanel disabled={!!flow} onPick={(meta) => setFlow({ kind: 'file', meta })} />
+          <UploadPanel disabled={!!flow} onPick={(file) => setFlow({ kind: 'file', file })} />
           {/* Without history the totals are unknown; the history panel explains the error. */}
           {!historyError && (
             <>
-              <DaySummary summary={summary} />
-              <LatestImport record={latest} onView={setOpen} />
+              <DaySummary summary={history ? summarize(history) : null} />
+              {/* undefined while loading, null when there is nothing yet; the list is newest first. */}
+              <LatestImport record={history ? (history[0] ?? null) : undefined} onView={view} />
             </>
           )}
         </div>
-        <FolderMonitor state={monitor} error={monitorError} onScan={() => setFlow({ kind: 'scan' })} />
+        <FolderMonitor
+          reloadKey={folderKey}
+          onReview={(file) => setFlow({ kind: 'folder', file })}
+          onOpenImport={(id) => setFlow({ kind: 'open', id })}
+        />
       </div>
 
       <div className="mt-8">
-        <ImportHistory records={history} error={historyError} onRetry={loadHistory} onView={setOpen} />
+        <ImportHistory records={history} error={historyError} onRetry={loadHistory} onView={view} />
       </div>
 
       <ImportFlow
         request={flow}
-        mode={mode}
-        blockDuplicateFiles={settings?.duplicateFile === 'block'}
-        simulated={monitor?.simulated ?? true}
         onClose={() => {
           setFlow(null);
-          loadMonitor(); // waiting count and recent activity change after a review
+          setFolderKey((k) => k + 1);
         }}
-        onRecord={(r) => setHistory((h) => (h ? [r, ...h] : h))}
-        onView={(r) => {
-          setFlow(null);
-          setOpen(r);
-        }}
+        onChanged={loadHistory}
       />
-      <ImportDetailSheet record={open} onClose={() => setOpen(null)} />
     </>
   );
 }
 
-function PageHeading({ history, waiting }: { history: ImportRecord[] | null; waiting: number }) {
-  const newest = history?.length ? newestFirst(history)[0] : null;
-  const today = history?.filter((r) => new Date(r.importedAt).toDateString() === new Date().toDateString()) ?? [];
+function PageHeading({ history }: { history: ImportListItem[] | null }) {
+  const newest = history?.[0];
+  const waiting = history?.filter((r) => r.status === 'checked').length ?? 0;
+  const today = history?.filter((r) => r.status === 'imported' && isToday(r.confirmedAt)) ?? [];
 
   const health = !history
     ? null
     : newest?.status === 'failed'
       ? { tone: 'bg-destructive-tint text-destructive', text: 'Last file did not import' }
       : waiting
-        ? { tone: 'bg-info-tint text-info', text: `${waiting} folder file${waiting === 1 ? '' : 's'} waiting for review` }
+        ? { tone: 'bg-info-tint text-info', text: `${waiting} file${waiting === 1 ? '' : 's'} waiting for review` }
         : today.length
           ? { tone: 'bg-success-tint text-success', text: 'All clear today' }
           : { tone: 'bg-secondary text-muted-foreground', text: 'Nothing imported yet today' };

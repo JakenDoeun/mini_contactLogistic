@@ -7,35 +7,47 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DateFilter } from '@/components/shared/date-filter';
 import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@/lib/date-range';
-import type { ImportRecord } from '@/lib/import-logic';
+import type { ImportListItem } from '@/lib/import-api';
 import { cn, formatDateTime } from '@/lib/utils';
 import { StatusBadge } from './status-badge';
 
-type SortKey = 'fileName' | 'source' | 'importedAt' | 'newRecords' | 'duplicates' | 'status';
+type Item = ImportListItem;
+type SortKey = 'fileName' | 'source' | 'at' | 'added' | 'duplicates' | 'status';
 
 const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
   { key: 'fileName', label: 'File' },
   { key: 'source', label: 'Source' },
-  { key: 'importedAt', label: 'Imported' },
-  { key: 'newRecords', label: 'Records added', numeric: true },
-  { key: 'duplicates', label: 'Duplicates skipped', numeric: true },
+  { key: 'at', label: 'When' },
+  { key: 'added', label: 'Added', numeric: true },
+  { key: 'duplicates', label: 'Skipped', numeric: true },
   { key: 'status', label: 'Status' },
 ];
 
-const STATUS_ORDER = { failed: 0, imported: 1 };
+const STATUS_ORDER: Record<Item['status'], number> = { checked: 0, failed: 1, no_eligible_rows: 2, cancelled: 3, imported: 4 };
 
-type Filter = 'all' | 'failed';
+type Filter = 'all' | 'checked' | 'failed';
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
+  { key: 'checked', label: 'Waiting' },
   { key: 'failed', label: 'Failed' },
 ];
 
-const ACTION = { failed: 'See why', imported: 'View details' };
+export const importAction = (status: Item['status']) => (status === 'checked' ? 'Continue review' : status === 'failed' ? 'See why' : 'View details');
+/** When it was imported, or when it was checked if it never was. */
+export const importTime = (r: Item) => r.confirmedAt ?? r.checkedAt;
 
-const sortValue = (r: ImportRecord, key: SortKey): string | number => {
+const NOT_IMPORTED: Record<Item['status'], string> = {
+  checked: 'Not confirmed',
+  failed: 'Not imported',
+  no_eligible_rows: 'No Shopee parcels',
+  cancelled: 'Discarded',
+  imported: '',
+};
+
+const sortValue = (r: Item, key: SortKey): string | number => {
   switch (key) {
-    case 'duplicates':
-      return r.duplicateCodes.length;
+    case 'at':
+      return importTime(r);
     case 'status':
       return STATUS_ORDER[r.status];
     default:
@@ -49,17 +61,17 @@ export function ImportHistory({
   onRetry,
   onView,
 }: {
-  records: ImportRecord[] | null;
+  records: Item[] | null;
   error: string | null;
   onRetry: () => void;
-  onView: (record: ImportRecord) => void;
+  onView: (record: Item) => void;
 }) {
-  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'importedAt', dir: -1 });
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'at', dir: -1 });
   const [filter, setFilter] = useState<Filter>('all');
   const [dates, setDates] = useState<DateRange>(ANY_DATE);
   const anyDate = isAnyDate(dates);
 
-  const dated = useMemo(() => records?.filter((r) => inDateRange(r.importedAt, dates)) ?? [], [records, dates]);
+  const dated = useMemo(() => records?.filter((r) => inDateRange(importTime(r), dates)) ?? [], [records, dates]);
   const count = (f: Filter) => dated.filter((r) => f === 'all' || r.status === f).length;
 
   const sorted = useMemo(() => {
@@ -76,7 +88,7 @@ export function ImportHistory({
   };
 
   const toggle = (key: SortKey) =>
-    setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: key === 'importedAt' ? -1 : 1 }));
+    setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: key === 'at' ? -1 : 1 }));
 
   return (
     <section aria-labelledby="history-heading" className="rounded-md border bg-card">
@@ -119,7 +131,9 @@ export function ImportHistory({
       ) : sorted && sorted.length === 0 && records!.length > 0 ? (
         <div className="border-t px-5 py-10">
           <p className="font-medium">
-            {anyDate ? 'No failed imports.' : `No ${filter === 'failed' ? 'failed ' : ''}imports ${rangePhrase(dates)}.`}
+            {anyDate
+              ? `No ${filter === 'failed' ? 'failed imports' : 'files waiting for review'}.`
+              : `No ${filter === 'failed' ? 'failed ' : filter === 'checked' ? 'waiting ' : ''}imports ${rangePhrase(dates)}.`}
           </p>
           <p className="mt-1 text-muted-foreground">
             <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={showAll}>
@@ -131,7 +145,7 @@ export function ImportHistory({
         <div className="border-t px-5 py-10">
           <p className="font-medium">No imports yet</p>
           <p className="mt-1 text-muted-foreground">
-            Upload an export or use Scan Folder Now. Each confirmed import is listed here with its result.
+            Upload an export. Every file you upload is listed here with its result.
           </p>
         </div>
       ) : (
@@ -183,24 +197,24 @@ export function ImportHistory({
                       {r.fileName}
                     </TableCell>
                     <TableCell>{r.source === 'manual' ? 'Manual upload' : 'Watched folder'}</TableCell>
-                    <TableCell className="font-mono">{formatDateTime(r.importedAt)}</TableCell>
-                    {r.status === 'failed' ? (
-                      // Nothing was read, so counts would only look like an empty file.
+                    <TableCell className="font-mono">{formatDateTime(importTime(r))}</TableCell>
+                    {r.status !== 'imported' ? (
+                      // Nothing was imported, so counts would only look like an empty file.
                       <TableCell colSpan={2} className="text-right text-muted-foreground">
-                        Not imported
+                        {NOT_IMPORTED[r.status]}
                       </TableCell>
                     ) : (
                       <>
-                        <TableCell className="text-right font-mono">{r.newRecords}</TableCell>
-                        <TableCell className="text-right font-mono">{r.duplicateCodes.length}</TableCell>
+                        <TableCell className="text-right font-mono">{r.added}</TableCell>
+                        <TableCell className="text-right font-mono">{r.duplicates}</TableCell>
                       </>
                     )}
                     <TableCell>
                       <StatusBadge status={r.status} />
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="link" size="sm" onClick={() => onView(r)} aria-label={`${ACTION[r.status]} for ${r.fileName}`}>
-                        {ACTION[r.status]}
+                      <Button variant="link" size="sm" onClick={() => onView(r)} aria-label={`${importAction(r.status)} for ${r.fileName}`}>
+                        {importAction(r.status)}
                       </Button>
                     </TableCell>
                   </TableRow>

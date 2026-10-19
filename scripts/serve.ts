@@ -1,7 +1,8 @@
 // npm run serve — the production launcher (plan Revision 4), started at boot by Windows Task Scheduler or systemd
 // (deploy/). It migrates and self-tests the database, deletes expired data, saves a backup, then runs `next start` on
 // 127.0.0.1 and restarts it after a crash. While running: a backup 5 minutes after changes (at most every 15 minutes)
-// and the retention job every hour. Stopped with Ctrl+C or a service stop, it saves a backup before exiting.
+// and the retention job every hour; when turned on in Settings, the watched-folder check. Stopped with Ctrl+C or a
+// service stop, it saves a backup before exiting.
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -10,6 +11,7 @@ import { backupScheduler, saveBackup, SERVE_PID_FILE } from '../src/server/db/ba
 import { openVerifiedDatabase, prepareDatabase } from '../src/server/db/migrate.ts';
 import { resolveDataDir } from '../src/server/db/paths.ts';
 import { purgeExpired } from '../src/server/db/retention.ts';
+import { folderSettings, scanFolder } from '../src/server/folder/folder.ts';
 
 // A Windows scheduled task cannot set environment variables or show a console, so the folder, port, branch address
 // and a log file may also come as arguments. The address matters on Windows: Tailscale shows its status only to the
@@ -39,8 +41,9 @@ const log = (line: string) => {
   else fs.writeSync(logFd, `${text}\n`);
 };
 
-const dataDir = resolveDataDir();
+let dataDir = '';
 try {
+  dataDir = resolveDataDir();
   await prepareDatabase(dataDir);
 } catch (e) {
   log(`Database check failed; not starting: ${(e as Error).message}`);
@@ -70,9 +73,32 @@ function backupNow(reason: string) {
     log(`Backup failed (${reason}): ${(e as Error).message}`);
   }
 }
+// Automatic folder checks (Settings; off by default): they only record new files, which staff still review and confirm.
+let folderBusy = false;
+let lastFolderCheck = 0;
+async function folderCheck() {
+  const s = folderSettings(db);
+  if (!s.auto || folderBusy || Date.now() - lastFolderCheck < s.intervalSeconds * 1000) return;
+  folderBusy = true;
+  lastFolderCheck = Date.now();
+  try {
+    const r = await scanFolder(db, 'auto');
+    if (!r.ok) log(`Folder check: ${r.message}`);
+    else if (r.added) {
+      log(`Folder check: ${r.added} new file(s) waiting for review`);
+      backups.markChanged();
+    }
+  } catch (e) {
+    log(`Folder check failed: ${(e as Error).message}`);
+  } finally {
+    folderBusy = false;
+  }
+}
+
 retention();
 backupNow('start');
-const timers = [setInterval(() => backups.tick(), 60_000), setInterval(retention, 3600_000)];
+folderCheck(); // files saved while the computer was off are found at start-up
+const timers = [setInterval(() => backups.tick(), 60_000), setInterval(retention, 3600_000), setInterval(folderCheck, 15_000)];
 
 // ---- the web app, restarted after a crash (5 s, doubling to 60 s; reset after a minute of running) ----
 const nextBin = createRequire(import.meta.url).resolve('next/dist/bin/next');

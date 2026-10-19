@@ -71,11 +71,6 @@ $freeGB = [math]::Floor((Get-PSDrive ($env:ProgramFiles.Substring(0, 1))).Free /
 if ($freeGB -lt 3) {
   throw "Only $freeGB GB is free on drive $($env:ProgramFiles.Substring(0, 2)); about 3 GB is needed. Free some space, then run this again."
 }
-# The build needs room beside Windows; a 2 GB test VM froze during an update.
-$ramGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 1)
-if ($ramGB -lt 3.5) {
-  Write-Warning "This computer has $ramGB GB of memory; 4 GB or more is recommended. Close other programs: the build may be very slow or stall."
-}
 $NodeArch = if ($cpu -eq 'ARM64') { 'arm64' } else { 'x64' }
 $TailscaleArch = if ($cpu -eq 'ARM64') { 'arm64' } else { 'amd64' }
 

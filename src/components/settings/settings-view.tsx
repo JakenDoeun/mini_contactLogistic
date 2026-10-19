@@ -1,40 +1,27 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Check, RotateCcw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { FolderMonitor } from '@/components/import/folder-monitor';
 import { BackupCard } from './backup-card';
+import { FolderSettings } from './folder-settings';
 import { PhoneSetupCard } from './phone-setup-card';
 import { composeMessage } from '@/lib/parcel-logic';
 import {
-  CHECK_INTERVALS,
   DEFAULT_SETTINGS,
   columnError,
-  folderError,
   gatewayUrlError,
   templateError,
   type Settings,
 } from '@/lib/settings-logic';
-import { getMonitorState, type MonitorState } from '@/lib/mock/import-service';
 import { saveSettings } from '@/lib/mock/settings-service';
 import { useSettings } from '@/lib/mock/use-settings';
-import { cn } from '@/lib/utils';
 
 export function SettingsView() {
   const settings = useSettings();
-  const [monitor, setMonitor] = useState<MonitorState | null>(null);
-
-  // Health follows the saved settings, so a save that turns monitoring off shows here at once.
-  const watch = settings && [settings.watchedFolder, settings.checkIntervalSeconds, settings.monitoringEnabled].join('|');
-  useEffect(() => {
-    if (!watch) return;
-    setMonitor(null);
-    getMonitorState('normal').then(setMonitor);
-  }, [watch]);
 
   return (
     <>
@@ -44,7 +31,7 @@ export function SettingsView() {
         <Badge variant="info" className="bg-card">
           Preview
         </Badge>
-        Backups and data are on the server. The other settings are remembered in this browser only until the backend is connected.
+        Backups, data and the watched folder are on the server. The other settings are remembered in this browser only until the backend is connected.
       </p>
 
       {!settings ? (
@@ -55,10 +42,7 @@ export function SettingsView() {
       ) : (
         <div className="mt-6 flex flex-col gap-6">
           <BackupCard />
-          <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-            <MonitoringSection settings={settings} />
-            <FolderMonitor state={monitor} error={null} settingsLink={false} />
-          </div>
+          <FolderSettings />
           <ImportSection settings={settings} />
           <TemplateSection settings={settings} />
           <GatewaySection settings={settings} />
@@ -185,76 +169,6 @@ function Field({
 
 const described = (name: string, error?: string | null, hint = true) =>
   [hint && `hint-${name}`, error && `error-${name}`].filter(Boolean).join(' ') || undefined;
-
-function MonitoringSection({ settings }: { settings: Settings }) {
-  const s = useSection(settings, ['watchedFolder', 'checkIntervalSeconds', 'monitoringEnabled'], (d) => ({
-    watchedFolder: folderError(d.watchedFolder),
-  }));
-  return (
-    <SectionCard
-      id="monitoring"
-      title="Folder monitoring"
-      description="Where the logistics system saves its arrival exports. Files found here still wait for staff to confirm them."
-      section={s}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p id="monitoring-label" className="font-medium">
-            Automatic monitoring
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {s.draft.monitoringEnabled ? 'On: the folder is checked for new exports.' : 'Off: only manual uploads come in.'}
-          </p>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={s.draft.monitoringEnabled}
-          aria-labelledby="monitoring-label"
-          onClick={() => s.set('monitoringEnabled', !s.draft.monitoringEnabled)}
-          className={cn(
-            'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border-2 border-transparent transition-colors motion-reduce:transition-none',
-            s.draft.monitoringEnabled ? 'bg-primary' : 'bg-input',
-          )}
-        >
-          <span
-            className={cn(
-              'size-5 rounded-full bg-white transition-transform motion-reduce:transition-none',
-              s.draft.monitoringEnabled ? 'translate-x-5' : 'translate-x-0.5',
-            )}
-          />
-        </button>
-      </div>
-
-      <Field name="watchedFolder" label="Watched folder" hint="The full path as this computer sees it." error={s.errors.watchedFolder}>
-        <Input
-          id="field-watchedFolder"
-          value={s.draft.watchedFolder}
-          onChange={(e) => s.set('watchedFolder', e.target.value)}
-          aria-invalid={!!s.errors.watchedFolder}
-          aria-describedby={described('watchedFolder', s.errors.watchedFolder)}
-          spellCheck={false}
-          className="font-mono"
-        />
-      </Field>
-
-      <Field name="checkIntervalSeconds" label="Check every">
-        <select
-          id="field-checkIntervalSeconds"
-          value={s.draft.checkIntervalSeconds}
-          onChange={(e) => s.set('checkIntervalSeconds', Number(e.target.value))}
-          className="h-11 w-full max-w-48 rounded-md border border-input bg-card px-3 text-sm sm:h-10"
-        >
-          {CHECK_INTERVALS.map((n) => (
-            <option key={n} value={n}>
-              {n < 60 ? `${n} seconds` : n === 60 ? '1 minute' : `${n / 60} minutes`}
-            </option>
-          ))}
-        </select>
-      </Field>
-    </SectionCard>
-  );
-}
 
 const ALWAYS = [
   'Rows whose tracking code is already in the branch records are skipped with a warning. The rest of the file still imports.',

@@ -8,12 +8,24 @@ import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PhoneText } from '@/components/parcels/parcel-status';
-import { cancelImport, checkFile, confirmImport, decide, getReview, type DateChoice, type ImportListItem, type Review, type ReviewItem } from '@/lib/import-api';
+import {
+  cancelImport,
+  checkFile,
+  checkFolderFile,
+  confirmImport,
+  decide,
+  getReview,
+  type DateChoice,
+  type DetectedFile,
+  type ImportListItem,
+  type Review,
+  type ReviewItem,
+} from '@/lib/import-api';
 import { cn, formatBytes, formatDateTime } from '@/lib/utils';
 import { StatusBadge } from './status-badge';
 
-/** What opened the sheet: a file staff just chose, or an import from the history. Both end in the same review. */
-export type FlowRequest = { kind: 'file'; file: File } | { kind: 'open'; id: number };
+/** What opened the sheet: a file staff just chose, one found in the watched folder, or an import from the history. */
+export type FlowRequest = { kind: 'file'; file: File } | { kind: 'folder'; file: DetectedFile } | { kind: 'open'; id: number };
 
 type Step = { s: 'loading'; text: string } | { s: 'error'; message: string } | { s: 'review'; review: Review; added?: number };
 
@@ -65,6 +77,10 @@ export function ImportFlow({ request, onClose, onChanged }: { request: FlowReque
         setStep({ s: 'loading', text: `Checking ${req.file.name}…` });
         id = (await checkFile(req.file)).importId;
         onChanged(); // a failed check is history too
+      } else if (req.kind === 'folder') {
+        setStep({ s: 'loading', text: `Checking ${req.file.fileName}…` });
+        id = (await checkFolderFile(req.file.id)).importId;
+        onChanged();
       } else {
         setStep({ s: 'loading', text: 'Opening the import…' });
         id = req.id;
@@ -282,7 +298,7 @@ export function ImportFlow({ request, onClose, onChanged }: { request: FlowReque
                 </Button>
               </>
             )}
-            {step?.s === 'error' && request?.kind === 'file' && (
+            {step?.s === 'error' && request && request.kind !== 'open' && (
               <Button variant="outline" onClick={() => start(request)}>
                 Try again
               </Button>

@@ -499,3 +499,42 @@ test('serve: --log collects its own and the web app output; killing serve outrig
   assert.equal(await gone(), true, 'the web app exits within 10 s of its launcher');
   assert.equal(await answers(), false, 'the port is free again');
 });
+
+test('serve: with automatic checks on, files saved while stopped and while running are found, never imported (Phase 5 gate)', async () => {
+  const dataDir = await dataFolder(Infinity);
+  const watched = path.join(dataDir, 'watched');
+  fs.mkdirSync(watched);
+  const db = openDatabase(path.join(dataDir, 'branch.db'));
+  db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('folder.settings', ?, ?)").run(
+    JSON.stringify({ path: watched, auto: true, intervalSeconds: 30 }),
+    new Date().toISOString(),
+  );
+  fs.copyFileSync(path.join(REPO, 'test/fixtures/scan-record-mixed.xlsx'), path.join(watched, 'while-stopped.xlsx'));
+  const port = await freePort();
+  let out = '';
+  const serve = spawn(process.execPath, ['scripts/serve.ts', `--data-dir=${dataDir}`, `--port=${port}`], {
+    cwd: buildDir,
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1', BRANCH_URL: '' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  serve.stdout!.on('data', (d) => (out += d));
+  serve.stderr!.on('data', (d) => (out += d));
+  cleanups.push(() => void (serve.exitCode === null && serve.kill('SIGKILL')));
+  const found = async (name: string, seconds: number) => {
+    for (let i = 0; i < seconds * 2; i++) {
+      if (db.prepare("SELECT state FROM detected_files WHERE path = ?").pluck().get(path.join(watched, name)) === 'waiting') return;
+      if (serve.exitCode !== null) throw new Error(`serve exited:\n${out}`);
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    throw new Error(`${name} was not found within ${seconds} s:\n${out}`);
+  };
+  await found('while-stopped.xlsx', 30);
+  fs.copyFileSync(path.join(REPO, 'test/fixtures/scan-record-two-days.xlsx'), path.join(watched, 'while-running.xlsx'));
+  await found('while-running.xlsx', 60);
+  assert.match(out, /Folder check: 1 new file\(s\) waiting for review/);
+  assert.equal(db.prepare('SELECT count(*) FROM imports').pluck().get(), 0, 'found files wait for staff; nothing is imported');
+  db.close();
+  const exited = new Promise((resolve) => serve.once('exit', resolve));
+  serve.kill('SIGTERM');
+  await exited;
+});

@@ -1,8 +1,10 @@
 // Browser side of /api/imports (Phase 4). The server reads the file and decides every count; this only carries
 // requests and turns error codes into sentences staff can act on.
+import type { DetectedFile, folderState, ScanResult } from '@/server/folder/folder';
 import type { ImportListItem, Review } from '@/server/importer/store';
 
-export type { ImportListItem, Review };
+export type { DetectedFile, ImportListItem, Review, ScanResult };
+export type FolderState = ReturnType<typeof folderState> & { isAdmin: boolean };
 export type ReviewItem = Review['items'][number];
 export type DateChoice = { kind: 'single_scan_date' } | { kind: 'all_on_batch_date' } | { kind: 'only_scan_date'; date: string };
 
@@ -13,6 +15,7 @@ const MESSAGES: Record<string, string> = {
   cross_site: 'This request came from another site and was refused. Open the branch address directly.',
   not_found: 'This import no longer exists.',
   not_checked: 'This import was already confirmed or discarded.',
+  not_waiting: 'This file was already reviewed or taken off the list.',
   frozen: 'This import was already confirmed or discarded, so its decisions can no longer change.',
   database_unavailable: 'The branch database is not available right now. Try again in a minute.',
 };
@@ -70,3 +73,12 @@ export const confirmImport = (id: number, body: { arrivalBatchDate: string; date
       batchDateChosen: body.batchDateChosen,
     }),
   });
+
+// ---- The watched folder (Phase 5) ----
+
+export const getFolder = () => call<FolderState>('/api/folder');
+export const scanFolder = () => call<FolderState & { result: ScanResult }>('/api/folder/scan', { method: 'POST', ...send({}) });
+export const checkFolderFile = (id: number) => call<{ ok: true; importId: number }>(`/api/folder/files/${id}/check`, { method: 'POST', ...send({}) });
+export const dismissFolderFile = (id: number) => call<{ ok: true }>(`/api/folder/files/${id}/dismiss`, { method: 'POST', ...send({}) });
+export const saveFolderSettings = (body: { path: string; auto: boolean; intervalSeconds: number }) =>
+  call<FolderState>('/api/settings/folder', { method: 'PUT', ...send(body) });

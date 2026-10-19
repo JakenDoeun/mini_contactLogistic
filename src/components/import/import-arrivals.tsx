@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { DaySummary as Summary } from '@/lib/import-logic';
 import { listImports, type ImportListItem } from '@/lib/import-api';
-import { getMonitorState, type MonitorState } from '@/lib/mock/import-service';
 import { cn } from '@/lib/utils';
 import { DaySummary } from './day-summary';
 import { FolderMonitor } from './folder-monitor';
@@ -26,20 +25,15 @@ function summarize(items: ImportListItem[]): Summary {
 export function ImportArrivals() {
   const [history, setHistory] = useState<ImportListItem[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [monitor, setMonitor] = useState<MonitorState | null>(null);
-  const [monitorError, setMonitorError] = useState<string | null>(null);
   const [flow, setFlow] = useState<FlowRequest | null>(null);
+  const [folderKey, setFolderKey] = useState(0); // reloads the folder list after a review changes it
 
   const loadHistory = useCallback(() => {
     setHistoryError(null);
     listImports().then(setHistory, (e: Error) => setHistoryError(e.message));
   }, []);
 
-  useEffect(() => {
-    loadHistory();
-    // shortcut: the folder watcher is still the sample state until Phase 5 builds it.
-    getMonitorState('normal').then(setMonitor, (e: Error) => setMonitorError(e.message));
-  }, [loadHistory]);
+  useEffect(loadHistory, [loadHistory]);
 
   const view = (r: ImportListItem) => setFlow({ kind: 'open', id: r.id });
 
@@ -59,14 +53,25 @@ export function ImportArrivals() {
             </>
           )}
         </div>
-        <FolderMonitor state={monitor} error={monitorError} />
+        <FolderMonitor
+          reloadKey={folderKey}
+          onReview={(file) => setFlow({ kind: 'folder', file })}
+          onOpenImport={(id) => setFlow({ kind: 'open', id })}
+        />
       </div>
 
       <div className="mt-8">
         <ImportHistory records={history} error={historyError} onRetry={loadHistory} onView={view} />
       </div>
 
-      <ImportFlow request={flow} onClose={() => setFlow(null)} onChanged={loadHistory} />
+      <ImportFlow
+        request={flow}
+        onClose={() => {
+          setFlow(null);
+          setFolderKey((k) => k + 1);
+        }}
+        onChanged={loadHistory}
+      />
     </>
   );
 }

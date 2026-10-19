@@ -25,20 +25,24 @@ Branch `phase5-folder` (on top of `phase4-imports`). Synthetic files only, like 
   and listing one folder every 30 s or more is cheap, works the same on network shares, and adds no dependency. The
   single-worker lease is left for the SMS queue (Phase 9), where two senders would matter.
 - **Settings** (admin only, audited without the path): the folder, automatic checks on or off, the interval. The folder
-  must exist and be readable by the app, otherwise saving says why.
+  must exist and be readable by the app, otherwise saving says why. **Browse** (admin only) lists the branch computer's
+  folders in an in-app panel, opening at the saved folder, else the app account's home, else the drives. The system file
+  manager cannot be used: the app runs in the background with no screen, and a browser picker gives no full path (owner
+  chose the in-app panel, 2026-10-19).
 - **Windows installer**: creates `C:\Users\Public\Documents\Campus Branch Imports`. Staff signed in at the computer can
   save into it, and the app's account can read it. Nobody else can. A "Campus Branch Imports" shortcut goes on every
   user's desktop. It is the default folder on Windows. A user's own Downloads folder would not work, because the app's
   account cannot read it.
 - API: `GET /api/folder`, `POST /api/folder/scan`, `POST /api/folder/files/<id>/check`,
-  `POST /api/folder/files/<id>/dismiss`, `PUT /api/settings/folder`. All require sign-in; the integration test checks
+  `POST /api/folder/files/<id>/dismiss`, `GET /api/folder/browse`, `PUT /api/settings/folder`. All require sign-in; the integration test checks
   every route refuses signed-out requests.
 
 ## Tests
 
 - Unit (`src/server/folder/folder.test.ts`): off by default, admin only, unusable folders refused; a file found once,
   nothing imported; review, confirm, and a renamed copy recognised as imported; a changed file refused; a dismissed file
-  stays dismissed; a missing folder reported; a file growing during the scan is "still being saved", then found.
+  stays dismissed; a missing folder reported; a file growing during the scan is "still being saved", then found;
+  Browse lists subfolders only, sorted, without hidden ones, and refuses missing or relative paths.
 - Integration (`test/integration/app.test.ts`): the real launcher with automatic checks on finds a file saved while it
   was stopped and one saved while it runs; nothing is imported.
 - Browser, scratch build (headless Chromium): Settings saves the folder and refuses a missing one; Scan Folder Now

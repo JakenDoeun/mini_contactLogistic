@@ -8,7 +8,7 @@ import { PROJECT_ROOT } from '../db/paths.ts';
 import { decideReviewItem } from '../db/review-items.ts';
 import { createTestDb, makeTempDir, removeTempDir } from '../db/test-db.ts';
 import { confirmImport } from '../importer/store.ts';
-import { checkDetectedFile, dismissDetectedFile, folderSettings, folderState, scanFolder, setFolderSettings } from './folder.ts';
+import { browseFolder, checkDetectedFile, dismissDetectedFile, folderSettings, folderState, scanFolder, setFolderSettings } from './folder.ts';
 
 const fixture = (name: string) => path.join(PROJECT_ROOT, 'test/fixtures', name);
 const count = (db: Db, sql: string) => db.prepare(sql).pluck().get() as number;
@@ -113,4 +113,20 @@ test('scan: a file that grows while the scan waits is still being written, and i
   const r = await scanning;
   assert.deepEqual([r.added, r.writing], [0, ['export.csv']]);
   assert.equal((await scanFolder(db, 'manual', 0)).added, 1);
+});
+
+test('browse: subfolders only, sorted, hidden ones left out, with a way up', (t) => {
+  const folder = makeTempDir();
+  t.after(() => removeTempDir(folder));
+  for (const d of ['b', 'A', '.git', '$Recycle.Bin']) fs.mkdirSync(path.join(folder, d));
+  fs.writeFileSync(path.join(folder, 'export.csv'), 'x');
+  const r = browseFolder(folder);
+  assert.ok(r.ok);
+  assert.deepEqual(r.folders, [{ name: 'A', path: path.join(folder, 'A') }, { name: 'b', path: path.join(folder, 'b') }]);
+  assert.equal(r.parent, path.dirname(folder));
+  const missing = browseFolder(path.join(folder, 'nope'));
+  assert.ok(!missing.ok && /does not exist/.test(missing.message));
+  assert.ok(browseFolder('relative/path').ok === false, 'only full paths');
+  const top = browseFolder(null);
+  assert.ok(top.ok && top.folders.length > 0, 'the top level lists the drives (or /)');
 });

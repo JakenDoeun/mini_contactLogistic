@@ -1,6 +1,6 @@
 // Browser side of /api/imports (Phase 4). The server reads the file and decides every count; this only carries
 // requests and turns error codes into sentences staff can act on.
-import type { DetectedFile, folderState, ScanResult } from '@/server/folder/folder';
+import type { BrowseResult, DetectedFile, folderState, ScanResult } from '@/server/folder/folder';
 import type { ImportListItem, Review } from '@/server/importer/store';
 
 export type { DetectedFile, ImportListItem, Review, ScanResult };
@@ -80,5 +80,8 @@ export const getFolder = () => call<FolderState>('/api/folder');
 export const scanFolder = () => call<FolderState & { result: ScanResult }>('/api/folder/scan', { method: 'POST', ...send({}) });
 export const checkFolderFile = (id: number) => call<{ ok: true; importId: number }>(`/api/folder/files/${id}/check`, { method: 'POST', ...send({}) });
 export const dismissFolderFile = (id: number) => call<{ ok: true }>(`/api/folder/files/${id}/dismiss`, { method: 'POST', ...send({}) });
-export const saveFolderSettings = (body: { path: string; auto: boolean; intervalSeconds: number }) =>
+/** null = start at home; '' = the top level (drives). */
+export const browseFolder = (at: string | null) =>
+  call<Extract<BrowseResult, { ok: true }>>(`/api/folder/browse${at === null ? '' : `?path=${encodeURIComponent(at)}`}`);
+export const saveFolderSettings =(body: { path: string; auto: boolean; intervalSeconds: number }) =>
   call<FolderState>('/api/settings/folder', { method: 'PUT', ...send(body) });

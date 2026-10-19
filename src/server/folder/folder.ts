@@ -81,6 +81,31 @@ export function setFolderSettings(db: Db, userId: number, input: Record<string, 
   return { ok: true };
 }
 
+// ---- Browse (Settings: choose the folder without typing) ----------------------------------------------------------
+
+/** path null = the top level: drive letters on Windows. Folders only; hidden and system ones ($Recycle.Bin, .git) left out. */
+export type BrowseResult = { ok: true; path: string | null; parent: string | null; folders: { name: string; path: string }[] } | { ok: false; message: string };
+
+export function browseFolder(at: string | null): BrowseResult {
+  const windows = process.platform === 'win32';
+  if (!at) {
+    if (!windows) return browseFolder('/');
+    const drives = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((l) => `${l}:\\`).filter((d) => fs.existsSync(d));
+    return { ok: true, path: null, parent: null, folders: drives.map((d) => ({ name: d, path: d })) };
+  }
+  const problem = folderProblem(at);
+  if (problem) return { ok: false, message: problem };
+  const folder = path.resolve(at);
+  const up = path.dirname(folder);
+  const folders = fs
+    .readdirSync(folder, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !/^[.$]/.test(e.name) && e.name !== 'System Volume Information')
+    .map((e) => ({ name: e.name, path: path.join(folder, e.name) }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }));
+  // At a drive root (C:\) "up" is '' (the drive list); at / it is null (nothing above).
+  return { ok: true, path: folder, parent: up !== folder ? up : windows ? '' : null, folders };
+}
+
 // ---- Scan ----------------------------------------------------------------------------------------------------------
 
 type Seen = { name: string; full: string; size: number; modifiedAt: string };

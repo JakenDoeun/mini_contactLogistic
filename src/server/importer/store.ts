@@ -23,6 +23,7 @@ import {
   type FileCheck,
   type FileFormat,
   type ParcelCandidate,
+  type ParcelState,
   type StaffDecision,
 } from './check.ts';
 
@@ -269,7 +270,7 @@ function recheck(dataDir: string, row: ImportRow) {
   return checkFile(readOriginal(dataDir, row.stored_path, row.sha256), columns);
 }
 
-export type Review = ReturnType<typeof reviewImport>;
+export type Review = NonNullable<ReturnType<typeof reviewImport>>;
 
 /** Everything the review screen shows, with the counts for `choice` (none yet: the counts as they stand). */
 export function reviewImport(db: Db, dataDir: string, importId: number, choice: DateChoice | null = null, now = new Date()) {
@@ -293,6 +294,7 @@ export function reviewImport(db: Db, dataDir: string, importId: number, choice: 
       counts: { unique: row.parcels_unique, db_duplicate: row.db_duplicates, left_out: row.left_out, blocked: row.blocked, ready: row.ready },
       scanDates: [] as { date: string | null; parcels: number; importedBefore: boolean }[], dateChoiceNeeded: false, scanDateDiffers: false,
       earlier: [] as { id: number; confirmedAt: string; scanDate: string | null; parcels: number }[], rerunOf: row.rerun_of_import_id,
+      parcels: [] as { key: string; code: string; name: string; phone: string; scanDate: string | null; scans: number; state: ParcelState }[],
       canConfirm: false, refusals: [`This import is ${row.status.replace(/_/g, ' ')}.`],
     };
   }
@@ -303,12 +305,18 @@ export function reviewImport(db: Db, dataDir: string, importId: number, choice: 
   const dates = scanDates(check.parcels).map((d) => ({ ...d, importedBefore: d.date !== null && earlier.datesDone.has(d.date) }));
   const scanDateDiffers = dates.some((d) => d.date !== null && d.date !== today);
   const refusals = confirmRefusals(row, check, result, choice, earlier, { batchDateChosen: false, needsBatchDate: false });
+  const states = new Map(result.parcels.map((p) => [p.key, p.state]));
   return {
     ...base, live: true,
     counts: { unique: check.parcels.length, ...result.counts },
     scanDates: dates, dateChoiceNeeded: result.dateChoiceNeeded, scanDateDiffers,
     earlier: earlier.rows.map((r) => ({ id: r.id, confirmedAt: r.confirmed_at, scanDate: r.chosen_scan_date, parcels: r.parcels_added })),
-    rerunOf: row.rerun_of_import_id, canConfirm: refusals.length === 0, refusals,
+    rerunOf: row.rerun_of_import_id,
+    // First spelling, name and phone of each parcel; decisions above say which ones Confirm actually uses.
+    parcels: check.parcels.map((p) => ({
+      key: p.key, code: p.spellings[0], name: p.names[0], phone: p.phones[0], scanDate: p.scanDate, scans: p.rows.length, state: states.get(p.key)!,
+    })),
+    canConfirm: refusals.length === 0, refusals,
   };
 }
 
@@ -368,6 +376,12 @@ export function cancelImport(db: Db, importId: number, userId: number | null, at
   })();
 }
 
+export type ImportListItem = {
+  id: number; source: 'manual' | 'folder'; fileName: string; status: 'checked' | 'no_eligible_rows' | 'failed' | 'cancelled' | 'imported';
+  format: FileFormat | null; rowsTotal: number; rowsShopee: number; parcels: number; duplicates: number; added: number;
+  arrivalBatchDate: string | null; errorCode: string | null; errorDetail: string | null; checkedAt: string; confirmedAt: string | null;
+};
+
 export function listImports(db: Db, limit = 100) {
   return db
     .prepare(
@@ -376,7 +390,7 @@ export function listImports(db: Db, limit = 100) {
          error_code AS errorCode, error_detail AS errorDetail, checked_at AS checkedAt, confirmed_at AS confirmedAt
        FROM imports WHERE source <> 'seed' ORDER BY id DESC LIMIT ?`,
     )
-    .all(limit);
+    .all(limit) as ImportListItem[];
 }
 
 // ---- Confirm ------------------------------------------------------------------------------------------------------

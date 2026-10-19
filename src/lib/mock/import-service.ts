@@ -1,18 +1,7 @@
 // Mock backend. Each export matches the shape a real API call should return, so swapping
 // these bodies for fetch() calls leaves the components untouched.
-import {
-  buildPreview,
-  failedRecord,
-  mockRows,
-  parcelsFromPreview,
-  recordFromPreview,
-  sampleFingerprint,
-  type FileMeta,
-  type ImportPreview,
-  type ImportRecord,
-  type ImportSource,
-} from '@/lib/import-logic';
-import { addParcels, currentParcels, seedData } from './parcel-service';
+import { failedRecord, sampleFingerprint, type FileMeta, type ImportRecord, type ImportSource } from '@/lib/import-logic';
+import { seedData } from './parcel-service';
 import { getSettings } from './settings-service';
 
 // Kept in their own file so the server-rendered Import Arrivals page can read them without the client stores.
@@ -50,8 +39,6 @@ export interface DetectedFile extends FileMeta {
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 
-// Tracking codes come from the shared parcel records, so Parcels, Scan and Dashboard see what was imported.
-const knownCodes = () => new Set(currentParcels().map((p) => p.code));
 let history: ImportRecord[] | null = null;
 
 const sample = (fileName: string, source: ImportSource, mins: number, size: number): FileMeta => ({
@@ -61,12 +48,6 @@ const sample = (fileName: string, source: ImportSource, mins: number, size: numb
   size,
   fingerprint: sampleFingerprint(fileName),
 });
-
-// A sample file's rows are its sample parcels; any other file gets generated rows.
-function rowsOf(meta: FileMeta) {
-  const seeded = seedData().parcels.filter((p) => sampleFingerprint(p.sourceFile) === meta.fingerprint);
-  return seeded.length ? seeded.map((p) => ({ tracking: p.code, recipient: p.recipient, phone: p.phone })) : mockRows(meta.fileName);
-}
 
 const sourceOf = (fileName: string): ImportSource => (fileName.endsWith('.csv') ? 'manual' : 'folder');
 
@@ -124,57 +105,6 @@ export async function getImportHistory(mode: PreviewMode): Promise<ImportRecord[
   if (mode === 'history-error') throw new Error('The import history service did not respond.');
   if (mode === 'empty') return [];
   return [...getHistory()];
-}
-
-/** Scan Folder Now: list what is in the watched folder. Nothing is imported here. */
-export async function scanFolder(mode: PreviewMode): Promise<DetectedFile[]> {
-  await wait(900);
-  if (mode === 'monitor-error') throw new Error(`${getSettings().watchedFolder} cannot be reached. Check that the drive is connected.`);
-  if (mode === 'empty') return [];
-  return folderFiles().sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
-}
-
-export type CheckStage = 'Reading file' | 'Looking for the tracking-code column' | 'Matching tracking codes';
-export const CHECK_STAGES: CheckStage[] = ['Reading file', 'Looking for the tracking-code column', 'Matching tracking codes'];
-
-export type CheckResult = { ok: true; preview: ImportPreview } | { ok: false; record: ImportRecord };
-
-/** The basic checks, then a preview for staff to confirm. A failed check is logged in the history. */
-export async function checkFile(
-  meta: FileMeta & { unreadable?: boolean },
-  mode: PreviewMode,
-  onStage: (stage: CheckStage, index: number) => void,
-): Promise<CheckResult> {
-  const fail = (reason: string): CheckResult => {
-    const record = failedRecord(meta.fileName, meta.source, new Date().toISOString(), reason);
-    history = [record, ...getHistory()];
-    return { ok: false, record };
-  };
-  for (const [i, stage] of CHECK_STAGES.entries()) {
-    onStage(stage, i);
-    await wait(500);
-    if (stage === 'Reading file' && (mode === 'unreadable' || meta.unreadable)) {
-      return fail('The file could not be read. It may be open in Excel or still being written. Close it, wait a moment, and try again.');
-    }
-    if (stage === 'Looking for the tracking-code column' && mode === 'missing-column') {
-      return fail(
-        `There is no "${getSettings().trackingColumn}" column in this file. Check the export settings, or change the column name in Settings.`,
-      );
-    }
-  }
-  return { ok: true, preview: buildPreview(meta, knownCodes(), getHistory(), rowsOf(meta)) };
-}
-
-/** Runs only after staff confirm the preview. */
-export async function confirmImport(preview: ImportPreview): Promise<ImportRecord> {
-  await wait(800);
-  const now = new Date().toISOString();
-  // Re-checked against the records now: another import may have added some of these codes since the preview.
-  const fresh = buildPreview(preview, knownCodes(), getHistory(), rowsOf(preview));
-  const record = recordFromPreview(fresh, now);
-  addParcels(parcelsFromPreview(fresh, now));
-  history = [record, ...getHistory()];
-  return record;
 }
 
 export async function getMonitorState(mode: PreviewMode): Promise<MonitorState> {

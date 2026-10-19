@@ -39,6 +39,8 @@ test('mixed file: checked and saved for review; Confirm waits for the 3 decision
 
   const review = reviewImport(db, dataDir, r.importId, { kind: 'single_scan_date' }, ON_SCAN_DAY)!;
   assert.deepEqual(review.counts, { unique: 10, db_duplicate: 0, left_out: 0, blocked: 3, ready: 7 });
+  assert.equal(review.parcels.length, 10, 'the review lists every parcel');
+  assert.equal(review.parcels.filter((p) => p.state === 'blocked').length, 3, 'each with the state it is counted under');
   assert.deepEqual(review.items.filter((i) => i.blocking).map((i) => [i.key, i.kind]).sort(), [
     ['10000000000014', 'recipient_conflict'], ['10000000000015', 'recipient_conflict'], ['S000000018', 'code_spelling'],
   ]);

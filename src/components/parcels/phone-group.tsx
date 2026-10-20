@@ -1,8 +1,8 @@
 import { Boxes } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { contactStatusOf, smsStatusOf, type ContactEvent, type Parcel } from '@/lib/parcel-logic';
+import { smsStatusOf, type ContactEvent, type Parcel } from '@/lib/parcel-logic';
 import { cn, formatDateTime } from '@/lib/utils';
-import { ContactBadge, SmsBadge } from './parcel-status';
+import { SmsBadge } from './parcel-status';
 
 // One look for "these parcels share a phone number" on every page: info colour and the Boxes icon.
 // Info, not warning: a group is not a problem, it only means one message can cover them all.
@@ -89,7 +89,6 @@ export function GroupList({
           </div>
           <div className="flex flex-wrap gap-1.5">
             <SmsBadge status={smsStatusOf(p.code, events)} />
-            <ContactBadge status={contactStatusOf(p.code, events)} />
           </div>
         </li>
       ))}

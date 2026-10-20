@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, CircleCheck, Flag, MessageSquare, Phone, PhoneOff, RotateCcw, Search, Send } from 'lucide-react';
+import { ArrowRight, ChevronRight, CircleCheck, MessageSquare, Phone, PhoneOff, RotateCcw, Search, Send } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,15 +10,14 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ParcelDetail } from '@/components/parcels/parcel-detail';
-import { ContactBadge, SmsBadge } from '@/components/parcels/parcel-status';
+import { SmsBadge } from '@/components/parcels/parcel-status';
 import { batchLabel } from '@/components/parcels/phone-group';
 import { DateFilter } from '@/components/shared/date-filter';
 import { planNotify, workList, type NotifyItem } from '@/lib/dashboard-logic';
 import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@/lib/date-range';
 import {
   composeMessage,
-  contactStatusOf,
-  eventsFor,
+  reachedByStaff,
   formatPhone,
   normalizePhone,
   smsInFlight,
@@ -44,9 +43,8 @@ const CHANNEL: Record<Channel, { label: string; icon: typeof Send }> = {
   sms: { label: 'SMS', icon: Send },
   call: { label: 'Call', icon: Phone },
   telegram: { label: 'Telegram', icon: MessageSquare },
-  flag: { label: 'Follow-up flag', icon: Flag },
 };
-const OUTCOME = { answered: 'Reached customer', 'no-answer': 'No answer', messaged: 'Sent on Telegram', 'follow-up': 'Marked for follow-up' };
+const OUTCOME = { answered: 'Reached customer', 'no-answer': 'No answer', messaged: 'Sent on Telegram' };
 
 const waiting = (e: ContactEvent) => e.smsStatus === 'queued' || e.smsStatus === 'sending';
 const PAGE = 10;
@@ -126,7 +124,7 @@ function Heading({ id, title, hint, count, tone = 'neutral', large }: { id: stri
   );
 }
 
-/** Failed or uncertain SMS, parcels nobody can message, and follow-ups: what goes wrong if nobody acts. */
+/** Failed or uncertain SMS and parcels nobody can message: what goes wrong if nobody acts. */
 function Attention({
   work,
   events,
@@ -140,7 +138,7 @@ function Attention({
   onRetry: (e: ContactEvent) => void;
   onOpen: (code: string) => void;
 }) {
-  const total = work ? work.retry.length + work.noPhone.length + work.followUp.length : undefined;
+  const total = work ? work.retry.length + work.noPhone.length : undefined;
   return (
     <section aria-labelledby="attention-heading" className="rounded-lg bg-card px-5 py-6 sm:px-7">
       <Heading
@@ -161,7 +159,7 @@ function Attention({
           <CircleCheck className="mt-0.5 size-5 shrink-0 text-success" aria-hidden />
           <div>
             <p className="font-medium">All clear</p>
-            <p className="text-sm text-muted-foreground">No failed or uncertain messages, every parcel has a number, and nobody is waiting on a follow-up.</p>
+            <p className="text-sm text-muted-foreground">No failed or uncertain messages, and every parcel has a number.</p>
           </div>
         </div>
       ) : (
@@ -216,28 +214,10 @@ function Attention({
               ))}
             </AttentionGroup>
           )}
-          {work.followUp.length > 0 && (
-            <AttentionGroup label="Follow up">
-              {work.followUp.map((g) => (
-                <AttentionItem key={`${g.day}|${g.phone || g.codes[0]}`} tone="warning" title={g.recipient} phone={g.phone} line={lastAttempt(g.codes[0], events)} codes={g.codes}>
-                  <Button size="sm" variant="outline" onClick={() => onOpen(g.codes[0])}>
-                    Contact
-                  </Button>
-                  {g.phone && <ReachLinks phone={g.phone} />}
-                </AttentionItem>
-              ))}
-            </AttentionGroup>
-          )}
         </div>
       )}
     </section>
   );
-}
-
-function lastAttempt(code: string, events: ContactEvent[]) {
-  const e = eventsFor(code, events).find((x) => x.outcome);
-  if (!e) return 'Needs a follow-up';
-  return `${OUTCOME[e.outcome!]}${e.result ? `: “${e.result}”` : ''} · ${formatDateTime(e.at)}`;
 }
 
 const AttentionGroup = ({ label, children }: { label: string; children: React.ReactNode }) => (
@@ -435,6 +415,52 @@ function Ready({ plan, running, onNotify }: { plan: ReturnType<typeof planNotify
   );
 }
 
+/** Messages grouped by arrival day, newest day first. */
+function byDay(items: NotifyItem[]) {
+  const days = new Map<string, NotifyItem[]>();
+  for (const i of items) days.set(i.day, [...(days.get(i.day) ?? []), i]);
+  return [...days].sort(([a], [b]) => b.localeCompare(a));
+}
+
+const DAY_SHOWN = 5;
+
+/** One arrival day in the run: today opens, earlier days stay one line until opened, and each shows its first few. */
+function DayMessages({ day, items }: { day: string; items: NotifyItem[] }) {
+  const [all, setAll] = useState(false);
+  const label = batchLabel(day);
+  const parcels = items.reduce((n, i) => n + i.codes.length, 0);
+  const shown = all ? items : items.slice(0, DAY_SHOWN);
+  return (
+    <details open={label === 'today'} className="group">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" aria-hidden />
+        <span className="font-medium">Arrived {label}</span>
+        <span className="ml-auto text-xs text-muted-foreground">
+          {items.length} SMS · {parcels} {parcels === 1 ? 'parcel' : 'parcels'}
+        </span>
+      </summary>
+      <ul className="divide-y border-t">
+        {shown.map((i) => (
+          <li key={`${i.day}|${i.phone}`} className="px-3 py-2.5 text-sm">
+            <span className="flex flex-wrap items-baseline justify-between gap-x-3">
+              <span className="font-medium">
+                {i.recipient} <span className="font-mono text-xs font-normal text-muted-foreground">{formatPhone(i.phone)}</span>
+              </span>
+              <span className="text-xs text-muted-foreground">{smsScope(i.codes.length)}</span>
+            </span>
+            <span className="block truncate font-mono text-xs text-muted-foreground">{i.codes.join(', ')}</span>
+          </li>
+        ))}
+      </ul>
+      {items.length > DAY_SHOWN && (
+        <Button variant="link" size="sm" className="mb-1 ml-1" onClick={() => setAll(!all)}>
+          {all ? 'Show fewer' : `Show all ${items.length}`}
+        </Button>
+      )}
+    </details>
+  );
+}
+
 /** The one confirmation for a whole run. The plan is worked out from the live records, so nothing stale is sent. */
 function ConfirmNotify({
   open,
@@ -452,7 +478,6 @@ function ConfirmNotify({
   const items: NotifyItem[] = plan ? [...plan.today, ...(older ? plan.older : [])] : [];
   const parcels = items.reduce((n, i) => n + i.codes.length, 0);
   const combined = items.filter((i) => i.codes.length > 1).length;
-  const gateway = getSettings().gatewayUrl;
   const close = () => {
     setOlder(false);
     onClose();
@@ -466,7 +491,7 @@ function ConfirmNotify({
             <header className="border-b px-6 pt-5 pb-4 pr-14">
               <SheetTitle>Notify today&apos;s customers?</SheetTitle>
               <SheetDescription>
-                Simulated: messages go to a sample gateway in this browser tab{gateway ? `, not to ${gateway}` : ''}. No SMS leaves this device.
+                Simulated: messages go to a sample gateway in this browser tab. No SMS leaves this device.
               </SheetDescription>
             </header>
             <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -502,38 +527,31 @@ function ConfirmNotify({
                   skipped. They are listed under Needs your attention.
                 </p>
               )}
-              <ul className="mt-4 divide-y rounded-md border">
-                {items.map((i) => (
-                  <li key={`${i.day}|${i.phone}`} className="px-3 py-2.5 text-sm">
-                    <span className="flex flex-wrap items-baseline justify-between gap-x-3">
-                      <span className="font-medium">
-                        {i.recipient} <span className="font-mono text-xs font-normal text-muted-foreground">{formatPhone(i.phone)}</span>
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {smsScope(i.codes.length)}
-                        {batchLabel(i.day) !== 'today' && ` · arrived ${batchLabel(i.day)}`}
-                      </span>
-                    </span>
-                    <span className="block truncate font-mono text-xs text-muted-foreground">{i.codes.join(', ')}</span>
-                  </li>
+              <h3 className="mt-5 text-sm font-medium">
+                {items.length === 1 ? '1 message' : `${items.length} messages`} to send
+              </h3>
+              <div className="mt-2 divide-y rounded-md border">
+                {byDay(items).map(([day, list]) => (
+                  <DayMessages key={day} day={day} items={list} />
                 ))}
-              </ul>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Button
-                  disabled={items.length === 0}
-                  onClick={() => {
-                    queueBatch(items);
-                    close();
-                  }}
-                >
-                  <Send aria-hidden />
-                  Start queue ({items.length} SMS)
-                </Button>
-                <Button variant="outline" onClick={close}>
-                  Cancel
-                </Button>
               </div>
             </div>
+            {/* Outside the scrolling list, so Start queue stays in view however many customers there are. */}
+            <footer className="flex flex-wrap items-center gap-2 border-t px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <Button
+                disabled={items.length === 0}
+                onClick={() => {
+                  queueBatch(items);
+                  close();
+                }}
+              >
+                <Send aria-hidden />
+                Start queue ({items.length} SMS)
+              </Button>
+              <Button variant="outline" onClick={close}>
+                Cancel
+              </Button>
+            </footer>
           </>
         )}
       </SheetContent>
@@ -578,7 +596,7 @@ function History({
   return (
     <section aria-labelledby="log-heading" className="mt-12">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <Heading id="log-heading" title="History" hint="Every message, call and follow-up flag. A combined SMS is one entry." />
+        <Heading id="log-heading" title="History" hint="Every SMS, call and Telegram message. A combined SMS is one entry." />
         {events && (
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -649,7 +667,7 @@ function History({
           </div>
         ) : (
           <>
-            <HistoryTable events={shown} data={data} nameOf={nameOf} />
+            <HistoryTable events={shown} nameOf={nameOf} />
             <div className="flex flex-wrap items-center justify-between gap-2 border-t px-5 py-3 text-sm text-muted-foreground">
               <span>
                 Showing {shown.length} of {found!.length}
@@ -667,14 +685,14 @@ function History({
   );
 }
 
-// Telegram and flag outcomes already name their channel; a call needs it said.
+// Telegram outcomes already name their channel; a call needs it said.
 function channelText(e: ContactEvent) {
   if (e.channel === 'sms') return e.parcelCodes.length > 1 ? `Combined SMS · ${e.parcelCodes.length} parcels` : 'SMS';
   if (!e.outcome) return CHANNEL[e.channel].label;
   return e.channel === 'call' ? `Call · ${OUTCOME[e.outcome]}` : OUTCOME[e.outcome];
 }
 
-function HistoryTable({ events, data, nameOf }: { events: ContactEvent[]; data: ParcelData; nameOf: (code: string) => string }) {
+function HistoryTable({ events, nameOf }: { events: ContactEvent[]; nameOf: (code: string) => string }) {
   return (
     <Table className="text-[13px]">
       <TableHeader>
@@ -684,14 +702,12 @@ function HistoryTable({ events, data, nameOf }: { events: ContactEvent[]; data: 
           <TableHead className="hidden sm:table-cell">Parcels</TableHead>
           <TableHead className="pr-3">Channel</TableHead>
           <TableHead className="hidden md:table-cell">SMS</TableHead>
-          <TableHead className="hidden md:table-cell">Contact</TableHead>
           <TableHead className="hidden pr-5 xl:table-cell">Result</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {events.map((e) => {
           const Icon = CHANNEL[e.channel].icon;
-          const contact = [...new Set(e.parcelCodes.map((c) => contactStatusOf(c, data.events)))];
           const time = (
             <time dateTime={e.at} className="block font-mono text-xs text-muted-foreground">
               {formatDateTime(e.at)}
@@ -722,24 +738,16 @@ function HistoryTable({ events, data, nameOf }: { events: ContactEvent[]; data: 
                   <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                   {channelText(e)}
                 </span>
-                {/* Narrow screens: the two statuses and the result stack under the channel. */}
-                <span className="mt-1 flex flex-wrap gap-1 md:hidden">
-                  {e.smsStatus && <SmsBadge status={e.smsStatus} />}
-                  {contact.map((s) => (
-                    <ContactBadge key={s} status={s} />
-                  ))}
-                </span>
+                {/* Narrow screens: the SMS status and the result stack under the channel. */}
+                {e.smsStatus && (
+                  <span className="mt-1 flex md:hidden">
+                    <SmsBadge status={e.smsStatus} />
+                  </span>
+                )}
                 {e.result && <span className="mt-1 block text-xs text-muted-foreground xl:hidden">{e.result}</span>}
               </TableCell>
               <TableCell className="hidden py-2 md:table-cell">
                 {e.smsStatus ? <SmsBadge status={e.smsStatus} bare /> : <span className="text-muted-foreground">–</span>}
-              </TableCell>
-              <TableCell className="hidden py-2 md:table-cell">
-                <span className="flex flex-col items-start gap-1">
-                  {contact.map((s) => (
-                    <ContactBadge key={s} status={s} bare />
-                  ))}
-                </span>
               </TableCell>
               <TableCell className="hidden max-w-72 py-2 pr-5 whitespace-normal text-muted-foreground xl:table-cell">{e.result}</TableCell>
             </TableRow>
@@ -811,10 +819,10 @@ function RetrySheet({ event, data, onClose }: { event: ContactEvent | null; data
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 rows={5}
-                className="mt-1 w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-sm"
+                className="mt-1 w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-base sm:text-sm"
               />
               <p className="mt-2 text-sm text-muted-foreground">This sends one new SMS linked to the same parcels. The earlier attempt stays in the history.</p>
-              {data && event.parcelCodes.every((c) => contactStatusOf(c, data.events) === 'contacted') && (
+              {data && event.parcelCodes.every((c) => reachedByStaff(c, data.events)) && (
                 <p className="mt-2 text-sm">Staff already reached this customer another way, so this message may not be needed.</p>
               )}
               {blocked && (

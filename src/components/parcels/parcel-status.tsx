@@ -1,19 +1,16 @@
 import {
   CircleCheck,
   CircleDashed,
-  CircleDot,
   CircleHelp,
   CircleX,
   Clock,
   Loader,
   MessageSquare,
-  PhoneMissed,
   PhoneOff,
-  UserCheck,
   type LucideIcon,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { formatPhone, isValidPhone, type ContactStatus, type SmsStatus } from '@/lib/parcel-logic';
+import { formatPhone, isValidPhone, type SmsStatus } from '@/lib/parcel-logic';
 
 type Variant = 'success' | 'warning' | 'destructive' | 'neutral';
 
@@ -28,14 +25,6 @@ const SMS: Record<SmsStatus, [string, LucideIcon, Variant]> = {
   unconfirmed: ['Unconfirmed', CircleHelp, 'warning'],
 };
 
-const CONTACT: Record<ContactStatus, [string, LucideIcon, Variant]> = {
-  'needs-contact': ['Needs contact', CircleDot, 'neutral'],
-  attempted: ['Attempted', PhoneMissed, 'neutral'],
-  'follow-up': ['Follow-up needed', PhoneOff, 'warning'],
-  contacted: ['Contacted', UserCheck, 'success'],
-};
-
-// Two separate systems: the prefix keeps them apart wherever they sit side by side.
 function StatusPill({ system, entry, bare }: { system: string; entry: [string, LucideIcon, Variant]; bare?: boolean }) {
   const [label, Icon, variant] = entry;
   return (
@@ -50,9 +39,6 @@ function StatusPill({ system, entry, bare }: { system: string; entry: [string, L
 /** `bare` hides the system name visually, for table columns whose header already says it. */
 export const SmsBadge = ({ status, bare }: { status: SmsStatus; bare?: boolean }) => (
   <StatusPill system={bare ? 'SMS: ' : 'SMS'} entry={SMS[status]} bare={bare} />
-);
-export const ContactBadge = ({ status, bare }: { status: ContactStatus; bare?: boolean }) => (
-  <StatusPill system={bare ? 'Contact: ' : 'Contact'} entry={CONTACT[status]} bare={bare} />
 );
 
 /** A parcel's phone as staff should read it: formatted, or plainly missing or invalid. */

@@ -1,22 +1,20 @@
 'use client';
 
-import { useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { LogOut, Menu, Search } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import { LogOut, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { NAV } from './nav';
 import { Brand, SidebarNav } from './sidebar-nav';
 
-export function Header({ username }: { username: string }) {
+export function Header({ username, isAdmin }: { username: string; isAdmin: boolean }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const current = NAV.find((n) => pathname.startsWith(n.href))?.label ?? 'Parcels';
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-card px-4 lg:px-8">
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-card px-4 lg:px-7">
       <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
         <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMenuOpen(true)} aria-label="Open menu">
           <Menu />
@@ -40,27 +38,8 @@ export function Header({ username }: { username: string }) {
         </ol>
       </nav>
 
-      <form
-        role="search"
-        className="relative ml-auto w-full max-w-xs"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const q = new FormData(e.currentTarget).get('q')?.toString().trim();
-          if (q) router.push(`/parcels?q=${encodeURIComponent(q)}`);
-        }}
-      >
-        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-        <label htmlFor="parcel-search" className="sr-only">
-          Search parcels by tracking code, name or phone
-        </label>
-        <Input id="parcel-search" name="q" placeholder="Search parcels" className="pl-9" autoComplete="off" />
-      </form>
-
-      <div className="flex shrink-0 items-center gap-2">
-        <span className="flex size-9 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase" aria-hidden>
-          {username.slice(0, 2)}
-        </span>
-        <span className="hidden text-sm xl:block">{username}</span>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <Profile username={username} isAdmin={isAdmin} />
         <Button
           variant="ghost"
           size="icon"
@@ -75,5 +54,49 @@ export function Header({ username }: { username: string }) {
         </Button>
       </div>
     </header>
+  );
+}
+
+/** The signed-in account. Opens on mouse hover; a tap or Enter toggles it, since phones and keyboards have no hover. */
+function Profile({ username, isAdmin }: { username: string; isAdmin: boolean }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  // A tap anywhere else closes it: iPhone Safari never moves focus off a tapped button, so blur alone is not enough.
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [open]);
+  return (
+    <div
+      ref={box}
+      className="relative"
+      onPointerEnter={(e) => e.pointerType === 'mouse' && setOpen(true)}
+      onPointerLeave={(e) => e.pointerType === 'mouse' && setOpen(false)}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setOpen(false)}
+      onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls="profile-card"
+        aria-label={`Signed in as ${username}`}
+        className="flex items-center gap-2 rounded-full"
+      >
+        <span className="flex size-9 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase">{username.slice(0, 2)}</span>
+        <span className="hidden text-sm xl:block">{username}</span>
+      </button>
+      {open && (
+        <div id="profile-card" className="absolute top-full right-0 z-40 pt-2">
+          <div className="w-56 rounded-md border bg-card px-4 py-3 text-sm shadow-md">
+            <p className="text-xs text-muted-foreground">Signed in as</p>
+            <p className="truncate font-medium">{username}</p>
+            <p className="mt-2 text-muted-foreground">{isAdmin ? 'Admin: can change settings and send a test SMS' : 'Staff'}</p>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

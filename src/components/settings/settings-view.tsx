@@ -8,12 +8,12 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BackupCard } from './backup-card';
 import { FolderSettings } from './folder-settings';
+import { GatewayCard } from './gateway-card';
 import { PhoneSetupCard } from './phone-setup-card';
 import { composeMessage } from '@/lib/parcel-logic';
 import {
   DEFAULT_SETTINGS,
   columnError,
-  gatewayUrlError,
   templateError,
   type Settings,
 } from '@/lib/settings-logic';
@@ -31,7 +31,7 @@ export function SettingsView() {
         <Badge variant="info" className="bg-card">
           Preview
         </Badge>
-        Backups, data and the watched folder are on the server. The other settings are remembered in this browser only until the backend is connected.
+        Backups, data, the watched folder and the SMS gateway are on the server. The other settings are remembered in this browser only until the backend is connected.
       </p>
 
       {!settings ? (
@@ -45,7 +45,7 @@ export function SettingsView() {
           <FolderSettings />
           <ImportSection settings={settings} />
           <TemplateSection settings={settings} />
-          <GatewaySection settings={settings} />
+          <GatewayCard />
           <PhoneSetupCard />
         </div>
       )}
@@ -282,7 +282,7 @@ function TemplateSection({ settings }: { settings: Settings }) {
                 rows={4}
                 aria-invalid={!!shown}
                 aria-describedby={shown ? `error-${name}` : undefined}
-                className="w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-sm"
+                className="w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-base sm:text-sm"
               />
             </Field>
             <div>
@@ -305,53 +305,6 @@ function TemplateSection({ settings }: { settings: Settings }) {
           </Button>
         </div>
       )}
-    </SectionCard>
-  );
-}
-
-function GatewaySection({ settings }: { settings: Settings }) {
-  const s = useSection(settings, ['gatewayUrl', 'gatewaySim'], (d) => ({ gatewayUrl: gatewayUrlError(d.gatewayUrl) }));
-  return (
-    <SectionCard
-      id="gateway"
-      title="SMS gateway"
-      description="An Android phone running an SMS gateway app sends the branch's messages through its SIM card."
-      badge={<Badge>Not connected</Badge>}
-      section={s}
-    >
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Field name="gatewayUrl" label="Gateway address" hint="Shown in the gateway app, for example http://192.168.1.20:8080." error={s.errors.gatewayUrl}>
-          <Input
-            id="field-gatewayUrl"
-            type="url"
-            value={s.draft.gatewayUrl}
-            onChange={(e) => s.set('gatewayUrl', e.target.value)}
-            aria-invalid={!!s.errors.gatewayUrl}
-            aria-describedby={described('gatewayUrl', s.errors.gatewayUrl)}
-            placeholder="http://"
-            spellCheck={false}
-            className="font-mono"
-          />
-        </Field>
-        <Field name="gatewaySim" label="Sending number (optional)" hint="So staff know which SIM customers see.">
-          <Input
-            id="field-gatewaySim"
-            value={s.draft.gatewaySim}
-            onChange={(e) => s.set('gatewaySim', e.target.value)}
-            aria-describedby="hint-gatewaySim"
-            inputMode="tel"
-            className="font-mono"
-          />
-        </Field>
-      </div>
-      <div className="flex flex-wrap items-center gap-3 rounded-md bg-secondary px-4 py-3 text-sm">
-        <Button type="button" variant="outline" size="sm" disabled>
-          Test connection
-        </Button>
-        <span className="text-muted-foreground">
-          Testing and the access key need the backend. Until then every SMS in this app is simulated.
-        </span>
-      </div>
     </SectionCard>
   );
 }

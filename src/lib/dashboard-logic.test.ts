@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dayProgress, planNotify, workList } from './dashboard-logic.ts';
-import { arrivalDay, contactStatusOf, smsStatusOf, type ContactEvent, type Parcel } from './parcel-logic.ts';
+import { arrivalDay, smsStatusOf, type ContactEvent, type Parcel } from './parcel-logic.ts';
 
 let n = 0;
 const parcel = (code: string, recipient: string, phone: string, h = 1): Parcel => {
@@ -46,17 +46,15 @@ test('messaged, reached, queued and retryable parcels land in the right places',
   assert.deepEqual(w.retry, [failed]);
   assert.deepEqual(
     w.toMessage.map((g) => g.codes),
-    [['C'], ['D']], // A was messaged, B is waiting at the gateway
+    [['C'], ['D']], // A was messaged, B is waiting at the gateway; unanswered calls do not stop C's SMS
   );
-  assert.deepEqual(w.followUp.map((g) => g.codes), [['C']]);
   assert.equal(w.inFlight, 1);
 });
 
-test('a failed SMS then an answered call: SMS stays Failed, contact becomes Contacted', () => {
+test('a failed SMS then an answered call: SMS stays Failed and nothing is sent again', () => {
   const parcels = [parcel('A', 'a', '011 111 111')];
   const events = [event(['A'], { smsStatus: 'failed' }), event(['A'], { channel: 'call', outcome: 'answered' })];
   assert.equal(smsStatusOf('A', events), 'failed');
-  assert.equal(contactStatusOf('A', events), 'contacted');
   assert.equal(workList(parcels, events).toMessage.length, 0);
 });
 
@@ -72,14 +70,6 @@ test('parcels without a valid phone are never grouped or messaged, only listed t
   const w = workList(parcels, []);
   assert.deepEqual(w.toMessage.map((g) => g.codes), [['D']]);
   assert.deepEqual(w.noPhone.map((p) => p.code).sort(), ['A', 'B', 'C']);
-});
-
-test('a staff follow-up flag lists the whole phone line until someone reaches the customer', () => {
-  const parcels = [parcel('A', 'a', '011 111 111'), parcel('B', 'b', '011 111 111')];
-  const flagged = [event(['A', 'B'], { channel: 'flag', outcome: 'follow-up' })];
-  assert.deepEqual(workList(parcels, flagged).followUp.map((g) => [g.codes.sort(), g.size]), [[['A', 'B'], 2]]);
-  const resolved = [...flagged, event(['A', 'B'], { channel: 'call', outcome: 'answered' })];
-  assert.equal(workList(parcels, resolved).followUp.length, 0);
 });
 
 test("notify today's customers: one SMS per phone in today's batch only; notified, in-flight and phoneless left out", () => {

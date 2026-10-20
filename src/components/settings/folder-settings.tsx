@@ -123,7 +123,7 @@ export function FolderSettings() {
                     value={draft.intervalSeconds}
                     disabled={readOnly}
                     onChange={(e) => set({ intervalSeconds: Number(e.target.value) })}
-                    className="mt-1.5 h-11 w-full max-w-48 rounded-md border border-input bg-card px-3 text-sm sm:h-10"
+                    className="mt-1.5 h-11 w-full max-w-48 rounded-md border border-input bg-card px-3 text-base sm:h-10 sm:text-sm"
                   >
                     {CHECK_INTERVALS.map((n) => (
                       <option key={n} value={n}>

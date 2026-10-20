@@ -36,7 +36,7 @@ export function DateFilter({
           value={value.preset}
           onChange={(e) => onChange({ ...value, preset: e.target.value as DatePreset })}
           className={cn(
-            'h-11 rounded-md border pr-3 pl-9 text-sm',
+            'h-11 rounded-md border pr-3 pl-9 text-base sm:text-sm',
             height,
             active ? 'border-primary bg-accent font-medium text-primary' : 'border-input bg-card text-muted-foreground hover:text-foreground',
           )}

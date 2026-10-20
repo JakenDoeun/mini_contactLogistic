@@ -53,7 +53,9 @@ in this file, in the backend plan's schema table and in its decisions table.
 Constraints: `CHECK (length(tracking_code) > 0)`; `CHECK (tracking_key = upper(tracking_code))` (SQLite's built-in `upper()`
 changes only ASCII letters, which matches the key rule); `CHECK (phone_edited = 1 OR phone_raw IS import_phone_raw)`.
 Indexes: UNIQUE `tracking_key`; (`arrival_date`, `phone_normalized`); `phone_normalized`; `recipient_name`.
-No status column: SMS and contact status are derived from the append-only tables below.
+No status column: the SMS status is derived from the append-only tables below. Owner, 2026-10-20: there is no contact
+status. Calls and Telegram are history entries only, and a call that reached the customer stops the SMS for those
+parcels. `contact_attempts` still accepts `flag` and `follow_up`; the app no longer writes them.
 
 **Tracking key** (rule `tracking-code-key/v1`): case-insensitive only. Internal spaces, leading zeros, punctuation and
 non-ASCII characters are kept exactly. The application computes the key the same way (ASCII-only upper-casing, not

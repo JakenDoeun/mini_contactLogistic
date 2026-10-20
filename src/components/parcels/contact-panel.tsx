@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { MessageSquare, Phone, Send } from 'lucide-react';
+import { CircleCheck, MessageSquare, Phone, PhoneMissed, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   composeMessage,
   eligibleForMessage,
+  eventsFor,
   isValidPhone,
   normalizePhone,
   smsInFlight,
@@ -17,35 +18,17 @@ import {
 } from '@/lib/parcel-logic';
 import { queueSms, recordOutcome } from '@/lib/mock/parcel-service';
 import { useSettings } from '@/lib/mock/use-settings';
+import { formatTime } from '@/lib/utils';
 import { SmsBadge } from './parcel-status';
-
-// 'record' is a call or Telegram message made outside the app, from another phone or typed in by hand.
-type Asked = 'call' | 'telegram' | 'record';
-const CALL = [
-  { channel: 'call', outcome: 'answered', label: 'Reached', saved: 'Saved: call reached the customer.' },
-  { channel: 'call', outcome: 'no-answer', label: 'No answer', saved: 'Saved: call not answered.' },
-] as const;
-const TELEGRAM = [{ channel: 'telegram', outcome: 'messaged', label: 'Sent on Telegram', saved: 'Saved: message sent on Telegram.' }] as const;
-const OUTCOMES: Record<Asked, readonly { channel: 'call' | 'telegram'; outcome: Outcome; label: string; saved: string }[]> = {
-  call: CALL,
-  telegram: TELEGRAM,
-  record: [...CALL, ...TELEGRAM],
-};
-const QUESTION: Record<Asked, string> = { call: 'How did the call go?', telegram: 'Did you send it?', record: 'What happened?' };
 
 const parcels = (n: number) => `${n} parcel${n === 1 ? '' : 's'}`;
 
-/**
- * The contact actions for everyone on one phone line, kept short: one SMS button, Call and Telegram.
- * What happened is asked only after a call or a Telegram message, so the card is not a wall of buttons.
- */
+/** The contact actions for everyone on one phone line: one SMS button, then Call and Telegram in their own part. */
 export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group: Parcel[]; events: ContactEvent[] }) {
   const templates = useSettings()?.templates;
   const [again, setAgain] = useState(false); // staff chose to message parcels that were messaged before
   const [editing, setEditing] = useState(false);
   const [queuedId, setQueuedId] = useState<string | null>(null);
-  const [asked, setAsked] = useState<Asked | null>(null);
-  const [said, setSaid] = useState('');
 
   const eligible = eligibleForMessage(group, events);
   const codes = (again ? group : eligible).map((p) => p.code);
@@ -67,15 +50,6 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
     setQueuedId(queueSms(parcel.phone, codes, draft.text).id);
     setAgain(false);
     setEditing(false);
-  }
-
-  function telegram() {
-    setAsked('telegram');
-    // t.me cannot carry the text, so it goes on the clipboard on the way out.
-    navigator.clipboard.writeText(message).then(
-      () => setSaid('Message copied. Paste it into the chat.'),
-      () => setSaid('Copy was blocked. Select the message above and copy it.'),
-    );
   }
 
   return (
@@ -122,28 +96,12 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
         </div>
       )}
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        {codes.length > 0 && (
-          <Button onClick={send} disabled={inFlight || !draft.text.trim()} className="h-11 sm:h-10">
-            <Send aria-hidden />
-            {again ? 'Send again' : 'Send SMS'} · {parcels(codes.length)}
-          </Button>
-        )}
-        <div className="grid grid-cols-2 gap-2 sm:flex">
-          <Button asChild variant="outline" className="h-11 sm:h-10">
-            <a href={`tel:${normalizePhone(parcel.phone)}`} onClick={() => setAsked('call')}>
-              <Phone aria-hidden />
-              Call
-            </a>
-          </Button>
-          <Button asChild variant="outline" className="h-11 sm:h-10">
-            <a href={telegramLink(parcel.phone)} target="_blank" rel="noreferrer" onClick={telegram}>
-              <MessageSquare aria-hidden />
-              Telegram
-            </a>
-          </Button>
-        </div>
-      </div>
+      {codes.length > 0 && (
+        <Button onClick={send} disabled={inFlight || !draft.text.trim()} className="self-start">
+          <Send aria-hidden />
+          {again ? 'Send again' : 'Send SMS'} · {parcels(codes.length)}
+        </Button>
+      )}
 
       {inFlight && <p className="-mt-2 text-sm text-muted-foreground">An SMS for these parcels is already waiting at the gateway.</p>}
       {before > 0 && !again && !inFlight && (
@@ -161,41 +119,6 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
         </button>
       )}
 
-      {!asked && (
-        <button type="button" onClick={() => setAsked('record')} className="-mt-2 min-h-11 self-start text-sm font-medium text-primary sm:min-h-8">
-          Called or messaged already? Record it
-        </button>
-      )}
-
-      {asked && (
-        <fieldset className="rounded-md bg-secondary px-3 py-3">
-          <legend className="sr-only">What happened</legend>
-          <p aria-hidden className="text-sm font-medium">
-            {QUESTION[asked]}
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {OUTCOMES[asked].map((o) => (
-              <Button
-                key={o.outcome}
-                size="sm"
-                variant="outline"
-                className="bg-card"
-                onClick={() => {
-                  recordOutcome(parcel.phone, group.map((p) => p.code), o.channel, o.outcome);
-                  setSaid(o.saved);
-                  setAsked(null);
-                }}
-              >
-                {o.label}
-              </Button>
-            ))}
-            <Button size="sm" variant="ghost" onClick={() => setAsked(null)}>
-              Cancel
-            </Button>
-          </div>
-        </fieldset>
-      )}
-
       <div aria-live="polite" className="text-sm empty:hidden">
         {queued && (
           <p className="flex flex-wrap items-center gap-2">
@@ -203,10 +126,162 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
             {queued.result}
           </p>
         )}
-        {said && <p className="text-success">{said}</p>}
       </div>
 
       <p className="text-xs text-muted-foreground">Simulated: no SMS leaves this device until the gateway is connected.</p>
+
+      <DirectContact parcel={parcel} group={group} events={events} message={message} stops={eligible.length} />
     </div>
+  );
+}
+
+// 'pick' is a call or Telegram message made outside the app, from another phone: staff say which first.
+type Asked = 'call' | 'telegram' | 'pick';
+const ASK = {
+  call: {
+    question: 'Did the customer answer?',
+    options: [
+      { outcome: 'answered', label: 'Reached', Icon: CircleCheck, primary: true },
+      { outcome: 'no-answer', label: 'No answer', Icon: PhoneMissed, primary: false },
+    ],
+    dismiss: "Didn't call",
+  },
+  telegram: {
+    question: 'Did you send the message on Telegram?',
+    options: [{ outcome: 'messaged', label: 'Yes, sent', Icon: CircleCheck, primary: true }],
+    dismiss: 'Not sent',
+  },
+} as const;
+const DONE: Record<Outcome, [string, typeof Phone, string]> = {
+  answered: ['Reached by call', CircleCheck, 'text-success'],
+  'no-answer': ['Called, no answer', PhoneMissed, 'text-warning'],
+  messaged: ['Sent on Telegram', MessageSquare, 'text-foreground'],
+};
+
+/**
+ * Call and Telegram happen outside the app, so the card asks what happened right after, one question at a time,
+ * and shows the latest answer so staff see at a glance whether someone already called.
+ */
+function DirectContact({
+  parcel,
+  group,
+  events,
+  message,
+  stops,
+}: {
+  parcel: Parcel;
+  group: Parcel[];
+  events: ContactEvent[];
+  message: string;
+  /** Parcels whose SMS a reached call would stop. */
+  stops: number;
+}) {
+  const [asked, setAsked] = useState<Asked | null>(null);
+  const [copied, setCopied] = useState('');
+  const last = eventsFor(parcel.code, events).find((e) => e.channel !== 'sms' && e.outcome);
+
+  function telegram() {
+    setAsked('telegram');
+    // t.me cannot carry the text, so it goes on the clipboard on the way out.
+    navigator.clipboard.writeText(message).then(
+      () => setCopied('Message copied. Paste it into the chat.'),
+      () => setCopied('Copy was blocked. Select the message above and copy it.'),
+    );
+  }
+
+  function answer(outcome: Outcome) {
+    recordOutcome(parcel.phone, group.map((p) => p.code), asked === 'telegram' ? 'telegram' : 'call', outcome);
+    setAsked(null);
+    setCopied('');
+  }
+
+  const ask = asked === 'call' || asked === 'telegram' ? ASK[asked] : null;
+  const [doneLabel, DoneIcon, doneTone] = last ? DONE[last.outcome!] : [];
+
+  return (
+    <section aria-labelledby="direct-heading" className="border-t pt-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h3 id="direct-heading" className="text-sm font-medium">
+          Call or Telegram
+        </h3>
+        <p aria-live="polite" className="text-sm">
+          {last ? (
+            <span className={`inline-flex items-center gap-1.5 ${doneTone}`}>
+              {DoneIcon && <DoneIcon className="size-4" aria-hidden />}
+              {doneLabel}
+              <span className="font-mono text-xs text-muted-foreground">{formatTime(last.at)}</span>
+            </span>
+          ) : (
+            <span className="text-muted-foreground">Not called yet</span>
+          )}
+        </p>
+      </div>
+
+      {!asked && (
+        <>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:flex">
+            <Button asChild variant="outline">
+              <a href={`tel:${normalizePhone(parcel.phone)}`} onClick={() => setAsked('call')}>
+                <Phone aria-hidden />
+                Call
+              </a>
+            </Button>
+            <Button asChild variant="outline">
+              <a href={telegramLink(parcel.phone)} target="_blank" rel="noreferrer" onClick={telegram}>
+                <MessageSquare aria-hidden />
+                Telegram
+              </a>
+            </Button>
+          </div>
+          <button type="button" onClick={() => setAsked('pick')} className="mt-1 min-h-11 text-sm font-medium text-primary sm:min-h-8">
+            Called or messaged from another phone? Record it
+          </button>
+        </>
+      )}
+
+      {asked === 'pick' && (
+        <div role="group" aria-labelledby="pick-question" className="mt-3 rounded-md bg-secondary px-3 py-3">
+          <p id="pick-question" className="font-medium">
+            What did you do?
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:flex">
+            <Button variant="outline" autoFocus onClick={() => setAsked('call')}>
+              <Phone aria-hidden />
+              Called
+            </Button>
+            <Button variant="outline" onClick={() => setAsked('telegram')}>
+              <MessageSquare aria-hidden />
+              Telegram
+            </Button>
+          </div>
+          <Button variant="ghost" size="sm" className="mt-1" onClick={() => setAsked(null)}>
+            Cancel
+          </Button>
+        </div>
+      )}
+
+      {ask && (
+        <div role="group" aria-labelledby="ask-question" className="mt-3 rounded-md border-l-4 border-primary bg-secondary px-3 py-3">
+          <p id="ask-question" className="font-medium">
+            {ask.question}
+          </p>
+          {asked === 'call' && stops > 0 && (
+            <p className="mt-0.5 text-sm text-muted-foreground">Reached stops the SMS for {parcels(stops)}, so nobody is told twice.</p>
+          )}
+          {asked === 'telegram' && copied && <p className="mt-0.5 text-sm text-muted-foreground">{copied}</p>}
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:flex">
+            {ask.options.map(({ outcome, label, Icon, primary }, i) => (
+              <Button key={outcome} variant={primary ? 'default' : 'outline'} autoFocus={i === 0} onClick={() => answer(outcome)}>
+                <Icon aria-hidden />
+                {label}
+              </Button>
+            ))}
+          </div>
+          <Button variant="ghost" size="sm" className="mt-1" onClick={() => setAsked(null)}>
+            {ask.dismiss}
+          </Button>
+        </div>
+      )}
+    </section>
   );
 }

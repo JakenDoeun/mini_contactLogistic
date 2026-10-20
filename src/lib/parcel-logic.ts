@@ -29,6 +29,10 @@ export interface ContactEvent {
   outcome?: Outcome; // call and telegram only
 }
 
+// A random gap between two SMS from the gateway SIM, so its traffic looks like a person's and is less likely to be
+// flagged or blocked by the carrier (owner, 2026-10-20).
+export const SMS_GAP_SECONDS = [25, 80] as const;
+
 export const SMS_STATUSES: SmsStatus[] = ['not-sent', 'queued', 'sending', 'sent', 'delivered', 'failed', 'unconfirmed'];
 
 // Cambodian numbers: "+855 12 345 678", "012-345-678" and "12345678" are the same line.

@@ -11,6 +11,7 @@ import { openDatabase } from '../src/server/db/connection.ts';
 import { openVerifiedDatabase, prepareDatabase } from '../src/server/db/migrate.ts';
 import { resolveDataDir } from '../src/server/db/paths.ts';
 import { purgeExpired } from '../src/server/db/retention.ts';
+import { holdAfterRestore } from '../src/server/sms/queue.ts';
 
 const fail = (message: string): never => {
   console.error(`restore: ${message}`);
@@ -75,9 +76,11 @@ try {
   const db = openVerifiedDatabase(dbPath);
   try {
     const purged = purgeExpired(db, dataDir);
+    holdAfterRestore(db, chosen!.at);
     writeAudit(db, { action: 'backup.restored', entity: 'backup', entityIds: [], outcome: 'ok', detail: { file_name: chosen!.file, count: purged.total } });
     const parcels = (db.prepare('SELECT count(*) AS n FROM parcels').get() as { n: number }).n;
     console.log(`Restored ${chosen!.file} (${cambodiaTime(chosen!.at)}): ${parcels} parcel(s); ${purged.total} expired row(s) removed. Start Campus Branch again.`);
+    console.log('SMS sending is on hold: on the Notifications page, staff check the gateway phone and confirm before anything is sent.');
   } finally {
     db.close();
   }

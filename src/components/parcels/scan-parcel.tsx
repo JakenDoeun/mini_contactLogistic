@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { normalizeCode, phoneGroup } from '@/lib/parcel-logic';
-import { useParcelData, useParcelError } from '@/lib/mock/parcel-service';
+import { useParcelData, useParcelError } from '@/lib/parcel-service';
 import { cameraSupport } from '@/lib/scanner/camera-barcode';
 import { CameraScanner } from './camera-scanner';
 import { ParcelDetail } from './parcel-detail';

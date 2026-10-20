@@ -144,6 +144,8 @@ export function smsGate(config: GatewayConfig, fetchImpl: typeof fetch = fetch) 
       }
       if (res.status === 202) return { outcome: 'accepted', duplicate: false };
       if (res.status === 409) return { outcome: 'accepted', duplicate: true }; // the phone already has this ID
+      // Offline or at its own sending limit: the phone kept nothing, so the message can wait and go later.
+      if (res.status === 503) throw new GatewayError('unreachable', 'The gateway phone is not ready to send right now.');
       await expectOk(res);
       return { outcome: 'accepted', duplicate: false };
     },

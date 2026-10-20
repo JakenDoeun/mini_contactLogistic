@@ -18,7 +18,7 @@ import {
   type ContactEvent,
   type Parcel,
 } from '@/lib/parcel-logic';
-import { updatePhone, type ParcelData } from '@/lib/mock/parcel-service';
+import { updatePhone, type ParcelData } from '@/lib/parcel-service';
 import { formatDateTime } from '@/lib/utils';
 import { ContactPanel } from './contact-panel';
 import { PhoneText, SmsBadge } from './parcel-status';

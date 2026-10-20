@@ -18,7 +18,7 @@ and 5.
   signed-in staff, cross-site refused, phone at most 40 characters, empty clears it) saves a staff phone edit through
   `editParcelPhone`, which writes `parcel_phone_changes` and the audit event `parcel.phone_edited`. An unknown parcel
   is 404.
-- **Parcels and Scan Parcel** (`src/lib/mock/parcel-service.ts`) load the list from the API each time a page opens. A
+- **Parcels and Scan Parcel** (`src/lib/parcel-service.ts`, moved out of `mock/` in Phase 9) load the list from the API each time a page opens. A
   load error shows its reason with Try again instead of an empty page. A phone edit shows Saving… and stays open with the
   reason if the save fails.
 - **Dashboard** (`src/components/dashboard/dashboard.tsx`):

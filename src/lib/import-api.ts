@@ -3,6 +3,7 @@
 import type { BrowseResult, DetectedFile, folderState, ScanResult } from '@/server/folder/folder';
 import type { ImportListItem, Review } from '@/server/importer/store';
 import type { ContactEvent, Parcel } from '@/lib/parcel-logic';
+import type { Settings } from '@/lib/settings-logic';
 
 export type { DetectedFile, ImportListItem, Review, ScanResult };
 export type FolderState = ReturnType<typeof folderState> & { isAdmin: boolean };
@@ -97,6 +98,9 @@ export interface SmsBatch {
   startedAt: string;
   eventIds: string[];
 }
+export const getAppSettings = () => call<{ settings: Settings; isAdmin: boolean }>('/api/settings');
+export const putAppSettings = (patch: Partial<Settings>) => call<{ settings: Settings }>('/api/settings', { method: 'PUT', ...send(patch) });
+
 export const listParcels = () =>
   call<{ parcels: Parcel[]; events: ContactEvent[]; batch: SmsBatch | null; restoreHold: { copyAt: string } | null }>('/api/parcels');
 

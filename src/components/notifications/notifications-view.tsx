@@ -28,8 +28,7 @@ import {
   type ContactEvent,
 } from '@/lib/parcel-logic';
 import { controlBatch, dismissBatch, queueBatch, queueSms, releaseRestoreHold, useParcelData, type ParcelData, type SmsBatch } from '@/lib/parcel-service';
-import { getSettings } from '@/lib/mock/settings-service';
-import { useSettings } from '@/lib/mock/use-settings';
+import { currentTemplates, useSettings } from '@/lib/settings-service';
 import { cn, formatDateTime } from '@/lib/utils';
 
 type ChannelFilter = 'all' | 'sms' | 'call' | 'telegram';
@@ -956,7 +955,7 @@ function RetrySheet({ event, data, onClose }: { event: ContactEvent | null; data
   if (event && data && key !== event.id) {
     const name = data.parcels.find((p) => p.code === event.parcelCodes[0])?.recipient ?? '';
     setKey(event.id);
-    setText(event.message || composeMessage(name, event.parcelCodes, getSettings().templates));
+    setText(event.message || composeMessage(name, event.parcelCodes, currentTemplates()));
     setSendAnyway(false);
     setError('');
   }

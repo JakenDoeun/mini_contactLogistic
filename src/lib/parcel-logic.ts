@@ -160,11 +160,9 @@ export function canRetry(event: ContactEvent, events: ContactEvent[]) {
   return latest && !smsInFlight(event.parcelCodes, events);
 }
 
-// Asking for a reply makes the SIM's traffic two-way, like a person's, so it is less likely to be flagged as bulk SMS.
-// Replies stay on the gateway phone; the app does not read or record them (owner, 2026-10-20).
 export const DEFAULT_TEMPLATES = {
-  single: 'Hi {name}, your parcel {codes} has arrived at Campus Branch. Bring your student ID to collect it. Please reply OK.',
-  combined: 'Hi {name}, {count} new parcels have arrived for you at Campus Branch: {codes}. Bring your student ID to collect them. Please reply OK.',
+  single: 'Hi {name}, your parcel {codes} has arrived at Campus Branch. Bring your student ID to collect it.',
+  combined: 'Hi {name}, {count} new parcels have arrived for you at Campus Branch: {codes}. Bring your student ID to collect them.',
 };
 
 // Scope follows the number of parcels: no manual individual/grouped switch.

@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { dayProgress, workList, type DayProgress, type WorkGroup } from '@/lib/dashboard-logic';
 import { getFolder, listImports, type ImportListItem } from '@/lib/import-api';
-import { useParcelData, useParcelError } from '@/lib/mock/parcel-service';
+import { useParcelData, useParcelError } from '@/lib/parcel-service';
 import { arrivalDay, formatPhone, smsScope, type SmsStatus } from '@/lib/parcel-logic';
 import { cn, formatDateTime } from '@/lib/utils';
 

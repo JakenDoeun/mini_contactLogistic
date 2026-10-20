@@ -2,7 +2,7 @@
 // requests and turns error codes into sentences staff can act on.
 import type { BrowseResult, DetectedFile, folderState, ScanResult } from '@/server/folder/folder';
 import type { ImportListItem, Review } from '@/server/importer/store';
-import type { Parcel } from '@/lib/parcel-logic';
+import type { ContactEvent, Parcel } from '@/lib/parcel-logic';
 
 export type { DetectedFile, ImportListItem, Review, ScanResult };
 export type FolderState = ReturnType<typeof folderState> & { isAdmin: boolean };
@@ -89,5 +89,21 @@ export const saveFolderSettings =(body: { path: string; auto: boolean; intervalS
 
 // ---- Parcels (Phase 6) ----
 
-export const listParcels = () => call<{ parcels: Parcel[] }>('/api/parcels').then((r) => r.parcels);
+export interface SmsBatch {
+  id: number;
+  status: 'running' | 'paused' | 'stopped' | 'done';
+  startedAt: string;
+  eventIds: string[];
+}
+export const listParcels = () => call<{ parcels: Parcel[]; events: ContactEvent[]; batch: SmsBatch | null }>('/api/parcels');
+
+/** One SMS for a phone line. `retryOf` is the message a retry belongs to; `again` sends to parcels messaged before. */
+export const postSms = (body: { phone: string; parcelIds: number[]; text: string; again?: boolean; retryOf?: number }) =>
+  call<{ notificationId: number }>('/api/sms', { method: 'POST', ...send(body) });
+export const postBatch = (requestKey: string, items: { phone: string; parcelIds: number[]; text: string }[]) =>
+  call<{ batchId: number; queued: number; skipped: number }>('/api/sms/batch', { method: 'POST', ...send({ requestKey, items }) });
+export const postBatchAction = (id: number, action: 'pause' | 'resume' | 'stop') =>
+  call<{ status: SmsBatch['status'] }>(`/api/sms/batch/${id}`, { method: 'POST', ...send({ action }) });
+export const postContact = (body: { phone: string; parcelIds: number[]; channel: 'call' | 'telegram'; outcome: string }) =>
+  call<{ id: number }>('/api/contacts', { method: 'POST', ...send(body) });
 export const saveParcelPhone = (id: number, phone: string) => call<{ ok: true }>(`/api/parcels/${id}/phone`, { method: 'PUT', ...send({ phone }) });

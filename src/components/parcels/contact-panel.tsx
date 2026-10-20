@@ -16,7 +16,7 @@ import {
   type Outcome,
   type Parcel,
 } from '@/lib/parcel-logic';
-import { queueSms, recordOutcome } from '@/lib/mock/parcel-service';
+import { queueSms, recordOutcome } from '@/lib/parcel-service';
 import { useSettings } from '@/lib/mock/use-settings';
 import { formatTime } from '@/lib/utils';
 import { SmsBadge } from './parcel-status';
@@ -29,6 +29,8 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
   const [again, setAgain] = useState(false); // staff chose to message parcels that were messaged before
   const [editing, setEditing] = useState(false);
   const [queuedId, setQueuedId] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
 
   const eligible = eligibleForMessage(group, events);
   const codes = (again ? group : eligible).map((p) => p.code);
@@ -46,10 +48,18 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
     return <p className="text-muted-foreground">Add a phone number above to message or call. Until then this parcel is left out of messages.</p>;
   }
 
-  function send() {
-    setQueuedId(queueSms(parcel.phone, codes, draft.text).id);
-    setAgain(false);
-    setEditing(false);
+  async function send() {
+    setSending(true);
+    setSendError('');
+    try {
+      setQueuedId(await queueSms(parcel.phone, codes, draft.text, { again }));
+      setAgain(false);
+      setEditing(false);
+    } catch (e) {
+      setSendError(`Not sent. ${(e as Error).message}`);
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -97,9 +107,9 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
       )}
 
       {codes.length > 0 && (
-        <Button onClick={send} disabled={inFlight || !draft.text.trim()} className="self-start">
+        <Button onClick={send} disabled={inFlight || sending || !draft.text.trim()} className="self-start">
           <Send aria-hidden />
-          {again ? 'Send again' : 'Send SMS'} · {parcels(codes.length)}
+          {sending ? 'Saving…' : again ? 'Send again' : 'Send SMS'} · {parcels(codes.length)}
         </Button>
       )}
 
@@ -126,9 +136,8 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
             {queued.result}
           </p>
         )}
+        {sendError && <p className="text-destructive">{sendError}</p>}
       </div>
-
-      <p className="text-xs text-muted-foreground">Simulated: no SMS leaves this device until the gateway is connected.</p>
 
       <DirectContact parcel={parcel} group={group} events={events} message={message} stops={eligible.length} />
     </div>
@@ -178,6 +187,8 @@ function DirectContact({
 }) {
   const [asked, setAsked] = useState<Asked | null>(null);
   const [copied, setCopied] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const last = eventsFor(parcel.code, events).find((e) => e.channel !== 'sms' && e.outcome);
 
   function telegram() {
@@ -189,10 +200,18 @@ function DirectContact({
     );
   }
 
-  function answer(outcome: Outcome) {
-    recordOutcome(parcel.phone, group.map((p) => p.code), asked === 'telegram' ? 'telegram' : 'call', outcome);
-    setAsked(null);
-    setCopied('');
+  async function answer(outcome: Outcome) {
+    setSaving(true);
+    setSaveError('');
+    try {
+      await recordOutcome(parcel.phone, group.map((p) => p.code), asked === 'telegram' ? 'telegram' : 'call', outcome);
+      setAsked(null);
+      setCopied('');
+    } catch (e) {
+      setSaveError(`Not saved. ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const ask = asked === 'call' || asked === 'telegram' ? ASK[asked] : null;
@@ -271,12 +290,17 @@ function DirectContact({
           {asked === 'telegram' && copied && <p className="mt-0.5 text-sm text-muted-foreground">{copied}</p>}
           <div className="mt-3 grid grid-cols-2 gap-2 sm:flex">
             {ask.options.map(({ outcome, label, Icon, primary }, i) => (
-              <Button key={outcome} variant={primary ? 'default' : 'outline'} autoFocus={i === 0} onClick={() => answer(outcome)}>
+              <Button key={outcome} variant={primary ? 'default' : 'outline'} autoFocus={i === 0} disabled={saving} onClick={() => answer(outcome)}>
                 <Icon aria-hidden />
                 {label}
               </Button>
             ))}
           </div>
+          {saveError && (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              {saveError}
+            </p>
+          )}
           <Button variant="ghost" size="sm" className="mt-1" onClick={() => setAsked(null)}>
             {ask.dismiss}
           </Button>

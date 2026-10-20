@@ -1,7 +1,7 @@
 // npm run serve — the production launcher (plan Revision 4), started at boot by Windows Task Scheduler or systemd
 // (deploy/). It migrates and self-tests the database, deletes expired data, saves a backup, then runs `next start` on
 // 127.0.0.1 and restarts it after a crash. While running: a backup 5 minutes after changes (at most every 15 minutes)
-// and the retention job every hour; when turned on in Settings, the watched-folder check. Stopped with Ctrl+C or a
+// and the retention job every hour; the SMS worker; when turned on in Settings, the watched-folder check. Stopped with Ctrl+C or a
 // service stop, it saves a backup before exiting.
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
@@ -12,6 +12,7 @@ import { openVerifiedDatabase, prepareDatabase } from '../src/server/db/migrate.
 import { resolveDataDir } from '../src/server/db/paths.ts';
 import { purgeExpired } from '../src/server/db/retention.ts';
 import { folderSettings, scanFolder } from '../src/server/folder/folder.ts';
+import { smsWorker } from '../src/server/sms/worker.ts';
 
 // A Windows scheduled task cannot set environment variables or show a console, so the folder, port, branch address
 // and a log file may also come as arguments. The address matters on Windows: Tailscale shows its status only to the
@@ -98,7 +99,16 @@ async function folderCheck() {
 retention();
 backupNow('start');
 folderCheck(); // files saved while the computer was off are found at start-up
-const timers = [setInterval(() => backups.tick(), 60_000), setInterval(retention, 3600_000), setInterval(folderCheck, 15_000)];
+// SMS: one message at a time to the gateway phone; on start it first settles what a crash left half done.
+const sms = smsWorker(db, dataDir, log);
+const smsTick = () => sms.tick().then((changed) => changed && backups.markChanged());
+smsTick();
+const timers = [
+  setInterval(() => backups.tick(), 60_000),
+  setInterval(retention, 3600_000),
+  setInterval(folderCheck, 15_000),
+  setInterval(smsTick, 2_000),
+];
 
 // ---- the web app, restarted after a crash (5 s, doubling to 60 s; reset after a minute of running) ----
 const nextBin = createRequire(import.meta.url).resolve('next/dist/bin/next');
@@ -133,6 +143,7 @@ function stop(signal: string) {
   log(`${signal}: stopping`);
   timers.forEach(clearInterval);
   const finish = () => {
+    sms.release();
     backupNow('stop');
     db.close();
     fs.rmSync(pidFile, { force: true });

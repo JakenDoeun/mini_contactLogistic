@@ -20,7 +20,7 @@ import {
   type ParcelFilter,
 } from '@/lib/parcel-logic';
 import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@/lib/date-range';
-import { reloadParcels, useParcelData, useParcelError } from '@/lib/mock/parcel-service';
+import { reloadParcels, useParcelData, useParcelError } from '@/lib/parcel-service';
 import { DateFilter } from '@/components/shared/date-filter';
 import { SampleDataNotice } from '@/components/shared/sample-data-notice';
 import { cn, formatDateTime } from '@/lib/utils';

@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ChevronRight, CircleCheck, MessageSquare, Phone, PhoneOff, RotateCcw, Search, Send } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { ArrowRight, ChevronRight, CircleCheck, MessageSquare, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
@@ -26,7 +25,7 @@ import {
   type Channel,
   type ContactEvent,
 } from '@/lib/parcel-logic';
-import { dismissBatch, queueBatch, queueSms, useParcelData, type ParcelData } from '@/lib/mock/parcel-service';
+import { controlBatch, dismissBatch, queueBatch, queueSms, useParcelData, type ParcelData, type SmsBatch } from '@/lib/parcel-service';
 import { getSettings } from '@/lib/mock/settings-service';
 import { useSettings } from '@/lib/mock/use-settings';
 import { cn, formatDateTime } from '@/lib/utils';
@@ -63,7 +62,7 @@ export function NotificationsView({ initialFilter }: { initialFilter?: string })
   const plan = data ? planNotify(data.parcels, data.events, new Date(), templates) : null;
   const nameOf = (code: string) => data?.parcels.find((p) => p.code === code)?.recipient ?? '';
   const contactParcel = data?.parcels.find((p) => p.code === contacting);
-  const running = !!data?.batch && data.events.some((e) => data.batch!.eventIds.includes(e.id) && waiting(e));
+  const running = !!data?.batch && (data.batch.status === 'running' || data.batch.status === 'paused');
 
   return (
     <>
@@ -72,12 +71,6 @@ export function NotificationsView({ initialFilter }: { initialFilter?: string })
           <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight">Notifications</h1>
           <p className="mt-1 text-muted-foreground">Fix what went wrong, send today&apos;s messages in one go, and look back at what was sent.</p>
         </div>
-        <p className="flex items-center gap-2 self-start rounded-sm bg-info-tint px-2.5 py-1 text-sm text-info md:self-auto">
-          <Badge variant="info" className="bg-card">
-            Simulated
-          </Badge>
-          No SMS leaves this device yet.
-        </p>
       </div>
 
       {/* Urgency sets the size: attention leads, the live queue follows, ready-to-send supports from the side. */}
@@ -303,8 +296,9 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
         <Heading
           id="queue-heading"
           title="Sending queue"
-          hint="Handed to the gateway one at a time (simulated). Accepted messages move to History; failed or unconfirmed ones move to Needs your attention."
+          hint="Handed to the gateway phone one at a time. Accepted messages move to History; failed or unconfirmed ones move to Needs your attention."
         />
+        {running && data.batch && <BatchControls batch={data.batch} />}
         {batch.length > 0 && !running && (
           <Button size="sm" variant="ghost" onClick={dismissBatch}>
             Dismiss summary
@@ -315,9 +309,17 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
       {batch.length > 0 && (
         <div className="mt-4">
           <p aria-live="polite" className="flex flex-wrap items-baseline justify-between gap-x-4 text-sm">
-            <span className="font-medium">{running ? `Sending ${Math.min(done + 1, batch.length)} of ${batch.length}…` : `Finished: ${batch.length} SMS`}</span>
+            <span className="font-medium">
+              {data.batch?.status === 'paused'
+                ? `Paused after ${done} of ${batch.length}`
+                : running
+                  ? `Sending ${Math.min(done + 1, batch.length)} of ${batch.length}…`
+                  : data.batch?.status === 'stopped'
+                    ? `Stopped: ${batch.length - tally('not-sent')} of ${batch.length} handed over`
+                    : `Finished: ${batch.length} SMS`}
+            </span>
             <span className="text-muted-foreground">
-              {tally('sent')} accepted · {tally('failed')} failed · {tally('unconfirmed')} unconfirmed
+              {tally('sent') + tally('delivered')} sent · {tally('failed')} failed · {tally('unconfirmed')} unconfirmed
               {running && ` · ${batch.length - done} to go`}
             </span>
           </p>
@@ -353,6 +355,41 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
   );
 }
 
+/** Pause holds the rest of the run after the message being handed over; Stop cancels the ones still waiting. */
+function BatchControls({ batch }: { batch: SmsBatch }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const paused = batch.status === 'paused';
+  async function act(action: 'pause' | 'resume' | 'stop') {
+    setBusy(true);
+    setError('');
+    try {
+      await controlBatch(batch.id, action);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button size="sm" variant="outline" className="bg-card" disabled={busy} onClick={() => act(paused ? 'resume' : 'pause')}>
+        {paused ? <Play aria-hidden /> : <Pause aria-hidden />}
+        {paused ? 'Resume' : 'Pause'}
+      </Button>
+      <Button size="sm" variant="ghost" disabled={busy} onClick={() => act('stop')}>
+        <Square aria-hidden />
+        Stop
+      </Button>
+      {error && (
+        <p role="alert" className="w-full text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Today's phone lines with parcels nobody has told the customer about, and the one button that sends them all. */
 function Ready({ plan, running, onNotify }: { plan: ReturnType<typeof planNotify> | null; running: boolean; onNotify: () => void }) {
   const parcels = plan?.today.reduce((n, i) => n + i.codes.length, 0) ?? 0;
@@ -371,7 +408,7 @@ function Ready({ plan, running, onNotify }: { plan: ReturnType<typeof planNotify
           <p className="text-sm text-muted-foreground">
             {parcels} {parcels === 1 ? 'parcel' : 'parcels'} from today, one SMS per phone number
           </p>
-          <Button className="mt-4 w-full" onClick={onNotify} disabled={running || plan.today.length + plan.older.length === 0}>
+          <Button className="mt-4 w-full" onClick={onNotify} disabled={running || plan.today.length === 0}>
             <Send aria-hidden />
             Notify today&apos;s customers
           </Button>
@@ -401,12 +438,12 @@ function Ready({ plan, running, onNotify }: { plan: ReturnType<typeof planNotify
               {plan.today.length > READY_SHOWN && <li className="py-2 text-xs text-muted-foreground">and {plan.today.length - READY_SHOWN} more</li>}
             </ul>
           )}
-          {(plan.older.length > 0 || plan.noPhoneToday.length > 0) && (
+          {plan.noPhoneToday.length > 0 && (
             <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
-              {plan.older.length > 0 && <li>{plan.older.length} more from earlier days can be added when you confirm.</li>}
-              {plan.noPhoneToday.length > 0 && <li>{plan.noPhoneToday.length === 1 ? "1 of today's parcels has" : `${plan.noPhoneToday.length} of today's parcels have`} no phone number and{' '}
-                  {plan.noPhoneToday.length === 1 ? 'is' : 'are'} skipped.
-                </li>}
+              <li>
+                {plan.noPhoneToday.length === 1 ? "1 of today's parcels has" : `${plan.noPhoneToday.length} of today's parcels have`} no phone number and{' '}
+                {plan.noPhoneToday.length === 1 ? 'is' : 'are'} skipped.
+              </li>
             </ul>
           )}
         </>
@@ -473,15 +510,31 @@ function ConfirmNotify({
   templates: Parameters<typeof planNotify>[3];
   onClose: () => void;
 }) {
-  const [older, setOlder] = useState(false);
+  // One key per opening of the dialog: a second click or a retried request finds the batch and creates nothing.
+  const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState('');
   const plan = data ? planNotify(data.parcels, data.events, new Date(), templates) : null;
-  const items: NotifyItem[] = plan ? [...plan.today, ...(older ? plan.older : [])] : [];
+  const items: NotifyItem[] = plan?.today ?? [];
   const parcels = items.reduce((n, i) => n + i.codes.length, 0);
   const combined = items.filter((i) => i.codes.length > 1).length;
   const close = () => {
-    setOlder(false);
+    setRequestKey(crypto.randomUUID());
+    setError('');
     onClose();
   };
+  async function start() {
+    setStarting(true);
+    setError('');
+    try {
+      await queueBatch(requestKey, items);
+      close();
+    } catch (e) {
+      setError(`Not started. ${(e as Error).message}`);
+    } finally {
+      setStarting(false);
+    }
+  }
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && close()}>
@@ -490,9 +543,7 @@ function ConfirmNotify({
           <>
             <header className="border-b px-6 pt-5 pb-4 pr-14">
               <SheetTitle>Notify today&apos;s customers?</SheetTitle>
-              <SheetDescription>
-                Simulated: messages go to a sample gateway in this browser tab. No SMS leaves this device.
-              </SheetDescription>
+              <SheetDescription>The gateway phone sends them one at a time, from the branch SIM.</SheetDescription>
             </header>
             <div className="flex-1 overflow-y-auto px-6 py-5">
               <dl className="grid grid-cols-3 gap-3">
@@ -512,15 +563,6 @@ function ConfirmNotify({
               <p className="mt-2 text-sm text-muted-foreground">
                 {combined} combined, {items.length - combined} individual. One SMS per phone number. Parcels already notified are left out.
               </p>
-              {plan.older.length > 0 && (
-                <label className="mt-4 flex min-h-11 items-start gap-2 text-sm">
-                  <input type="checkbox" checked={older} onChange={(e) => setOlder(e.target.checked)} className="mt-0.5 size-4 accent-primary" />
-                  <span>
-                    Also notify {plan.older.length} earlier {plan.older.length === 1 ? 'arrival' : 'arrivals'} that were never notified. Each earlier day gets its
-                    own SMS; they never join today&apos;s messages.
-                  </span>
-                </label>
-              )}
               {plan.noPhoneToday.length > 0 && (
                 <p className="mt-3 rounded-md bg-warning-tint px-3 py-2 text-sm text-warning">
                   {plan.noPhoneToday.length === 1 ? "1 of today's parcels has no phone number and is" : `${plan.noPhoneToday.length} of today's parcels have no phone number and are`}{' '}
@@ -538,19 +580,18 @@ function ConfirmNotify({
             </div>
             {/* Outside the scrolling list, so Start queue stays in view however many customers there are. */}
             <footer className="flex flex-wrap items-center gap-2 border-t px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-              <Button
-                disabled={items.length === 0}
-                onClick={() => {
-                  queueBatch(items);
-                  close();
-                }}
-              >
+              <Button disabled={items.length === 0 || starting} onClick={start}>
                 <Send aria-hidden />
-                Start queue ({items.length} SMS)
+                {starting ? 'Starting…' : `Start queue (${items.length} SMS)`}
               </Button>
               <Button variant="outline" onClick={close}>
                 Cancel
               </Button>
+              {error && (
+                <p role="alert" className="w-full text-sm text-destructive">
+                  {error}
+                </p>
+              )}
             </footer>
           </>
         )}
@@ -762,11 +803,14 @@ function RetrySheet({ event, data, onClose }: { event: ContactEvent | null; data
   const [text, setText] = useState('');
   const [key, setKey] = useState<string | null>(null);
   const [sendAnyway, setSendAnyway] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   if (event && data && key !== event.id) {
     const name = data.parcels.find((p) => p.code === event.parcelCodes[0])?.recipient ?? '';
     setKey(event.id);
     setText(event.message || composeMessage(name, event.parcelCodes, getSettings().templates));
     setSendAnyway(false);
+    setError('');
   }
   // Re-checked at confirm time: another tab or a scan may have sent one meanwhile.
   const blocked = !!event && !!data && smsInFlight(event.parcelCodes, data.events);
@@ -821,7 +865,7 @@ function RetrySheet({ event, data, onClose }: { event: ContactEvent | null; data
                 rows={5}
                 className="mt-1 w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-base sm:text-sm"
               />
-              <p className="mt-2 text-sm text-muted-foreground">This sends one new SMS linked to the same parcels. The earlier attempt stays in the history.</p>
+              <p className="mt-2 text-sm text-muted-foreground">This sends the same message again as a new attempt (a new message if you edit it). The earlier attempt stays in the history.</p>
               {data && event.parcelCodes.every((c) => reachedByStaff(c, data.events)) && (
                 <p className="mt-2 text-sm">Staff already reached this customer another way, so this message may not be needed.</p>
               )}
@@ -832,10 +876,18 @@ function RetrySheet({ event, data, onClose }: { event: ContactEvent | null; data
               )}
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button
-                  disabled={blocked || !text.trim() || (uncertain && !sendAnyway)}
-                  onClick={() => {
-                    queueSms(event.phone, event.parcelCodes, text);
-                    onClose();
+                  disabled={blocked || saving || !text.trim() || (uncertain && !sendAnyway)}
+                  onClick={async () => {
+                    setSaving(true);
+                    setError('');
+                    try {
+                      await queueSms(event.phone, event.parcelCodes, text, { retryOf: event.id });
+                      onClose();
+                    } catch (e) {
+                      setError(`Not queued. ${(e as Error).message}`);
+                    } finally {
+                      setSaving(false);
+                    }
                   }}
                 >
                   <Send aria-hidden />
@@ -845,6 +897,11 @@ function RetrySheet({ event, data, onClose }: { event: ContactEvent | null; data
                   Cancel
                 </Button>
               </div>
+              {error && (
+                <p role="alert" className="mt-2 text-sm text-destructive">
+                  {error}
+                </p>
+              )}
             </div>
           </>
         )}

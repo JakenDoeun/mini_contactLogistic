@@ -121,7 +121,7 @@ export function BackupCard() {
                     id="retention-days"
                     value={chosen}
                     onChange={(e) => (setDays(Number(e.target.value)), setDaysState('idle'))}
-                    className="h-9 rounded-md border border-input bg-card px-3 text-sm"
+                    className="h-9 rounded-md border border-input bg-card px-3 text-base sm:text-sm"
                   >
                     {DAY_CHOICES.map((d) => (
                       <option key={d} value={d}>

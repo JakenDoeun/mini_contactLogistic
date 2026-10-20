@@ -7,14 +7,13 @@ import {
   eligibleForMessage,
   formatPhone,
   groupByPhone,
-  groupContactStatus,
   groupSmsStatus,
   phoneKey,
   type ContactEvent,
   type Parcel,
 } from '@/lib/parcel-logic';
 import { cn } from '@/lib/utils';
-import { ContactBadge, SmsBadge } from './parcel-status';
+import { SmsBadge } from './parcel-status';
 import { batchLabel, GroupList } from './phone-group';
 
 const newestFirst = (a: Parcel, b: Parcel) => b.importedAt.localeCompare(a.importedAt);
@@ -71,14 +70,13 @@ export function PhoneGroups({
           const day = batchLabel(g.day);
           const names = [...new Set(g.members.map((p) => p.recipient))];
           const sms = groupSmsStatus(g.members.map((p) => p.code), events);
-          const contact = groupContactStatus(g.members.map((p) => p.code), events);
           const panel = `group-${g.day}-${g.phone}`;
           return (
             <li key={id} className="relative border-b last:border-b-0">
               {/* A thin periwinkle bar marks lines with new parcels nobody has told the customer about. */}
               {g.eligible.length > 0 && <span aria-hidden className="absolute inset-y-3 left-0 w-0.75 rounded-r-full bg-primary" />}
               {/* Phones: number and action on one line, counts below. Wide screens: every count in its own aligned column. */}
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 px-4 py-3 sm:px-5 xl:grid-cols-[minmax(0,1fr)_7rem_8rem_9.5rem_11rem_12rem]">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 px-4 py-3 sm:px-5 xl:grid-cols-[minmax(0,1fr)_7rem_8rem_9.5rem_12rem]">
                 <button
                   type="button"
                   onClick={() => toggle(id)}
@@ -111,9 +109,8 @@ export function PhoneGroups({
                       </span>
                     )}
                   </span>
-                  {/* Each status shows only once it is past its starting point: "not sent" is what the to-notify count says. */}
+                  {/* "Not sent" is what the to-notify count says, so the SMS status shows only once one was sent. */}
                   <span>{sms !== 'not-sent' && <SmsBadge status={sms} />}</span>
-                  <span>{contact !== 'needs-contact' && <ContactBadge status={contact} />}</span>
                 </span>
                 <span className="col-start-2 row-start-1 justify-self-end xl:col-start-auto xl:row-start-auto">
                   <Button size="sm" variant="outline" onClick={() => onOpen((g.eligible[0] ?? g.members[0]).code)}>

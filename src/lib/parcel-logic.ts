@@ -2,10 +2,9 @@
 // Statuses are derived from the append-only event log, so history is never overwritten.
 
 export type SmsStatus = 'not-sent' | 'queued' | 'sending' | 'sent' | 'delivered' | 'failed' | 'unconfirmed';
-export type ContactStatus = 'needs-contact' | 'attempted' | 'follow-up' | 'contacted';
-// 'flag' is staff marking parcels for follow-up: an entry in the contact history, not a message or call.
-export type Channel = 'sms' | 'call' | 'telegram' | 'flag';
-export type Outcome = 'answered' | 'no-answer' | 'messaged' | 'follow-up';
+// Calls and Telegram are history entries only: SMS is the one status a parcel has (owner, 2026-10-20).
+export type Channel = 'sms' | 'call' | 'telegram';
+export type Outcome = 'answered' | 'no-answer' | 'messaged';
 
 export interface Parcel {
   id: number;
@@ -27,7 +26,7 @@ export interface ContactEvent {
   smsStatus?: SmsStatus; // sms only
   message?: string; // sms only
   result?: string; // gateway or staff note
-  outcome?: Outcome; // call, telegram and flag only
+  outcome?: Outcome; // call and telegram only
 }
 
 export const SMS_STATUSES: SmsStatus[] = ['not-sent', 'queued', 'sending', 'sent', 'delivered', 'failed', 'unconfirmed'];
@@ -66,30 +65,16 @@ export function smsStatusOf(code: string, events: ContactEvent[]): SmsStatus {
   return eventsFor(code, events).find((e) => e.channel === 'sms')?.smsStatus ?? 'not-sent';
 }
 
-// Only staff-recorded outcomes count. A gateway accepting or delivering an SMS is not contact.
-// A staff follow-up flag holds until a later "Reached customer" resolves it.
-export function contactStatusOf(code: string, events: ContactEvent[]): ContactStatus {
-  const manual = eventsFor(code, events).filter((e) => e.outcome); // newest first
-  const flag = manual.findIndex((e) => e.outcome === 'follow-up');
-  const answer = manual.findIndex((e) => e.outcome === 'answered');
-  if (flag !== -1 && (answer === -1 || flag < answer)) return 'follow-up';
-  if (answer !== -1) return 'contacted';
-  const tries = manual.filter((e) => e.channel !== 'flag').length;
-  return tries >= 2 ? 'follow-up' : tries === 1 ? 'attempted' : 'needs-contact';
-}
+// A call that reached the customer stops the SMS for those parcels, so nobody is told twice. A gateway accepting or
+// delivering an SMS is not this.
+export const reachedByStaff = (code: string, events: ContactEvent[]) => eventsFor(code, events).some((e) => e.outcome === 'answered');
 
-// A phone line's one-glance status is the most urgent of its parcels' own statuses; each parcel keeps its own.
+// A phone line's one-glance SMS status is the most urgent of its parcels' own; each parcel keeps its own.
 const SMS_URGENCY: SmsStatus[] = ['failed', 'unconfirmed', 'sending', 'queued', 'sent', 'delivered', 'not-sent'];
-const CONTACT_URGENCY: ContactStatus[] = ['follow-up', 'attempted', 'needs-contact', 'contacted'];
 
 export function groupSmsStatus(codes: string[], events: ContactEvent[]): SmsStatus {
   const seen = new Set(codes.map((c) => smsStatusOf(c, events)));
   return SMS_URGENCY.find((s) => seen.has(s)) ?? 'not-sent';
-}
-
-export function groupContactStatus(codes: string[], events: ContactEvent[]): ContactStatus {
-  const seen = new Set(codes.map((c) => contactStatusOf(c, events)));
-  return CONTACT_URGENCY.find((s) => seen.has(s)) ?? 'needs-contact';
 }
 
 /**
@@ -101,15 +86,13 @@ export function phoneGroup(parcel: Parcel, parcels: Parcel[]) {
   return parcels.filter((p) => p.code === parcel.code || (key !== null && phoneKey(p.phone) === key && p.arrivalDate === parcel.arrivalDate));
 }
 
-export type ParcelFilter = 'all' | 'needs-contact' | 'sms-failed' | 'follow-up' | 'contacted' | 'no-phone';
+export type ParcelFilter = 'all' | 'sms-failed' | 'no-phone';
 
-/** The Parcels page filters. SMS Failed reads the SMS system only; the rest read the contact system only. */
+/** The Parcels page filters. */
 export function inFilter(parcel: Parcel, events: ContactEvent[], filter: ParcelFilter) {
-  const code = parcel.code;
-  if (filter === 'all') return true;
   if (filter === 'no-phone') return phoneKey(parcel.phone) === null;
-  if (filter === 'sms-failed') return smsStatusOf(code, events) === 'failed';
-  return contactStatusOf(code, events) === filter;
+  if (filter === 'sms-failed') return smsStatusOf(parcel.code, events) === 'failed';
+  return true;
 }
 
 /** Parcels on one phone line in one arrival batch, newest first. Grouped by phone, never by name; the newest name is shown. */
@@ -155,7 +138,7 @@ export const smsScope = (count: number) => (count === 1 ? 'Individual SMS · 1 p
 /** Parcels a new message should cover: a valid phone, never messaged, and not already reached by other means. */
 export function eligibleForMessage(group: Parcel[], events: ContactEvent[]) {
   return group.filter(
-    (p) => phoneKey(p.phone) !== null && smsStatusOf(p.code, events) === 'not-sent' && contactStatusOf(p.code, events) !== 'contacted',
+    (p) => phoneKey(p.phone) !== null && smsStatusOf(p.code, events) === 'not-sent' && !reachedByStaff(p.code, events),
   );
 }
 

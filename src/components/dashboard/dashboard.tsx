@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ArrowRight, CircleCheck, CircleDashed, CircleX, FileUp, FolderSearch, PhoneOff, ScanBarcode, Send, type LucideIcon } from 'lucide-react';
-import { ContactBadge, SmsBadge } from '@/components/parcels/parcel-status';
+import { SmsBadge } from '@/components/parcels/parcel-status';
 import { batchLabel, GroupBadge, toNotifyLine } from '@/components/parcels/phone-group';
 import { StatusBadge } from '@/components/import/status-badge';
 import { SampleDataNotice } from '@/components/shared/sample-data-notice';
@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { dayProgress, workList, type DayProgress, type WorkGroup } from '@/lib/dashboard-logic';
 import { getFolder, listImports, type ImportListItem } from '@/lib/import-api';
 import { useParcelData, useParcelError } from '@/lib/mock/parcel-service';
-import { arrivalDay, formatPhone, smsScope, type ContactStatus, type SmsStatus } from '@/lib/parcel-logic';
+import { arrivalDay, formatPhone, smsScope, type SmsStatus } from '@/lib/parcel-logic';
 import { cn, formatDateTime } from '@/lib/utils';
 
 const SHOWN = 4;
@@ -147,7 +147,7 @@ function TodayArrivals({ progress, error }: { progress: DayProgress | null; erro
 
 function Attention({ work, waiting, error }: { work: ReturnType<typeof workList> | null; waiting: number | null; error: string | null }) {
   const loading = !work || waiting === null;
-  const empty = !loading && !waiting && !work.retry.length && !work.toMessage.length && !work.followUp.length && !work.noPhone.length;
+  const empty = !loading && !waiting && !work.retry.length && !work.toMessage.length && !work.noPhone.length;
 
   return (
     <section aria-labelledby="attention-heading" className="rounded-md border bg-card">
@@ -170,7 +170,7 @@ function Attention({ work, waiting, error }: { work: ReturnType<typeof workList>
           <CircleCheck className="mt-0.5 size-5 text-success" aria-hidden />
           <div>
             <p className="font-medium">All caught up</p>
-            <p className="mt-0.5 text-muted-foreground">No files to review, no messages to send or retry, no follow-ups and no missing phone numbers.</p>
+            <p className="mt-0.5 text-muted-foreground">No files to review, no messages to send or retry and no missing phone numbers.</p>
           </div>
         </div>
       ) : (
@@ -210,20 +210,6 @@ function Attention({ work, waiting, error }: { work: ReturnType<typeof workList>
                 <GroupItem key={`${g.day}|${g.phone}`} group={g} codesLabel={`${toNotifyLine(g.codes.length, g.size)}${arrived(g.day)}`} />
               ))}
               <More shown={SHOWN} total={work.toMessage.length} />
-            </Block>
-          )}
-
-          {work.followUp.length > 0 && (
-            <Block
-              title="Follow-up needed"
-              count={tally(work.followUp)}
-              hint="Marked for follow-up, or called twice without an answer. Stays here until someone reaches the customer."
-              action={{ href: '/parcels?filter=follow-up', label: 'Open in Parcels' }}
-            >
-              {work.followUp.slice(0, SHOWN).map((g) => (
-                <GroupItem key={`${g.day}|${g.phone}`} group={g} status="follow-up" codesLabel={`Follow-up${arrived(g.day)}`} />
-              ))}
-              <More shown={SHOWN} total={work.followUp.length} />
             </Block>
           )}
 
@@ -322,12 +308,9 @@ function Item({
   );
 }
 
-const GroupItem = ({ group: g, status, codesLabel }: { group: WorkGroup; status?: ContactStatus; codesLabel: string }) => (
+const GroupItem = ({ group: g, codesLabel }: { group: WorkGroup; codesLabel: string }) => (
   <Item href={`/parcels?q=${encodeURIComponent(g.phone)}`} title={g.recipient} sub={formatPhone(g.phone)} codes={g.codes} codesLabel={codesLabel}>
-    <span className="flex flex-wrap gap-1.5">
-      <GroupBadge size={g.size} />
-      {status && <ContactBadge status={status} />}
-    </span>
+    <GroupBadge size={g.size} />
   </Item>
 );
 

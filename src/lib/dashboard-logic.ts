@@ -3,12 +3,12 @@
 import {
   canRetry,
   composeMessage,
-  contactStatusOf,
   DEFAULT_TEMPLATES,
   eligibleForMessage,
   arrivalDay,
   groupByPhone,
   phoneKey,
+  reachedByStaff,
   smsInFlight,
   smsStatusOf,
   type ContactEvent,
@@ -26,8 +26,6 @@ export interface WorkList {
   retry: ContactEvent[];
   /** Phone lines with parcels nobody has messaged or reached yet, and nothing waiting at the gateway. */
   toMessage: WorkGroup[];
-  /** Phone lines with parcels flagged for follow-up, or with calls unanswered twice or more. */
-  followUp: WorkGroup[];
   /** Parcels without a valid phone number: nobody can be messaged until staff add one. */
   noPhone: Parcel[];
   /** SMS waiting at the gateway: no action, but a reason not to send again. */
@@ -35,9 +33,7 @@ export interface WorkList {
 }
 
 export function workList(parcels: Parcel[], events: ContactEvent[]): WorkList {
-  const all = groupByPhone(parcels);
-  const size = new Map(all.map((g) => [`${g.day}|${g.phone}`, g.codes.length]));
-  const toMessage = all
+  const toMessage = groupByPhone(parcels)
     .filter((g) => g.phone !== '') // no valid phone: listed under noPhone instead
     .map((g) => {
       const group = parcels.filter((p) => phoneKey(p.phone) === g.phone && p.arrivalDate === g.day);
@@ -48,10 +44,6 @@ export function workList(parcels: Parcel[], events: ContactEvent[]): WorkList {
   return {
     retry: events.filter((e) => canRetry(e, events)).sort((a, b) => b.at.localeCompare(a.at)),
     toMessage,
-    followUp: groupByPhone(parcels.filter((p) => contactStatusOf(p.code, events) === 'follow-up')).map((g) => ({
-      ...g,
-      size: g.phone ? size.get(`${g.day}|${g.phone}`)! : 1,
-    })),
     noPhone: parcels.filter((p) => phoneKey(p.phone) === null).sort((a, b) => b.importedAt.localeCompare(a.importedAt)),
     inFlight: events.filter((e) => e.channel === 'sms' && (e.smsStatus === 'queued' || e.smsStatus === 'sending')).length,
   };
@@ -115,7 +107,7 @@ export function dayProgress(parcels: Parcel[], events: ContactEvent[], day: stri
   for (const p of parcels) {
     if (p.arrivalDate !== day) continue;
     const sms = smsStatusOf(p.code, events);
-    if (sms === 'sent' || sms === 'delivered' || contactStatusOf(p.code, events) === 'contacted') out.done++;
+    if (sms === 'sent' || sms === 'delivered' || reachedByStaff(p.code, events)) out.done++;
     else if (sms === 'queued' || sms === 'sending') out.sending++;
     else if (sms === 'failed' || sms === 'unconfirmed') out.retry++;
     else if (phoneKey(p.phone) === null) out.noPhone++;

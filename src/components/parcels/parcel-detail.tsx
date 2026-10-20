@@ -2,12 +2,11 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Boxes, Flag, MessageSquare, Pencil, Phone, Plus, Send } from 'lucide-react';
+import { Boxes, MessageSquare, Pencil, Phone, Plus, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   contactLine,
-  contactStatusOf,
   eligibleForMessage,
   eventsFor,
   formatPhone,
@@ -22,7 +21,7 @@ import {
 import { updatePhone, type ParcelData } from '@/lib/mock/parcel-service';
 import { formatDateTime } from '@/lib/utils';
 import { ContactPanel } from './contact-panel';
-import { ContactBadge, PhoneText, SmsBadge } from './parcel-status';
+import { PhoneText, SmsBadge } from './parcel-status';
 import { batchLabel, GroupList } from './phone-group';
 
 /**
@@ -76,7 +75,6 @@ export function ParcelDetail({
               <dt className="text-muted-foreground">Status</dt>
               <dd className="flex flex-wrap gap-1.5">
                 <SmsBadge status={smsStatusOf(parcel.code, data.events)} />
-                <ContactBadge status={contactStatusOf(parcel.code, data.events)} />
               </dd>
               <dt className="text-muted-foreground">Arrived</dt>
               <dd>{arrivedText(parcel.arrivalDate)}</dd>
@@ -220,9 +218,9 @@ function PhoneField({ parcel }: { parcel: Parcel }) {
   );
 }
 
-const CHANNEL = { sms: Send, call: Phone, telegram: MessageSquare, flag: Flag };
-const OUTCOME_LABEL = { answered: 'Reached customer', 'no-answer': 'No answer', messaged: 'Sent on Telegram', 'follow-up': 'Marked for follow-up' };
-const CHANNEL_LABEL = { call: 'Call: ', telegram: 'Telegram: ', flag: '' };
+const CHANNEL = { sms: Send, call: Phone, telegram: MessageSquare };
+const OUTCOME_LABEL = { answered: 'Reached customer', 'no-answer': 'No answer', messaged: 'Sent on Telegram' };
+const CHANNEL_LABEL = { call: 'Call: ', telegram: 'Telegram: ' };
 
 function History({ events }: { events: ContactEvent[] }) {
   return (

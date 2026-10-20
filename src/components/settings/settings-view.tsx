@@ -282,7 +282,7 @@ function TemplateSection({ settings }: { settings: Settings }) {
                 rows={4}
                 aria-invalid={!!shown}
                 aria-describedby={shown ? `error-${name}` : undefined}
-                className="w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-sm"
+                className="w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-base sm:text-sm"
               />
             </Field>
             <div>

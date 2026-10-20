@@ -4,16 +4,15 @@ import {
   contactLine,
   composeMessage,
   groupByPhone,
-  contactStatusOf,
   eligibleForMessage,
   normalizePhone,
   phoneGroup,
   smsInFlight,
   addNewParcels,
   canRetry,
-  groupContactStatus,
   groupSmsStatus,
   inFilter,
+  reachedByStaff,
   smsStatusOf,
   type ContactEvent,
   type Parcel,
@@ -42,20 +41,17 @@ test('groups by phone, never by name', () => {
   assert.deepEqual(phoneGroup(a, parcels).map((x) => x.code), ['A', 'B']);
 });
 
-test('SMS and contact status stay independent', () => {
+test('a call is history only: it never changes the SMS status, and only a reached customer stops the SMS', () => {
   const events = [
     ev('1', '2026-10-10T09:00:00Z', { parcelCodes: ['A'], smsStatus: 'failed' }),
     ev('2', '2026-10-10T10:00:00Z', { channel: 'call', parcelCodes: ['A'], outcome: 'answered' }),
+    ev('3', '2026-10-10T10:00:00Z', { channel: 'call', parcelCodes: ['B'], outcome: 'no-answer' }),
+    ev('4', '2026-10-10T10:00:00Z', { channel: 'telegram', parcelCodes: ['C'], outcome: 'messaged' }),
   ];
   assert.equal(smsStatusOf('A', events), 'failed');
-  assert.equal(contactStatusOf('A', events), 'contacted');
-});
-
-test('attempts accumulate instead of overwriting', () => {
-  const miss = (id: string, at: string) => ev(id, at, { channel: 'call', parcelCodes: ['A'], outcome: 'no-answer' });
-  assert.equal(contactStatusOf('A', [miss('1', '1')]), 'attempted');
-  assert.equal(contactStatusOf('A', [miss('1', '1'), miss('2', '2')]), 'follow-up');
-  assert.equal(contactStatusOf('B', [miss('1', '1')]), 'needs-contact');
+  assert.deepEqual(['A', 'B', 'C'].map((c) => reachedByStaff(c, events)), [true, false, false]);
+  const group = [p('A', 'x', '012345678'), p('B', 'x', '012345678'), p('C', 'x', '012345678')];
+  assert.deepEqual(eligibleForMessage(group, events.slice(1)).map((x) => x.code), ['B', 'C']);
 });
 
 test('a new arrival is messaged alone; earlier notified parcels are left out', () => {
@@ -82,7 +78,7 @@ test('a failed SMS can be retried once; the retry replaces it', () => {
   assert.equal(canRetry(sent, [sent]), false);
 });
 
-test('filters read one status system each: a failed SMS then a reached call is in SMS Failed and Contacted', () => {
+test('filters: SMS Failed reads the SMS status only; a reached call does not take a parcel out of it', () => {
   const events = [
     ev('1', '2026-10-10T09:00:00Z', { parcelCodes: ['A'], smsStatus: 'failed' }),
     ev('2', '2026-10-10T10:00:00Z', { parcelCodes: ['A'], channel: 'call', outcome: 'answered' }),
@@ -92,9 +88,6 @@ test('filters read one status system each: a failed SMS then a reached call is i
   const pick = (f: Parameters<typeof inFilter>[2]) => ['A', 'B', 'C'].filter((c) => inFilter(p(c, c, '011 111 111'), events, f));
   assert.deepEqual(pick('all'), ['A', 'B', 'C']);
   assert.deepEqual(pick('sms-failed'), ['A']);
-  assert.deepEqual(pick('contacted'), ['A']);
-  assert.deepEqual(pick('follow-up'), ['B']);
-  assert.deepEqual(pick('needs-contact'), ['C']);
 });
 
 test('a missing or invalid phone never groups, even with the same name', () => {
@@ -112,24 +105,13 @@ test('adding a phone number puts the parcel into its phone group', () => {
   assert.deepEqual(phoneGroup(fixed[0], fixed).map((x) => x.code), ['A', 'B']);
 });
 
-test('a follow-up flag holds over earlier contact and clears only on a later answered call', () => {
-  const flag = ev('2', '2026-10-10T10:00:00Z', { parcelCodes: ['A'], channel: 'flag', outcome: 'follow-up' });
-  const answered = (at: string) => ev(at, at, { parcelCodes: ['A'], channel: 'call', outcome: 'answered' });
-  assert.equal(contactStatusOf('A', [flag]), 'follow-up');
-  assert.equal(contactStatusOf('A', [answered('2026-10-10T09:00:00Z'), flag]), 'follow-up');
-  assert.equal(contactStatusOf('A', [flag, answered('2026-10-10T11:00:00Z')]), 'contacted');
-  const noAnswer = ev('3', '2026-10-10T11:00:00Z', { parcelCodes: ['B'], channel: 'call', outcome: 'no-answer' });
-  const flagB = { ...flag, id: '4', parcelCodes: ['B'] };
-  assert.equal(contactStatusOf('B', [flagB, noAnswer]), 'follow-up'); // a no-answer does not resolve it
-});
-
 test('re-imported codes keep their saved phone, name and history', () => {
   const existing = [p('A', 'Sokha', '099 111 222')]; // staff corrected the phone
   const merged = addNewParcels(existing, [p('A', 'Sokha Chan', '012 345 678'), p('B', 'b', '011 111 111'), p('B', 'b', '011 111 111')]);
   assert.deepEqual(merged.map((x) => [x.code, x.phone]), [['A', '099 111 222'], ['B', '011 111 111']]);
 });
 
-test("a phone line's summary shows its most urgent SMS and contact status, each system on its own", () => {
+test("a phone line's summary shows its most urgent SMS status", () => {
   const events = [
     ev('1', '2026-10-10T08:00:00Z', { parcelCodes: ['A'], smsStatus: 'delivered' }),
     ev('2', '2026-10-10T09:00:00Z', { parcelCodes: ['B'], smsStatus: 'failed' }),
@@ -138,8 +120,6 @@ test("a phone line's summary shows its most urgent SMS and contact status, each 
   assert.equal(groupSmsStatus(['A', 'B', 'C'], events), 'failed'); // the answered call does not hide the failed SMS
   assert.equal(groupSmsStatus(['A', 'C'], events), 'delivered'); // C's "not sent" is told by the to-notify count
   assert.equal(groupSmsStatus(['C'], events), 'not-sent');
-  assert.equal(groupContactStatus(['B'], events), 'contacted');
-  assert.equal(groupContactStatus(['A', 'B'], events), 'needs-contact'); // A still has to be reached
 });
 
 test('the contact line says what one SMS would cover, without repeating the count', () => {

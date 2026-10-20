@@ -9,7 +9,6 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
-  contactStatusOf,
   eligibleForMessage,
   formatPhone,
   inFilter,
@@ -26,17 +25,14 @@ import { DateFilter } from '@/components/shared/date-filter';
 import { SampleDataNotice } from '@/components/shared/sample-data-notice';
 import { cn, formatDateTime } from '@/lib/utils';
 import { ParcelDetail } from './parcel-detail';
-import { ContactBadge, PhoneText, SmsBadge } from './parcel-status';
+import { PhoneText, SmsBadge } from './parcel-status';
 import { PhoneGroups } from './phone-groups';
 import { GroupBadge, GroupList, toNotifyLine } from './phone-group';
 
 // The counts double as the filters, so the summary and the filter can never disagree.
 const FILTERS: { key: ParcelFilter; label: string; empty: string }[] = [
   { key: 'all', label: 'All parcels', empty: 'No parcels yet' },
-  { key: 'needs-contact', label: 'Needs contact', empty: 'Nobody is waiting for a first contact' },
   { key: 'sms-failed', label: 'SMS failed', empty: 'No failed SMS' },
-  { key: 'follow-up', label: 'Follow-up needed', empty: 'No follow-ups needed' },
-  { key: 'contacted', label: 'Contacted', empty: 'No parcels marked contacted yet' },
   { key: 'no-phone', label: 'No phone number', empty: 'Every parcel has a phone number' },
 ];
 
@@ -82,7 +78,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
     if (key) onLine.set(key, (onLine.get(key) ?? 0) + 1);
   }
   const sizeOf = (p: Parcel) => onLine.get(batchKey(p) ?? '') ?? 1; // no valid phone: never grouped
-  // Counts follow the date, so "Needs contact" reads as "needs contact among parcels that arrived then".
+  // Counts follow the date, so "SMS failed" reads as "failed among parcels that arrived then".
   const arrivedIn = (p: Parcel) => inDateRange(`${p.arrivalDate}T00:00:00`, dates); // local midnight of the arrival day
   const dated = data?.parcels.filter(arrivedIn) ?? [];
   const count = (f: ParcelFilter) => dated.filter((p) => inFilter(p, events, f)).length;
@@ -124,10 +120,8 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
           {p.recipient} · <PhoneText raw={p.phone} />
         </span>
         <GroupBadge size={sizeOf(p)} onClick={() => setGroupOf(p.code)} className="mt-1 xl:hidden" />
-        {/* Phones: one stacked cell, so each badge names its own system. */}
         <span className="mt-1.5 flex flex-wrap gap-1 md:hidden">
           <SmsBadge status={smsStatusOf(p.code, events)} />
-          <ContactBadge status={contactStatusOf(p.code, events)} />
         </span>
       </TableCell>
       <TableCell className="hidden md:table-cell">{p.recipient}</TableCell>
@@ -156,9 +150,6 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
       <TableCell className="hidden md:table-cell">
         <SmsBadge status={smsStatusOf(p.code, events)} bare />
       </TableCell>
-      <TableCell className="hidden md:table-cell">
-        <ContactBadge status={contactStatusOf(p.code, events)} bare />
-      </TableCell>
       <TableCell className="hidden text-right xl:table-cell">
         <Button
           variant="ghost"
@@ -181,7 +172,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight">Parcels</h1>
-          <p className="mt-1 text-muted-foreground">Every parcel in the branch records. Find one, check who still needs contacting, or fix a phone number.</p>
+          <p className="mt-1 text-muted-foreground">Every parcel in the branch records. Find one, check its SMS, or fix a phone number.</p>
         </div>
         <div className="relative w-full md:max-w-sm">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
@@ -201,7 +192,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
       </div>
 
       <SampleDataNotice>
-        Parcels and phone numbers are saved. Messages, calls and follow-up notes are not saved yet: they reset when the page reloads, and no SMS leaves this device.
+        Parcels and phone numbers are saved. Messages and calls are not saved yet: they reset when the page reloads, and no SMS leaves this device.
       </SampleDataNotice>
 
       {!loadFailed && (
@@ -344,7 +335,6 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
                     <TableHead className="hidden 2xl:table-cell">Imported</TableHead>
                     <TableHead className="hidden xl:table-cell">Same phone</TableHead>
                     <TableHead className="hidden md:table-cell">SMS</TableHead>
-                    <TableHead className="hidden md:table-cell">Contact</TableHead>
                     <TableHead className="hidden xl:table-cell">
                       <span className="sr-only">Actions</span>
                     </TableHead>
@@ -354,7 +344,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
                   {!rows
                     ? Array.from({ length: 6 }, (_, i) => (
                         <TableRow key={i}>
-                          <TableCell colSpan={8}>
+                          <TableCell colSpan={7}>
                             <Skeleton className="h-5 w-full" />
                           </TableCell>
                         </TableRow>

@@ -9,6 +9,7 @@ import {
   isValidPhone,
   normalizePhone,
   smsInFlight,
+  smsStatusOf,
   telegramLink,
   type ContactEvent,
   type Outcome,
@@ -18,18 +19,19 @@ import { queueSms, recordOutcome } from '@/lib/mock/parcel-service';
 import { useSettings } from '@/lib/mock/use-settings';
 import { SmsBadge } from './parcel-status';
 
-type Asked = 'call' | 'telegram';
-const OUTCOMES: Record<Asked, { channel: 'call' | 'telegram' | 'flag'; outcome: Outcome; label: string; saved: string }[]> = {
-  call: [
-    { channel: 'call', outcome: 'answered', label: 'Reached', saved: 'Saved: call reached the customer.' },
-    { channel: 'call', outcome: 'no-answer', label: 'No answer', saved: 'Saved: call not answered.' },
-    { channel: 'flag', outcome: 'follow-up', label: 'Follow up later', saved: 'Saved: marked for follow-up until someone reaches the customer.' },
-  ],
-  telegram: [
-    { channel: 'telegram', outcome: 'messaged', label: 'Sent on Telegram', saved: 'Saved: message sent on Telegram.' },
-    { channel: 'flag', outcome: 'follow-up', label: 'Follow up later', saved: 'Saved: marked for follow-up until someone reaches the customer.' },
-  ],
+// 'record' is a call or Telegram message made outside the app, from another phone or typed in by hand.
+type Asked = 'call' | 'telegram' | 'record';
+const CALL = [
+  { channel: 'call', outcome: 'answered', label: 'Reached', saved: 'Saved: call reached the customer.' },
+  { channel: 'call', outcome: 'no-answer', label: 'No answer', saved: 'Saved: call not answered.' },
+] as const;
+const TELEGRAM = [{ channel: 'telegram', outcome: 'messaged', label: 'Sent on Telegram', saved: 'Saved: message sent on Telegram.' }] as const;
+const OUTCOMES: Record<Asked, readonly { channel: 'call' | 'telegram'; outcome: Outcome; label: string; saved: string }[]> = {
+  call: CALL,
+  telegram: TELEGRAM,
+  record: [...CALL, ...TELEGRAM],
 };
+const QUESTION: Record<Asked, string> = { call: 'How did the call go?', telegram: 'Did you send it?', record: 'What happened?' };
 
 const parcels = (n: number) => `${n} parcel${n === 1 ? '' : 's'}`;
 
@@ -91,7 +93,7 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
                 onChange={(e) => setDraft({ key: draftKey, text: e.target.value })}
                 rows={4}
                 autoFocus
-                className="mt-1 w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-sm"
+                className="mt-1 w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-base sm:text-sm"
               />
               <p className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>{draft.text.length} characters</span>
@@ -146,7 +148,11 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
       {inFlight && <p className="-mt-2 text-sm text-muted-foreground">An SMS for these parcels is already waiting at the gateway.</p>}
       {before > 0 && !again && !inFlight && (
         <button type="button" onClick={() => setAgain(true)} className="-mt-2 min-h-11 self-start text-sm font-medium text-primary sm:min-h-8">
-          {eligible.length === 0 ? 'Send the SMS again' : `Include the ${before} messaged before`}
+          {eligible.length > 0
+            ? `Include the ${before} messaged or reached before`
+            : group.some((p) => smsStatusOf(p.code, events) !== 'not-sent')
+              ? 'Send the SMS again'
+              : 'Send an SMS anyway'}
         </button>
       )}
       {again && (
@@ -155,11 +161,17 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
         </button>
       )}
 
+      {!asked && (
+        <button type="button" onClick={() => setAsked('record')} className="-mt-2 min-h-11 self-start text-sm font-medium text-primary sm:min-h-8">
+          Called or messaged already? Record it
+        </button>
+      )}
+
       {asked && (
         <fieldset className="rounded-md bg-secondary px-3 py-3">
           <legend className="sr-only">What happened</legend>
           <p aria-hidden className="text-sm font-medium">
-            {asked === 'call' ? 'How did the call go?' : 'Did you send it?'}
+            {QUESTION[asked]}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {OUTCOMES[asked].map((o) => (
@@ -177,6 +189,9 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
                 {o.label}
               </Button>
             ))}
+            <Button size="sm" variant="ghost" onClick={() => setAsked(null)}>
+              Cancel
+            </Button>
           </div>
         </fieldset>
       )}

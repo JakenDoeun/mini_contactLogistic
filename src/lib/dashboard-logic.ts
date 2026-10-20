@@ -60,8 +60,10 @@ export interface NotifyItem {
 }
 
 export interface NotifyPlan {
-  /** Phone lines with eligible parcels in today's arrival batch. Earlier batches are not sent automatically. */
+  /** Phone lines with eligible parcels in today's arrival batch. */
   today: NotifyItem[];
+  /** The same for earlier batches: sent only one day at a time, after staff review, never with today's. */
+  older: NotifyItem[];
   /** Today's parcels that cannot be messaged until staff add a phone number. */
   noPhoneToday: Parcel[];
 }
@@ -82,6 +84,7 @@ export function planNotify(parcels: Parcel[], events: ContactEvent[], now: Date,
   }));
   return {
     today: items.filter((i) => i.day === today),
+    older: items.filter((i) => i.day !== today),
     noPhoneToday: parcels.filter((p) => p.arrivalDate === today && phoneKey(p.phone) === null),
   };
 }

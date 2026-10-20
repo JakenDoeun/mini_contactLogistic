@@ -1,7 +1,7 @@
 // Parcels and their contact log (SMS, calls, Telegram) from the branch database (Phases 6 and 9). The server queues and
 // sends; this only carries staff requests and keeps every open page showing the same list.
 import { useSyncExternalStore } from 'react';
-import { listParcels, postBatch, postBatchAction, postContact, postSms, saveParcelPhone, type SmsBatch } from '@/lib/import-api';
+import { listParcels, postBatch, postBatchAction, postContact, postRestoreCheck, postSms, saveParcelPhone, type SmsBatch } from '@/lib/import-api';
 import type { ContactEvent, Outcome, Parcel } from '@/lib/parcel-logic';
 
 export type { SmsBatch };
@@ -11,6 +11,8 @@ export interface ParcelData {
   events: ContactEvent[];
   /** Today's latest "Notify today's customers" run, so its progress can be followed until staff dismiss it. */
   batch: SmsBatch | null;
+  /** Set after a restore: nothing is sent until staff check the gateway phone. `copyAt` is when the copy was taken. */
+  restoreHold: { copyAt: string } | null;
 }
 
 let data: ParcelData | null = null;
@@ -30,7 +32,7 @@ export function reloadParcels() {
   return listParcels().then(
     (r) => {
       error = null;
-      data = { parcels: r.parcels, events: r.events, batch: r.batch && r.batch.id !== dismissed ? r.batch : null };
+      data = { parcels: r.parcels, events: r.events, batch: r.batch && r.batch.id !== dismissed ? r.batch : null, restoreHold: r.restoreHold };
       notify();
       if (listeners.size) timer = setTimeout(reloadParcels, inFlight(data) ? 2_500 : 20_000);
     },
@@ -82,9 +84,12 @@ export async function queueSms(phone: string, codes: string[], text: string, opt
   return `sms-${r.notificationId}`;
 }
 
-/** Queues a whole run at once under one request key, so a second click creates nothing. */
-export async function queueBatch(requestKey: string, items: { phone: string; codes: string[]; message: string }[]) {
-  const r = await postBatch(requestKey, items.map((i) => ({ phone: i.phone, parcelIds: idsOf(i.codes), text: i.message })));
+/**
+ * Queues a whole run for one arrival day under one request key, so a second click creates nothing. `checked` is staff
+ * confirming an earlier day's customers still need the message.
+ */
+export async function queueBatch(requestKey: string, day: string, checked: boolean, items: { phone: string; codes: string[]; message: string }[]) {
+  const r = await postBatch({ requestKey, day, checked, items: items.map((i) => ({ phone: i.phone, parcelIds: idsOf(i.codes), text: i.message })) });
   dismissed = null;
   await reloadParcels();
   return r;
@@ -92,6 +97,12 @@ export async function queueBatch(requestKey: string, items: { phone: string; cod
 
 export async function controlBatch(id: number, action: 'pause' | 'resume' | 'stop') {
   await postBatchAction(id, action);
+  await reloadParcels();
+}
+
+/** After a restore: the lines staff saw an SMS for on the gateway phone are saved as Sent, then sending resumes. */
+export async function releaseRestoreHold(seen: { phone: string; codes: string[] }[]) {
+  await postRestoreCheck(seen.map((l) => ({ phone: l.phone, parcelIds: idsOf(l.codes) })));
   await reloadParcels();
 }
 

@@ -8,7 +8,7 @@
 import crypto from 'node:crypto';
 import type { Db } from '../db/connection.ts';
 import { GatewayError, readGatewayConfig, smsGate, type GatewayState, type MessageState, type SmsGate } from '../gateway/smsgate.ts';
-import type { AttemptState } from './queue.ts';
+import { restoreHold, type AttemptState } from './queue.ts';
 
 const LEASE_MS = 60_000;
 // A phone that says Processed this long without a result is not going to say more (plan, status mapping).
@@ -130,7 +130,7 @@ export function smsWorker(db: Db, dataDir: string, log: (line: string) => void, 
 
   /** Hands the oldest waiting message to the phone, unless one is already being handed over. */
   async function sendNext(gate: SmsGate) {
-    if (open(['submitting']).length) return;
+    if (open(['submitting']).length || restoreHold(db)) return; // after a restore, nothing goes until staff check the phone
     const next = db
       .prepare(
         `SELECT a.* FROM sms_attempts a JOIN notifications n ON n.id = a.notification_id

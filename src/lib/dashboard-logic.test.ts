@@ -96,6 +96,7 @@ test("notify today's customers: one SMS per phone in today's batch only; notifie
   assert.match(plan.today[0].message, /2 new parcels/);
   assert.doesNotMatch(plan.today[0].message, /A3/);
   assert.match(plan.today[1].message, /your parcel B1/);
+  assert.deepEqual(plan.older.map((i) => i.codes), [['A3'], ['E1']]);
   assert.deepEqual(plan.noPhoneToday.map((p) => p.code), ['C1']);
 });
 
@@ -104,7 +105,7 @@ test('re-importing yesterday\'s file adds nothing to today and sends nothing', (
   const parcels = [parcel('Y1', 'Sokha', '012 345 678', 30)];
   const events = [event(['Y1'], { smsStatus: 'delivered' })];
   const plan = planNotify(parcels, events, now);
-  assert.equal(plan.today.length, 0);
+  assert.deepEqual([plan.today.length, plan.older.length], [0, 0]);
 });
 
 test("day progress: each of the day's parcels counted once, the most settled state first; other days ignored", () => {

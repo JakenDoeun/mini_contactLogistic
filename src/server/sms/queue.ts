@@ -18,6 +18,45 @@ export const MAX_TEXT = 1000;
 export type QueueError = { ok: false; error: string; message: string };
 const refuse = (error: string, message: string): QueueError => ({ ok: false, error, message });
 
+// After a restore, messages sent after the copy are missing here, so their parcels look Not sent. Nothing is sent until
+// staff check the gateway phone and confirm (owner, 2026-10-20).
+export const RESTORE_HOLD = 'sms.restore_hold';
+export function restoreHold(db: Db): { copyAt: string } | null {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(RESTORE_HOLD) as { value: string } | undefined;
+  return row ? (JSON.parse(row.value) as { copyAt: string }) : null;
+}
+const held = () => refuse('restore_hold', 'Sending is on hold after a restore. Check the gateway phone on the Notifications page first.');
+
+/** Called by npm run restore: holds every SMS until staff confirm they checked the phone. */
+export function holdAfterRestore(db: Db, copyAt: Date, at = nowIso()) {
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_by, updated_at) VALUES (?, ?, NULL, ?)
+     ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_by = NULL, updated_at = excluded.updated_at`,
+  ).run(RESTORE_HOLD, JSON.stringify({ copyAt: copyAt.toISOString() }), at);
+}
+
+/**
+ * Staff checked the gateway phone after a restore. Each line they saw an SMS for is saved as Sent (so it is never
+ * messaged twice), then the hold is lifted, in one transaction.
+ */
+export function releaseRestoreHold(db: Db, seen: { phone: string; parcelIds: number[] }[], userId: number | null, at = nowIso()) {
+  return db
+    .transaction(() => {
+      if (!restoreHold(db)) return refuse('not_held', 'Sending is not on hold.');
+      const lines = seen.map((line) => lineParcels(db, line.phone, line.parcelIds));
+      const bad = lines.find((l) => !l.ok);
+      if (bad) return bad; // before any write, so a refusal leaves nothing half saved
+      for (const line of lines as { ok: true; rows: ParcelRow[] }[]) {
+        const saved = insertMessage(db, line.rows, 'An SMS seen on the gateway phone after a restore.', 'resend', null, userId, at);
+        db.prepare(`UPDATE sms_attempts SET state = 'sent', error_code = 'seen_on_phone', submitted_at = ?, sent_at = ? WHERE id = ?`).run(at, at, saved.attemptId);
+      }
+      db.prepare('DELETE FROM settings WHERE key = ?').run(RESTORE_HOLD);
+      writeAudit(db, { action: 'sms.hold_released', entity: 'notification', entityIds: [], outcome: 'ok', userId, at, detail: { count: seen.length } });
+      return { ok: true as const };
+    })
+    .immediate();
+}
+
 /** Each parcel's latest attempt state (null when never messaged) and whether a call reached the customer. */
 function parcelState(db: Db, parcelId: number) {
   const latest = db
@@ -105,6 +144,7 @@ export function queueMessage(db: Db, input: QueueInput, userId: number | null, a
   if (typeof text !== 'string') return text;
   return db
     .transaction(() => {
+      if (restoreHold(db)) return held();
       const line = lineParcels(db, input.phone, input.parcelIds);
       if (!line.ok) return line;
       const states = line.rows.map((r) => parcelState(db, r.id));
@@ -145,19 +185,34 @@ export interface NotifyItem {
 }
 
 /**
- * "Notify today's customers": one batch, each item one SMS for one phone line, today's arrivals only. Items are
- * re-checked here; a line whose parcels were messaged, reached or moved meanwhile is skipped, never sent twice.
- * The same request key a second time (a double click, a retried request) creates nothing.
+ * "Notify today's customers", or one earlier day's customers: one batch for one arrival day, never mixed. Each item is
+ * one SMS for one phone line, re-checked here; a line whose parcels were messaged, reached or moved meanwhile is
+ * skipped, never sent twice. An earlier day needs staff to confirm they checked those customers still need it (owner,
+ * 2026-10-20). The same request key a second time (a double click, a retried request) creates nothing.
  */
-export function notifyToday(db: Db, requestKey: string, items: NotifyItem[], userId: number | null, now = new Date()) {
+export function notifyDay(
+  db: Db,
+  input: { requestKey: string; day: string; items: NotifyItem[]; checked?: boolean },
+  userId: number | null,
+  now = new Date(),
+) {
+  const { requestKey, day, items } = input;
   if (!/^[0-9a-f-]{36}$/.test(requestKey)) return refuse('invalid_request', 'The request had no key. Reload the page.');
   if (items.length === 0 || items.length > 500) return refuse('invalid_request', 'Nothing to send.');
   const at = now.toISOString();
   const today = cambodiaDate(now);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > today) return refuse('invalid_request', 'Choose an arrival day up to today.');
+  if (day !== today && input.checked !== true) {
+    return refuse('not_checked', 'These parcels arrived before today. Confirm you checked these customers still need the message.');
+  }
   return db
     .transaction(() => {
       const existing = db.prepare('SELECT id FROM send_batches WHERE request_key = ?').get(requestKey) as { id: number } | undefined;
       if (existing) return { ok: true as const, batchId: existing.id, queued: 0, skipped: 0, repeated: true };
+      if (restoreHold(db)) return held();
+      if (db.prepare(`SELECT 1 FROM send_batches WHERE status IN ('running', 'paused')`).get()) {
+        return refuse('batch_running', 'Another batch is still sending or paused. Let it finish or stop it first.');
+      }
 
       const accepted: { rows: ParcelRow[]; text: string }[] = [];
       let skipped = 0;
@@ -167,7 +222,7 @@ export function notifyToday(db: Db, requestKey: string, items: NotifyItem[], use
         const usable =
           typeof text === 'string' &&
           line.ok &&
-          line.rows[0].arrival_date === today &&
+          line.rows[0].arrival_date === day &&
           line.rows.every((r) => {
             const s = parcelState(db, r.id);
             return !s.busy && !s.reached && !(s.latest && MESSAGED.includes(s.latest));
@@ -184,11 +239,11 @@ export function notifyToday(db: Db, requestKey: string, items: NotifyItem[], use
           `INSERT INTO send_batches (request_key, arrival_date, planned_messages, planned_parcels, status, created_by, created_at)
            VALUES (?, ?, ?, ?, 'running', ?, ?) RETURNING id`,
         )
-        .get(requestKey, today, accepted.length, parcels, userId, at) as { id: number };
+        .get(requestKey, day, accepted.length, parcels, userId, at) as { id: number };
       for (const a of accepted) insertMessage(db, a.rows, a.text, 'initial', batch.id, userId, at);
       writeAudit(db, {
         action: 'send_batch.started', entity: 'send_batch', entityIds: [batch.id], outcome: 'ok', userId, at,
-        detail: { counts: { messages: accepted.length, parcels, skipped } },
+        detail: { counts: { messages: accepted.length, parcels, skipped }, arrival_dates: [day] },
       });
       return { ok: true as const, batchId: batch.id, queued: accepted.length, skipped, repeated: false };
     })
@@ -259,7 +314,7 @@ function resultText(a: { state: AttemptState; gateway_state: string | null; erro
     case 'submitted':
       return a.gateway_state === 'Processed' ? 'The phone is sending it.' : 'The phone accepted it and will send it next.';
     case 'sent':
-      return 'Sent by the phone. No delivery report yet.';
+      return a.error_code === 'seen_on_phone' ? 'Sent: staff saw it on the gateway phone after a restore.' : 'Sent by the phone. No delivery report yet.';
     case 'delivered':
       return 'Delivered: the carrier confirmed it reached the customer.';
     case 'failed':
@@ -321,12 +376,12 @@ export function listContactEvents(db: Db): ContactEvent[] {
   ];
 }
 
-/** Today's latest batch, for the Notifications page's progress line. */
+/** The latest batch started today (for today's or an earlier day's arrivals), for the Notifications page's progress line. */
 export function latestBatch(db: Db, now = new Date()) {
-  const b = db.prepare('SELECT id, status, created_at FROM send_batches WHERE arrival_date = ? ORDER BY id DESC LIMIT 1').get(cambodiaDate(now)) as
-    | { id: number; status: string; created_at: string }
-    | undefined;
+  const b = db
+    .prepare(`SELECT id, status, created_at, arrival_date FROM send_batches WHERE date(created_at, '+7 hours') = ? ORDER BY id DESC LIMIT 1`)
+    .get(cambodiaDate(now)) as { id: number; status: string; created_at: string; arrival_date: string } | undefined;
   if (!b) return null;
   const ids = db.prepare('SELECT id FROM notifications WHERE batch_id = ?').all(b.id) as { id: number }[];
-  return { id: b.id, status: b.status as 'running' | 'paused' | 'stopped' | 'done', startedAt: b.created_at, eventIds: ids.map((r) => `sms-${r.id}`) };
+  return { id: b.id, day: b.arrival_date, status: b.status as 'running' | 'paused' | 'stopped' | 'done', startedAt: b.created_at, eventIds: ids.map((r) => `sms-${r.id}`) };
 }

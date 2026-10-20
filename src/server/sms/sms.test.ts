@@ -5,7 +5,7 @@ import { insertNewParcels } from '../db/parcels.ts';
 import { createTestDb } from '../db/test-db.ts';
 import { cambodiaDate } from '../db/values.ts';
 import { GatewayError, writeGatewayConfig, type MessageState, type SmsGate } from '../gateway/smsgate.ts';
-import { controlBatch, listContactEvents, notifyToday, queueMessage, recordContact } from './queue.ts';
+import { controlBatch, holdAfterRestore, listContactEvents, notifyDay, queueMessage, recordContact, releaseRestoreHold, restoreHold } from './queue.ts';
 import { smsWorker } from './worker.ts';
 
 const TODAY = cambodiaDate();
@@ -98,14 +98,17 @@ test("Notify today's customers: today's lines only, re-checked, and the same req
     { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' }, // reached by call: skipped
     { phone: '012 345 678', parcelIds: [y1], text: 'Hi Dara, yesterday' }, // an earlier batch: never automatic
   ];
-  const r = notifyToday(db, key, items, null);
+  const r = notifyDay(db, { requestKey: key, day: TODAY, items }, null);
   assert.ok(r.ok);
   assert.deepEqual([r.queued, r.skipped], [1, 2]);
-  const again = notifyToday(db, key, items, null);
+  const again = notifyDay(db, { requestKey: key, day: TODAY, items }, null);
   assert.ok(again.ok && again.repeated);
   assert.equal(attempts(db).length, 1);
-  const none = notifyToday(db, crypto.randomUUID(), items, null);
-  assert.deepEqual(none.ok ? null : none.error, 'nothing_to_send'); // Dara is queued now, Sokha reached
+  const none = notifyDay(db, { requestKey: crypto.randomUUID(), day: TODAY, items }, null);
+  assert.deepEqual(none.ok ? null : none.error, 'batch_running'); // one batch at a time
+  db.prepare(`UPDATE send_batches SET status = 'done'`).run();
+  const nothing = notifyDay(db, { requestKey: crypto.randomUUID(), day: TODAY, items }, null);
+  assert.deepEqual(nothing.ok ? null : nothing.error, 'nothing_to_send'); // Dara is queued now, Sokha reached
 });
 
 test('the worker hands messages over one at a time and follows the phone to Delivered', async (t) => {
@@ -186,10 +189,10 @@ test('an unreachable phone keeps the message waiting; a refused password fails i
   const { db, dir, a1, a2, b1 } = await setup(t);
   const phone = fakePhone();
   const worker = smsWorker(db, dir, silent, { make: () => phone.gate });
-  const r = notifyToday(db, crypto.randomUUID(), [
+  const r = notifyDay(db, { requestKey: crypto.randomUUID(), day: TODAY, items: [
     { phone: '012 345 678', parcelIds: [a1, a2], text: 'Hi Dara' },
     { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' },
-  ], null);
+  ] }, null);
   assert.ok(r.ok);
   phone.sendWith = 'unreachable';
   await worker.tick();
@@ -256,4 +259,59 @@ test('a second worker does not send while the first holds the lease', async (t) 
   one.release();
   await two.tick();
   assert.equal(phone.sends.length, 2);
+});
+
+test('an earlier day goes only as its own batch, after staff confirm they checked, and never with today', async (t) => {
+  const { db, a1, y1 } = await setup(t);
+  const items = [
+    { phone: '012 345 678', parcelIds: [y1], text: 'Hi Dara, from yesterday' },
+    { phone: '012 345 678', parcelIds: [a1], text: 'Hi Dara, today' }, // today's line: never rides along
+  ];
+  const unchecked = notifyDay(db, { requestKey: crypto.randomUUID(), day: YESTERDAY, items }, null);
+  assert.deepEqual(unchecked.ok ? null : unchecked.error, 'not_checked');
+  const r = notifyDay(db, { requestKey: crypto.randomUUID(), day: YESTERDAY, items, checked: true }, null);
+  assert.ok(r.ok);
+  assert.deepEqual([r.queued, r.skipped], [1, 1]);
+  assert.equal((db.prepare('SELECT arrival_date FROM send_batches').get() as { arrival_date: string }).arrival_date, YESTERDAY);
+  assert.deepEqual(listContactEvents(db).map((e) => e.parcelCodes), [['Y1']]);
+  // One batch at a time: today's waits until yesterday's finishes or is stopped.
+  const today = notifyDay(db, { requestKey: crypto.randomUUID(), day: TODAY, items: [items[1]] }, null);
+  assert.deepEqual(today.ok ? null : today.error, 'batch_running');
+  const future = notifyDay(db, { requestKey: crypto.randomUUID(), day: '2999-01-01', items, checked: true }, null);
+  assert.equal(future.ok, false);
+});
+
+test('after a restore nothing is sent until staff check the phone; customers they saw an SMS for are saved as Sent', async (t) => {
+  const { db, dir, a1, a2, b1 } = await setup(t);
+  queueMessage(db, { phone: '012 345 678', parcelIds: [a1, a2], text: 'Hi Dara' }, null); // queued in the copy
+  holdAfterRestore(db, new Date(Date.now() - 3600_000));
+  assert.ok(restoreHold(db));
+  const single = queueMessage(db, { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' }, null);
+  assert.deepEqual(single.ok ? null : single.error, 'restore_hold');
+  const batch = notifyDay(db, { requestKey: crypto.randomUUID(), day: TODAY, items: [{ phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' }] }, null);
+  assert.deepEqual(batch.ok ? null : batch.error, 'restore_hold');
+  const phone = fakePhone();
+  const worker = smsWorker(db, dir, silent, { make: () => phone.gate });
+  await worker.tick();
+  assert.equal(phone.sends.length, 0); // the queued one waits too
+
+  // Staff saw on the phone that Sokha already got one after the copy.
+  assert.equal(releaseRestoreHold(db, [{ phone: '097 880 1123', parcelIds: [b1] }], null).ok, true);
+  assert.equal(restoreHold(db), null);
+  const sokha = listContactEvents(db).find((e) => e.parcelCodes[0] === 'B1');
+  assert.equal(sokha?.smsStatus, 'sent');
+  assert.match(sokha?.result ?? '', /gateway phone after a restore/);
+  assert.equal(queueMessage(db, { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' }, null).ok, false); // never twice
+  await worker.tick();
+  assert.equal(phone.sends.length, 1); // Dara's queued message goes now
+  assert.equal(releaseRestoreHold(db, [], null).ok, false);
+});
+
+test('a refused line in the restore check saves nothing and keeps the hold', async (t) => {
+  const { db, a1, b1 } = await setup(t);
+  holdAfterRestore(db, new Date());
+  const r = releaseRestoreHold(db, [{ phone: '012 345 678', parcelIds: [a1] }, { phone: '012 345 678', parcelIds: [b1] }], null);
+  assert.equal(r.ok, false);
+  assert.ok(restoreHold(db));
+  assert.equal(listContactEvents(db).length, 0);
 });

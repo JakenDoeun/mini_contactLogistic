@@ -91,17 +91,22 @@ export const saveFolderSettings =(body: { path: string; auto: boolean; intervalS
 
 export interface SmsBatch {
   id: number;
+  /** The arrival day the batch covers: today, or one earlier day staff chose to notify. */
+  day: string;
   status: 'running' | 'paused' | 'stopped' | 'done';
   startedAt: string;
   eventIds: string[];
 }
-export const listParcels = () => call<{ parcels: Parcel[]; events: ContactEvent[]; batch: SmsBatch | null }>('/api/parcels');
+export const listParcels = () =>
+  call<{ parcels: Parcel[]; events: ContactEvent[]; batch: SmsBatch | null; restoreHold: { copyAt: string } | null }>('/api/parcels');
 
 /** One SMS for a phone line. `retryOf` is the message a retry belongs to; `again` sends to parcels messaged before. */
 export const postSms = (body: { phone: string; parcelIds: number[]; text: string; again?: boolean; retryOf?: number }) =>
   call<{ notificationId: number }>('/api/sms', { method: 'POST', ...send(body) });
-export const postBatch = (requestKey: string, items: { phone: string; parcelIds: number[]; text: string }[]) =>
-  call<{ batchId: number; queued: number; skipped: number }>('/api/sms/batch', { method: 'POST', ...send({ requestKey, items }) });
+export const postBatch = (body: { requestKey: string; day: string; checked: boolean; items: { phone: string; parcelIds: number[]; text: string }[] }) =>
+  call<{ batchId: number; queued: number; skipped: number }>('/api/sms/batch', { method: 'POST', ...send(body) });
+export const postRestoreCheck = (seen: { phone: string; parcelIds: number[] }[]) =>
+  call<{ ok: true }>('/api/sms/restore-check', { method: 'POST', ...send({ seen }) });
 export const postBatchAction = (id: number, action: 'pause' | 'resume' | 'stop') =>
   call<{ status: SmsBatch['status'] }>(`/api/sms/batch/${id}`, { method: 'POST', ...send({ action }) });
 export const postContact = (body: { phone: string; parcelIds: number[]; channel: 'call' | 'telegram'; outcome: string }) =>

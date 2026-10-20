@@ -15,6 +15,7 @@ import { DateFilter } from '@/components/shared/date-filter';
 import { planNotify, workList, type NotifyItem } from '@/lib/dashboard-logic';
 import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@/lib/date-range';
 import {
+  arrivalDay,
   composeMessage,
   reachedByStaff,
   formatPhone,
@@ -25,7 +26,7 @@ import {
   type Channel,
   type ContactEvent,
 } from '@/lib/parcel-logic';
-import { controlBatch, dismissBatch, queueBatch, queueSms, useParcelData, type ParcelData, type SmsBatch } from '@/lib/parcel-service';
+import { controlBatch, dismissBatch, queueBatch, queueSms, releaseRestoreHold, useParcelData, type ParcelData, type SmsBatch } from '@/lib/parcel-service';
 import { getSettings } from '@/lib/mock/settings-service';
 import { useSettings } from '@/lib/mock/use-settings';
 import { cn, formatDateTime } from '@/lib/utils';
@@ -55,7 +56,8 @@ export function NotificationsView({ initialFilter }: { initialFilter?: string })
   const [retrying, setRetrying] = useState<ContactEvent | null>(null);
   /** A parcel code; its detail, with the contact panel and phone field, opens in a drawer. */
   const [contacting, setContacting] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
+  /** The arrival day whose batch is being confirmed: today, or one earlier day under review. */
+  const [confirmDay, setConfirmDay] = useState<string | null>(null);
 
   const events = data ? [...data.events].sort((a, b) => b.at.localeCompare(a.at)) : null;
   const work = data ? workList(data.parcels, data.events) : null;
@@ -73,19 +75,21 @@ export function NotificationsView({ initialFilter }: { initialFilter?: string })
         </div>
       </div>
 
+      {data?.restoreHold && <RestoreCheck data={data} copyAt={data.restoreHold.copyAt} />}
+
       {/* Urgency sets the size: attention leads, the live queue follows, ready-to-send supports from the side. */}
       <div className="mt-7 grid items-start gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_19rem]">
         <div className="flex min-w-0 flex-col gap-8">
           <Attention work={work} events={events} nameOf={nameOf} onRetry={setRetrying} onOpen={setContacting} />
           <SendingQueue data={data} nameOf={nameOf} running={running} />
         </div>
-        <Ready plan={plan} running={running} onNotify={() => setConfirming(true)} />
+        <Ready plan={plan} running={running} hold={!!data?.restoreHold} onNotify={setConfirmDay} />
       </div>
 
       <History events={events} data={data} nameOf={nameOf} initialChannel={initialFilter} />
 
       <RetrySheet event={retrying} data={data} onClose={() => setRetrying(null)} />
-      <ConfirmNotify open={confirming} data={data} templates={templates} onClose={() => setConfirming(false)} />
+      <ConfirmNotify day={confirmDay} data={data} templates={templates} onClose={() => setConfirmDay(null)} />
 
       <Sheet open={!!contactParcel} onOpenChange={(o) => !o && setContacting(null)}>
         <SheetContent className="max-w-2xl bg-background" aria-describedby={undefined}>
@@ -355,6 +359,89 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
   );
 }
 
+/**
+ * After a restore, messages sent after the copy are missing here, so those customers look Not messaged. Staff check the
+ * gateway phone, tick each customer it shows an SMS for (saved as Sent, so nobody is messaged twice), and confirm.
+ */
+function RestoreCheck({ data, copyAt }: { data: ParcelData; copyAt: string }) {
+  const [seen, setSeen] = useState<Set<string>>(new Set());
+  const [checked, setChecked] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const copyDay = arrivalDay(copyAt);
+  const lines = workList(data.parcels, data.events).toMessage.filter((g) => g.day >= copyDay);
+  const keyOf = (g: (typeof lines)[number]) => `${g.day}|${g.phone}`;
+  async function resume() {
+    setSaving(true);
+    setError('');
+    try {
+      await releaseRestoreHold(lines.filter((g) => seen.has(keyOf(g))).map((g) => ({ phone: g.phone, codes: g.codes })));
+    } catch (e) {
+      setError(`Not saved. ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <section aria-labelledby="restore-heading" className="mt-7 rounded-lg border border-warning/40 bg-warning-tint px-5 py-5 sm:px-7">
+      <h2 id="restore-heading" className="font-semibold text-warning">
+        SMS sending is on hold after a restore
+      </h2>
+      <p className="mt-1 text-sm">
+        The data was restored from a copy taken {formatDateTime(copyAt)}. Messages the gateway phone sent after that are not in this app, so those
+        customers look not messaged yet. Nothing is sent until you check.
+      </p>
+      <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm">
+        <li>On the gateway phone, open the Messages app and look at what was sent since {formatDateTime(copyAt)}.</li>
+        <li>Tick every customer below that the phone shows a message for. They are saved as Sent and not messaged again.</li>
+        <li>Confirm, and sending resumes.</li>
+      </ol>
+      {lines.length > 0 ? (
+        <ul className="mt-4 max-h-80 divide-y overflow-y-auto rounded-md border bg-card">
+          {lines.map((g) => (
+            <li key={keyOf(g)}>
+              <label className="flex min-h-11 items-start gap-3 px-3 py-2.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={seen.has(keyOf(g))}
+                  onChange={(e) => {
+                    const next = new Set(seen);
+                    if (e.target.checked) next.add(keyOf(g));
+                    else next.delete(keyOf(g));
+                    setSeen(next);
+                  }}
+                  className="mt-0.5 size-4 shrink-0 accent-primary"
+                />
+                <span className="min-w-0">
+                  <span className="font-medium">{g.recipient}</span> <span className="font-mono text-xs text-muted-foreground">{formatPhone(g.phone)}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    Arrived {batchLabel(g.day)} · <span className="font-mono">{g.codes.join(', ')}</span>
+                  </span>
+                </span>
+                <span className="ml-auto shrink-0 text-xs text-muted-foreground">{seen.has(keyOf(g)) ? 'Got an SMS' : ''}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 text-sm text-muted-foreground">No customer since the copy is waiting for a message.</p>
+      )}
+      <label className="mt-4 flex min-h-11 items-start gap-2 text-sm font-medium sm:min-h-8">
+        <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-primary" />
+        I checked the gateway phone&apos;s sent messages since {formatDateTime(copyAt)}.
+      </label>
+      <Button className="mt-3" disabled={!checked || saving} onClick={resume}>
+        {saving ? 'Saving…' : seen.size ? `Save ${seen.size} as sent and resume sending` : 'Resume sending'}
+      </Button>
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
 /** Pause holds the rest of the run after the message being handed over; Stop cancels the ones still waiting. */
 function BatchControls({ batch }: { batch: SmsBatch }) {
   const [busy, setBusy] = useState(false);
@@ -391,7 +478,17 @@ function BatchControls({ batch }: { batch: SmsBatch }) {
 }
 
 /** Today's phone lines with parcels nobody has told the customer about, and the one button that sends them all. */
-function Ready({ plan, running, onNotify }: { plan: ReturnType<typeof planNotify> | null; running: boolean; onNotify: () => void }) {
+function Ready({
+  plan,
+  running,
+  hold,
+  onNotify,
+}: {
+  plan: ReturnType<typeof planNotify> | null;
+  running: boolean;
+  hold: boolean;
+  onNotify: (day: string) => void;
+}) {
   const parcels = plan?.today.reduce((n, i) => n + i.codes.length, 0) ?? 0;
   return (
     <aside aria-labelledby="ready-heading" className="rounded-lg bg-secondary/70 px-5 py-5">
@@ -408,11 +505,12 @@ function Ready({ plan, running, onNotify }: { plan: ReturnType<typeof planNotify
           <p className="text-sm text-muted-foreground">
             {parcels} {parcels === 1 ? 'parcel' : 'parcels'} from today, one SMS per phone number
           </p>
-          <Button className="mt-4 w-full" onClick={onNotify} disabled={running || plan.today.length === 0}>
+          <Button className="mt-4 w-full" onClick={() => onNotify(arrivalDay(new Date().toISOString()))} disabled={running || hold || plan.today.length === 0}>
             <Send aria-hidden />
             Notify today&apos;s customers
           </Button>
           {running && <p className="mt-2 text-xs text-muted-foreground">A run is in progress. Start the next one when it finishes.</p>}
+          {hold && <p className="mt-2 text-xs text-warning">Sending is on hold after a restore. Check the gateway phone first.</p>}
 
           {plan.today.length === 0 ? (
             <div className="mt-4 text-sm">
@@ -445,6 +543,27 @@ function Ready({ plan, running, onNotify }: { plan: ReturnType<typeof planNotify
                 {plan.noPhoneToday.length === 1 ? 'is' : 'are'} skipped.
               </li>
             </ul>
+          )}
+          {plan.older.length > 0 && (
+            <div className="mt-5 border-t pt-4">
+              <h3 className="text-sm font-medium">Earlier arrivals not notified</h3>
+              <p className="text-xs text-muted-foreground">Sent one day at a time after you review them, never with today&apos;s messages.</p>
+              <ul className="mt-2 divide-y divide-border/70 text-sm">
+                {byDay(plan.older).map(([day, list]) => (
+                  <li key={day} className="flex items-center justify-between gap-3 py-1.5">
+                    <span className="min-w-0">
+                      Arrived {batchLabel(day)}{' '}
+                      <span className="text-xs text-muted-foreground">
+                        · {list.length} {list.length === 1 ? 'customer' : 'customers'}
+                      </span>
+                    </span>
+                    <Button size="sm" variant="outline" className="shrink-0 bg-card" disabled={running || hold} onClick={() => onNotify(day)}>
+                      Review
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </>
       )}
@@ -498,14 +617,17 @@ function DayMessages({ day, items }: { day: string; items: NotifyItem[] }) {
   );
 }
 
-/** The one confirmation for a whole run. The plan is worked out from the live records, so nothing stale is sent. */
+/**
+ * The one confirmation for a whole run of one arrival day. The plan is worked out from the live records, so nothing
+ * stale is sent. An earlier day carries a warning and needs staff to tick that they checked its customers.
+ */
 function ConfirmNotify({
-  open,
+  day,
   data,
   templates,
   onClose,
 }: {
-  open: boolean;
+  day: string | null;
   data: ParcelData | null;
   templates: Parameters<typeof planNotify>[3];
   onClose: () => void;
@@ -514,20 +636,24 @@ function ConfirmNotify({
   const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
+  const [checked, setChecked] = useState(false);
   const plan = data ? planNotify(data.parcels, data.events, new Date(), templates) : null;
-  const items: NotifyItem[] = plan?.today ?? [];
+  const earlier = !!day && day !== arrivalDay(new Date().toISOString());
+  const items: NotifyItem[] = !plan || !day ? [] : earlier ? plan.older.filter((i) => i.day === day) : plan.today;
   const parcels = items.reduce((n, i) => n + i.codes.length, 0);
   const combined = items.filter((i) => i.codes.length > 1).length;
+  const label = day ? batchLabel(day) : '';
   const close = () => {
     setRequestKey(crypto.randomUUID());
     setError('');
+    setChecked(false);
     onClose();
   };
   async function start() {
     setStarting(true);
     setError('');
     try {
-      await queueBatch(requestKey, items);
+      await queueBatch(requestKey, day!, checked, items);
       close();
     } catch (e) {
       setError(`Not started. ${(e as Error).message}`);
@@ -537,12 +663,12 @@ function ConfirmNotify({
   }
 
   return (
-    <Sheet open={open} onOpenChange={(o) => !o && close()}>
+    <Sheet open={!!day} onOpenChange={(o) => !o && close()}>
       <SheetContent>
         {plan && (
           <>
             <header className="border-b px-6 pt-5 pb-4 pr-14">
-              <SheetTitle>Notify today&apos;s customers?</SheetTitle>
+              <SheetTitle>{earlier ? `Notify customers whose parcels arrived ${label}?` : "Notify today's customers?"}</SheetTitle>
               <SheetDescription>The gateway phone sends them one at a time, from the branch SIM.</SheetDescription>
             </header>
             <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -563,7 +689,20 @@ function ConfirmNotify({
               <p className="mt-2 text-sm text-muted-foreground">
                 {combined} combined, {items.length - combined} individual. One SMS per phone number. Parcels already notified are left out.
               </p>
-              {plan.noPhoneToday.length > 0 && (
+              {earlier && (
+                <div className="mt-4 rounded-md bg-warning-tint p-3 text-sm text-warning">
+                  <p className="font-medium">These parcels arrived {label}, not today.</p>
+                  <p className="mt-1">
+                    They go as their own batch and never join today&apos;s messages. Since then, some customers may have collected their parcel or been
+                    told another way. Read through the list below before sending.
+                  </p>
+                  <label className="mt-3 flex min-h-11 items-start gap-2 text-foreground sm:min-h-8">
+                    <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-primary" />
+                    I checked these {items.length === 1 ? 'customer' : `${items.length} customers`} and they still need this message.
+                  </label>
+                </div>
+              )}
+              {!earlier && plan.noPhoneToday.length > 0 && (
                 <p className="mt-3 rounded-md bg-warning-tint px-3 py-2 text-sm text-warning">
                   {plan.noPhoneToday.length === 1 ? "1 of today's parcels has no phone number and is" : `${plan.noPhoneToday.length} of today's parcels have no phone number and are`}{' '}
                   skipped. They are listed under Needs your attention.
@@ -580,9 +719,9 @@ function ConfirmNotify({
             </div>
             {/* Outside the scrolling list, so Start queue stays in view however many customers there are. */}
             <footer className="flex flex-wrap items-center gap-2 border-t px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-              <Button disabled={items.length === 0 || starting} onClick={start}>
+              <Button disabled={items.length === 0 || starting || (earlier && !checked)} onClick={start}>
                 <Send aria-hidden />
-                {starting ? 'Starting…' : `Start queue (${items.length} SMS)`}
+                {starting ? 'Starting…' : earlier ? `Send ${items.length} SMS for ${label}` : `Start queue (${items.length} SMS)`}
               </Button>
               <Button variant="outline" onClick={close}>
                 Cancel

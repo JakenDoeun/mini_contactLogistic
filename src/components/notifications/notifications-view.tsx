@@ -580,14 +580,14 @@ function byDay(items: NotifyItem[]) {
 
 const DAY_SHOWN = 5;
 
-/** One arrival day in the run: today opens, earlier days stay one line until opened, and each shows its first few. */
+/** The run's one arrival day, open so staff read through it, showing its first few until asked for all. */
 function DayMessages({ day, items }: { day: string; items: NotifyItem[] }) {
   const [all, setAll] = useState(false);
   const label = batchLabel(day);
   const parcels = items.reduce((n, i) => n + i.codes.length, 0);
   const shown = all ? items : items.slice(0, DAY_SHOWN);
   return (
-    <details open={label === 'today'} className="group">
+    <details open className="group">
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" aria-hidden />
         <span className="font-medium">Arrived {label}</span>
@@ -698,7 +698,7 @@ function ConfirmNotify({
                   </p>
                   <label className="mt-3 flex min-h-11 items-start gap-2 text-foreground sm:min-h-8">
                     <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-primary" />
-                    I checked these {items.length === 1 ? 'customer' : `${items.length} customers`} and they still need this message.
+                    {items.length === 1 ? 'I checked this customer' : `I checked these ${items.length} customers`} and they still need this message.
                   </label>
                 </div>
               )}

@@ -17,6 +17,7 @@ import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@
 import {
   arrivalDay,
   composeMessage,
+  SMS_GAP_SECONDS,
   reachedByStaff,
   formatPhone,
   normalizePhone,
@@ -300,7 +301,7 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
         <Heading
           id="queue-heading"
           title="Sending queue"
-          hint="Handed to the gateway phone one at a time. Accepted messages move to History; failed or unconfirmed ones move to Needs your attention."
+          hint={`Handed to the gateway phone one at a time, ${SMS_GAP_SECONDS[0]}–${SMS_GAP_SECONDS[1]} seconds apart so the SIM is not flagged. Accepted messages move to History; failed or unconfirmed ones move to Needs your attention.`}
         />
         {running && data.batch && <BatchControls batch={data.batch} />}
         {batch.length > 0 && !running && (
@@ -571,6 +572,13 @@ function Ready({
   );
 }
 
+/** How long a run takes with the random gap between messages. */
+function sendingTime(count: number) {
+  const [lo, hi] = SMS_GAP_SECONDS;
+  if (count <= 1) return 'One SMS.';
+  return `Takes about ${Math.max(1, Math.round(((count - 1) * lo) / 60))}–${Math.ceil(((count - 1) * hi) / 60)} minutes: the phone waits ${lo}–${hi} seconds between messages, at random, so the branch SIM is not flagged.`;
+}
+
 /** Messages grouped by arrival day, newest day first. */
 function byDay(items: NotifyItem[]) {
   const days = new Map<string, NotifyItem[]>();
@@ -689,6 +697,7 @@ function ConfirmNotify({
               <p className="mt-2 text-sm text-muted-foreground">
                 {combined} combined, {items.length - combined} individual. One SMS per phone number. Parcels already notified are left out.
               </p>
+              <p className="mt-1 text-sm text-muted-foreground">{sendingTime(items.length)}</p>
               {earlier && (
                 <div className="mt-4 rounded-md bg-warning-tint p-3 text-sm text-warning">
                   <p className="font-medium">These parcels arrived {label}, not today.</p>

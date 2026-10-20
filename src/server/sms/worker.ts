@@ -7,6 +7,7 @@
 // The launcher (scripts/serve.ts) runs it beside backups; a lease keeps a second copy from sending.
 import crypto from 'node:crypto';
 import type { Db } from '../db/connection.ts';
+import { SMS_GAP_SECONDS } from '../../lib/parcel-logic.ts';
 import { GatewayError, readGatewayConfig, smsGate, type GatewayState, type MessageState, type SmsGate } from '../gateway/smsgate.ts';
 import { restoreHold, type AttemptState } from './queue.ts';
 
@@ -16,6 +17,7 @@ const PROCESSED_LIMIT_MS = 3600_000;
 // Sent waits for a delivery report; after this the report is not coming and the phone is left alone.
 const SENT_WATCH_MS = 3600_000;
 const pollEvery = (ageMs: number) => (ageMs < 120_000 ? 3_000 : 30_000);
+export const randomGap = () => (SMS_GAP_SECONDS[0] + Math.random() * (SMS_GAP_SECONDS[1] - SMS_GAP_SECONDS[0])) * 1000;
 
 interface Attempt {
   id: string;
@@ -28,9 +30,16 @@ interface Attempt {
   last_checked_at: string | null;
 }
 
-export function smsWorker(db: Db, dataDir: string, log: (line: string) => void, options: { make?: typeof smsGate; now?: () => number } = {}) {
+export function smsWorker(
+  db: Db,
+  dataDir: string,
+  log: (line: string) => void,
+  options: { make?: typeof smsGate; now?: () => number; gap?: () => number } = {},
+) {
   const make = options.make ?? smsGate;
   const now = options.now ?? Date.now;
+  const gap = options.gap ?? randomGap;
+  let nextSendAt: number | null = null; // no hand-over before this time
   const holder = crypto.randomUUID();
   const iso = () => new Date(now()).toISOString();
   let recovered = false;
@@ -140,6 +149,12 @@ export function smsWorker(db: Db, dataDir: string, log: (line: string) => void, 
       )
       .get() as Attempt | undefined;
     if (!next) return;
+    if (nextSendAt === null) {
+      // After a restart the gap still counts from the last hand-over.
+      const last = db.prepare('SELECT max(submitted_at) AS at FROM sms_attempts').get() as { at: string | null };
+      nextSendAt = last.at ? Date.parse(last.at) + gap() : 0;
+    }
+    if (now() < nextSendAt) return;
     const n = db.prepare('SELECT phone_normalized, message_text, reason FROM notifications WHERE id = ?').get(next.notification_id) as {
       phone_normalized: string;
       message_text: string;
@@ -161,8 +176,10 @@ export function smsWorker(db: Db, dataDir: string, log: (line: string) => void, 
     let result: Awaited<ReturnType<SmsGate['send']>>;
     try {
       result = await gate.send({ id: next.id, phone: n.phone_normalized, text: n.message_text });
+      nextSendAt = now() + gap();
     } catch (e) {
       if (!(e instanceof GatewayError)) throw e;
+      if (e.problem !== 'unreachable') nextSendAt = now() + gap();
       if (e.problem === 'unreachable') {
         update(next.id, { state: 'queued' }); // nothing left this computer, so it waits for the phone
       } else if (e.problem === 'auth') {

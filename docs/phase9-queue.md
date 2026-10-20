@@ -24,6 +24,9 @@ on the Android Emulator like Phase 8. Synthetic data only.
   write the text itself.
 - **A retry with unchanged text and parcels is a new attempt of the same message** (Revision 4); an edited retry is a
   new message (reason `resend`). Only Failed or Check phone (Unconfirmed) messages can be retried.
+- **A random gap of 25 to 80 seconds between two SMS** (owner, 2026-10-20), so the branch SIM's traffic looks like a
+  person's and is less likely to be flagged or blocked. It applies to every SMS, single ones too, and still counts from
+  the last hand-over after a restart. A run of 40 customers takes about 16 to 52 minutes; the confirm dialog says so.
 - **The worker runs in the launcher** (`npm run serve`) beside backups, every 2 seconds, and holds the `worker_lease`
   row, so a second copy never sends. `npm run sms-worker` runs the same worker beside `npm run dev`.
 - **After a restore, nothing is sent until staff check the gateway phone** (owner, 2026-10-20, option 2 of 2). Messages

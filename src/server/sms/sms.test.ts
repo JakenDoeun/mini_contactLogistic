@@ -6,7 +6,7 @@ import { createTestDb } from '../db/test-db.ts';
 import { cambodiaDate } from '../db/values.ts';
 import { GatewayError, writeGatewayConfig, type MessageState, type SmsGate } from '../gateway/smsgate.ts';
 import { controlBatch, holdAfterRestore, listContactEvents, notifyDay, queueMessage, recordContact, releaseRestoreHold, restoreHold } from './queue.ts';
-import { smsWorker } from './worker.ts';
+import { randomGap, smsWorker } from './worker.ts';
 
 const TODAY = cambodiaDate();
 const YESTERDAY = cambodiaDate(new Date(Date.now() - 86_400_000));
@@ -115,7 +115,7 @@ test('the worker hands messages over one at a time and follows the phone to Deli
   const { db, dir, a1, b1 } = await setup(t);
   const phone = fakePhone();
   let clock = Date.now();
-  const worker = smsWorker(db, dir, silent, { make: () => phone.gate, now: () => clock });
+  const worker = smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate, now: () => clock });
   queueMessage(db, { phone: '012 345 678', parcelIds: [a1], text: 'Hi Dara' }, null);
   queueMessage(db, { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' }, null);
 
@@ -145,7 +145,7 @@ test('after a crash: Sending the phone never got is Not sent, Accepted it has lo
   db.prepare(`UPDATE sms_attempts SET state = 'submitted', submitted_at = ? WHERE id = ?`).run(new Date().toISOString(), accepted.id);
 
   const phone = fakePhone();
-  await smsWorker(db, dir, silent, { make: () => phone.gate }).tick();
+  await smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate }).tick();
   const after = attempts(db);
   assert.deepEqual([after[0].state, after[0].error_code], ['cancelled', 'restart_not_sent']);
   assert.deepEqual([after[1].state, after[1].error_code], ['unconfirmed', 'missing_on_phone']);
@@ -161,14 +161,14 @@ test('after a crash with the phone away, the half-sent message is Check phone', 
   db.prepare(`UPDATE sms_attempts SET state = 'submitting'`).run();
   const phone = fakePhone();
   phone.lookupFails = true;
-  await smsWorker(db, dir, silent, { make: () => phone.gate }).tick();
+  await smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate }).tick();
   assert.equal(attempts(db)[0].state, 'unconfirmed');
 });
 
 test('a hand-over with no answer is looked up by ID; one the phone never got goes again under the same ID', async (t) => {
   const { db, dir, a1, b1 } = await setup(t);
   const phone = fakePhone();
-  const worker = smsWorker(db, dir, silent, { make: () => phone.gate });
+  const worker = smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate });
   queueMessage(db, { phone: '012 345 678', parcelIds: [a1], text: 'Hi Dara' }, null);
   phone.sendWith = 'timeout';
   await worker.tick();
@@ -188,7 +188,7 @@ test('a hand-over with no answer is looked up by ID; one the phone never got goe
 test('an unreachable phone keeps the message waiting; a refused password fails it and pauses the batch', async (t) => {
   const { db, dir, a1, a2, b1 } = await setup(t);
   const phone = fakePhone();
-  const worker = smsWorker(db, dir, silent, { make: () => phone.gate });
+  const worker = smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate });
   const r = notifyDay(db, { requestKey: crypto.randomUUID(), day: TODAY, items: [
     { phone: '012 345 678', parcelIds: [a1, a2], text: 'Hi Dara' },
     { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' },
@@ -213,7 +213,7 @@ test('a call that reached the customer after queuing stops the SMS before it goe
   const phone = fakePhone();
   queueMessage(db, { phone: '012 345 678', parcelIds: [a1, a2], text: 'Hi Dara' }, null);
   recordContact(db, { phone: '012 345 678', parcelIds: [a1, a2], channel: 'call', outcome: 'answered' }, null);
-  await smsWorker(db, dir, silent, { make: () => phone.gate }).tick();
+  await smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate }).tick();
   assert.deepEqual([attempts(db)[0].state, attempts(db)[0].error_code], ['cancelled', 'reached']);
   assert.equal(phone.sends.length, 0);
   const events = listContactEvents(db);
@@ -223,7 +223,7 @@ test('a call that reached the customer after queuing stops the SMS before it goe
 test('a retry with the same text is a new attempt of the same message; an edited one is a new message', async (t) => {
   const { db, dir, a1 } = await setup(t);
   const phone = fakePhone();
-  const worker = smsWorker(db, dir, silent, { make: () => phone.gate });
+  const worker = smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate });
   const first = queueMessage(db, { phone: '012 345 678', parcelIds: [a1], text: 'Hi Dara' }, null);
   assert.ok(first.ok);
   await worker.tick();
@@ -249,8 +249,8 @@ test('a retry with the same text is a new attempt of the same message; an edited
 test('a second worker does not send while the first holds the lease', async (t) => {
   const { db, dir, a1, b1 } = await setup(t);
   const phone = fakePhone();
-  const one = smsWorker(db, dir, silent, { make: () => phone.gate });
-  const two = smsWorker(db, dir, silent, { make: () => phone.gate });
+  const one = smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate });
+  const two = smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate });
   queueMessage(db, { phone: '012 345 678', parcelIds: [a1], text: 'Hi Dara' }, null);
   queueMessage(db, { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' }, null);
   await one.tick();
@@ -291,7 +291,7 @@ test('after a restore nothing is sent until staff check the phone; customers the
   const batch = notifyDay(db, { requestKey: crypto.randomUUID(), day: TODAY, items: [{ phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' }] }, null);
   assert.deepEqual(batch.ok ? null : batch.error, 'restore_hold');
   const phone = fakePhone();
-  const worker = smsWorker(db, dir, silent, { make: () => phone.gate });
+  const worker = smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate });
   await worker.tick();
   assert.equal(phone.sends.length, 0); // the queued one waits too
 
@@ -314,4 +314,29 @@ test('a refused line in the restore check saves nothing and keeps the hold', asy
   assert.equal(r.ok, false);
   assert.ok(restoreHold(db));
   assert.equal(listContactEvents(db).length, 0);
+});
+
+test('a gap of 25 to 80 seconds between two SMS, also after a restart', async (t) => {
+  const { db, dir, a1, b1 } = await setup(t);
+  const phone = fakePhone();
+  let clock = Date.now();
+  const worker = smsWorker(db, dir, silent, { make: () => phone.gate, now: () => clock, gap: () => 30_000 });
+  queueMessage(db, { phone: '012 345 678', parcelIds: [a1], text: 'Hi Dara' }, null);
+  queueMessage(db, { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' }, null);
+  await worker.tick();
+  clock += 29_000;
+  await worker.tick();
+  assert.equal(phone.sends.length, 1);
+  worker.release();
+  // A restarted worker still waits for the gap from the last hand-over it finds in the database.
+  const restarted = smsWorker(db, dir, silent, { make: () => phone.gate, now: () => clock, gap: () => 30_000 });
+  await restarted.tick();
+  assert.equal(phone.sends.length, 1);
+  clock += 32_000;
+  await restarted.tick();
+  assert.equal(phone.sends.length, 2);
+
+  const gaps = Array.from({ length: 500 }, randomGap);
+  assert.ok(gaps.every((g) => g >= 25_000 && g <= 80_000));
+  assert.ok(Math.max(...gaps) - Math.min(...gaps) > 30_000); // spread out, not one fixed pause
 });

@@ -102,7 +102,13 @@ export const getAppSettings = () => call<{ settings: Settings; isAdmin: boolean 
 export const putAppSettings = (patch: Partial<Settings>) => call<{ settings: Settings }>('/api/settings', { method: 'PUT', ...send(patch) });
 
 export const listParcels = () =>
-  call<{ parcels: Parcel[]; events: ContactEvent[]; batch: SmsBatch | null; restoreHold: { copyAt: string } | null }>('/api/parcels');
+  call<{
+    parcels: Parcel[];
+    events: ContactEvent[];
+    batch: SmsBatch | null;
+    restoreHold: { copyAt: string } | null;
+    gateway: { setUp: boolean; awaySince: string | null };
+  }>('/api/parcels');
 
 /** One SMS for a phone line. `retryOf` is the message a retry belongs to; `again` sends to parcels messaged before. */
 export const postSms = (body: { phone: string; parcelIds: number[]; text: string; again?: boolean; retryOf?: number }) =>

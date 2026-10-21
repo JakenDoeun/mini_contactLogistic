@@ -8,6 +8,7 @@ import { writeAudit } from '../db/audit.ts';
 import type { Db } from '../db/connection.ts';
 import { readSetting, writeSetting } from '../db/settings.ts';
 import { cambodiaDate, nowIso } from '../db/values.ts';
+import { readGatewayConfig } from '../gateway/smsgate.ts';
 
 export type AttemptState = 'queued' | 'submitting' | 'submitted' | 'sent' | 'delivered' | 'failed' | 'unconfirmed' | 'cancelled';
 /** Waiting for or at the phone: a second message for these parcels would duplicate it. */
@@ -24,6 +25,21 @@ const refuse = (error: string, message: string): QueueError => ({ ok: false, err
 export const RESTORE_HOLD = 'sms.restore_hold';
 export const restoreHold = (db: Db) => (readSetting(db, RESTORE_HOLD) as { copyAt: string } | undefined) ?? null;
 const held = () => refuse('restore_hold', 'Sending is on hold after a restore. Check the gateway phone on the Notifications page first.');
+
+// Saved by the worker while a waiting message cannot reach the gateway phone, so the pages can say why nothing goes out.
+export const PHONE_AWAY = 'sms.phone_away';
+
+/** Whether a gateway phone is set up, and since when it has not answered (null when it answers). */
+export function gatewayState(db: Db, dataDir: string) {
+  let setUp: boolean;
+  try {
+    setUp = !!readGatewayConfig(dataDir);
+  } catch {
+    setUp = false; // an incomplete gateway.json cannot be used either
+  }
+  const away = readSetting(db, PHONE_AWAY) as { since: string } | undefined;
+  return { setUp, awaySince: away?.since ?? null };
+}
 
 /** Called by npm run restore: holds every SMS until staff confirm they checked the phone. */
 export const holdAfterRestore = (db: Db, copyAt: Date, at = nowIso()) => writeSetting(db, RESTORE_HOLD, { copyAt: copyAt.toISOString() }, null, at);

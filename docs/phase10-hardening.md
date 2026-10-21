@@ -29,6 +29,12 @@ data only.
   `icacls /inheritance:r /grant:r` keeps entries added by hand, so a Users entry survived it. The installer now also
   removes Everyone, Users, Authenticated Users, Interactive users and Guests (the app's list).
 
+- **Sending queue says why nothing goes out (owner, 2026-10-21, found on the test VM).** With no gateway phone set
+  up, or a phone that stopped answering, the queue said "Sending 1 of 6…" forever. The worker now saves
+  `sms.phone_away` (since when) when a hand-over finds the phone away and clears it when the phone answers;
+  `/api/parcels` returns `gateway: { setUp, awaySince }`; Notifications shows "Waiting for the gateway phone" and what
+  to check. A running batch also shows "about X–Y minutes left" (the gap is random, 25–80 s).
+
 ## Windows test VM, 2026-10-21
 
 New VM "win10s" (Win10 22H2 19045, VirtualBox), owner installed from main, then updated over SSH with

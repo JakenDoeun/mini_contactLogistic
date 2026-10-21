@@ -9,7 +9,8 @@ import crypto from 'node:crypto';
 import type { Db } from '../db/connection.ts';
 import { SMS_GAP_SECONDS } from '../../lib/parcel-logic.ts';
 import { GatewayError, readGatewayConfig, smsGate, type GatewayState, type MessageState, type SmsGate } from '../gateway/smsgate.ts';
-import { restoreHold, type AttemptState } from './queue.ts';
+import { readSetting, writeSetting } from '../db/settings.ts';
+import { PHONE_AWAY, restoreHold, type AttemptState } from './queue.ts';
 
 const LEASE_MS = 60_000;
 // A phone that says Processed this long without a result is not going to say more (plan, status mapping).
@@ -137,6 +138,13 @@ export function smsWorker(
     }
   }
 
+  /** Saves when the phone stopped answering a hand-over, and clears it once it answers; written only on a change. */
+  function phoneAway(away: boolean) {
+    if (away === !!readSetting(db, PHONE_AWAY)) return;
+    if (away) writeSetting(db, PHONE_AWAY, { since: iso() }, null, iso());
+    else db.prepare('DELETE FROM settings WHERE key = ?').run(PHONE_AWAY);
+  }
+
   /** Hands the oldest waiting message to the phone, unless one is already being handed over. */
   async function sendNext(gate: SmsGate) {
     if (open(['submitting']).length || restoreHold(db)) return; // after a restore, nothing goes until staff check the phone
@@ -177,8 +185,10 @@ export function smsWorker(
     try {
       result = await gate.send({ id: next.id, phone: n.phone_normalized, text: n.message_text });
       nextSendAt = now() + gap();
+      phoneAway(false);
     } catch (e) {
       if (!(e instanceof GatewayError)) throw e;
+      phoneAway(e.problem === 'unreachable');
       if (e.problem !== 'unreachable') nextSendAt = now() + gap();
       if (e.problem === 'unreachable') {
         update(next.id, { state: 'queued' }); // nothing left this computer, so it waits for the phone

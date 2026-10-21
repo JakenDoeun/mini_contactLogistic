@@ -29,7 +29,7 @@ import {
 } from '@/lib/parcel-logic';
 import { controlBatch, dismissBatch, queueBatch, queueSms, releaseRestoreHold, useParcelData, type ParcelData, type SmsBatch } from '@/lib/parcel-service';
 import { currentTemplates, useSettings } from '@/lib/settings-service';
-import { cn, formatDateTime } from '@/lib/utils';
+import { cn, formatDateTime, formatTime } from '@/lib/utils';
 
 type ChannelFilter = 'all' | 'sms' | 'call' | 'telegram';
 const CHANNEL_FILTERS: { key: ChannelFilter; label: string }[] = [
@@ -285,6 +285,8 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
   const batch = data.batch ? data.events.filter((e) => data.batch!.eventIds.includes(e.id)) : [];
   const tally = (s: string) => batch.filter((e) => e.smsStatus === s).length;
   const done = batch.length - batch.filter(waiting).length;
+  // Queued messages only go out through the phone; say so when it is missing or not answering.
+  const stuck = inFlight.some((e) => e.smsStatus === 'queued') && (!data.gateway.setUp || !!data.gateway.awaySince);
 
   if (!inFlight.length && !batch.length) {
     return (
@@ -316,15 +318,18 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
             <span className="font-medium">
               {data.batch?.status === 'paused'
                 ? `Paused after ${done} of ${batch.length}`
-                : running
-                  ? `Sending ${Math.min(done + 1, batch.length)} of ${batch.length}…`
-                  : data.batch?.status === 'stopped'
-                    ? `Stopped: ${batch.length - tally('not-sent')} of ${batch.length} handed over`
-                    : `Finished: ${batch.length} SMS`}
+                : running && stuck
+                  ? `Waiting for the gateway phone: ${done} of ${batch.length} handed over`
+                  : running
+                    ? `Sending ${Math.min(done + 1, batch.length)} of ${batch.length}…`
+                    : data.batch?.status === 'stopped'
+                      ? `Stopped: ${batch.length - tally('not-sent')} of ${batch.length} handed over`
+                      : `Finished: ${batch.length} SMS`}
             </span>
             <span className="text-muted-foreground">
               {tally('sent') + tally('delivered')} sent · {tally('failed')} failed · {tally('unconfirmed')} unconfirmed
               {running && ` · ${batch.length - done} to go`}
+              {running && !stuck && data.batch?.status === 'running' && ` · about ${gapMinutes(batch.length - done)} left`}
             </span>
           </p>
           <div
@@ -338,6 +343,14 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
             <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${(done / batch.length) * 100}%` }} />
           </div>
         </div>
+      )}
+
+      {stuck && (
+        <p role="status" className="mt-4 rounded-md bg-warning-tint px-3 py-2 text-sm text-warning">
+          {!data.gateway.setUp
+            ? 'No gateway phone is set up, so nothing is being sent. The messages wait here. The administrator sets the phone up on the branch computer; see SMS gateway in Settings.'
+            : `The gateway phone has not answered since ${formatTime(data.gateway.awaySince!)}, so nothing is being sent. Check that it is switched on, the SMS Gateway app is running and it is on the network. The messages wait and go out when it answers.`}
+        </p>
       )}
 
       {inFlight.length > 0 && (
@@ -571,11 +584,17 @@ function Ready({
   );
 }
 
+/** How long this many gaps between messages take; the gap is random, so it is a range. */
+function gapMinutes(gaps: number) {
+  const [lo, hi] = SMS_GAP_SECONDS;
+  return `${Math.max(1, Math.round((gaps * lo) / 60))}–${Math.ceil((gaps * hi) / 60)} minutes`;
+}
+
 /** How long a run takes with the random gap between messages. */
 function sendingTime(count: number) {
   const [lo, hi] = SMS_GAP_SECONDS;
   if (count <= 1) return 'One SMS.';
-  return `Takes about ${Math.max(1, Math.round(((count - 1) * lo) / 60))}–${Math.ceil(((count - 1) * hi) / 60)} minutes: the phone waits ${lo}–${hi} seconds between messages, at random, so the branch SIM is not flagged.`;
+  return `Takes about ${gapMinutes(count - 1)}: the phone waits ${lo}–${hi} seconds between messages, at random, so the branch SIM is not flagged.`;
 }
 
 /** Messages grouped by arrival day, newest day first. */

@@ -13,6 +13,8 @@ export interface ParcelData {
   batch: SmsBatch | null;
   /** Set after a restore: nothing is sent until staff check the gateway phone. `copyAt` is when the copy was taken. */
   restoreHold: { copyAt: string } | null;
+  /** Whether a gateway phone is set up, and since when it has not answered; queued messages wait for it. */
+  gateway: { setUp: boolean; awaySince: string | null };
 }
 
 let data: ParcelData | null = null;
@@ -32,7 +34,7 @@ export function reloadParcels() {
   return listParcels().then(
     (r) => {
       error = null;
-      data = { parcels: r.parcels, events: r.events, batch: r.batch && r.batch.id !== dismissed ? r.batch : null, restoreHold: r.restoreHold };
+      data = { parcels: r.parcels, events: r.events, batch: r.batch && r.batch.id !== dismissed ? r.batch : null, restoreHold: r.restoreHold, gateway: r.gateway };
       notify();
       if (listeners.size) timer = setTimeout(reloadParcels, inFlight(data) ? 2_500 : 20_000);
     },

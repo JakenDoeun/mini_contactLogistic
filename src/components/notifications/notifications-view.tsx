@@ -28,9 +28,8 @@ import {
   type ContactEvent,
 } from '@/lib/parcel-logic';
 import { controlBatch, dismissBatch, queueBatch, queueSms, releaseRestoreHold, useParcelData, type ParcelData, type SmsBatch } from '@/lib/parcel-service';
-import { getSettings } from '@/lib/mock/settings-service';
-import { useSettings } from '@/lib/mock/use-settings';
-import { cn, formatDateTime } from '@/lib/utils';
+import { currentTemplates, useSettings } from '@/lib/settings-service';
+import { cn, formatDateTime, formatTime } from '@/lib/utils';
 
 type ChannelFilter = 'all' | 'sms' | 'call' | 'telegram';
 const CHANNEL_FILTERS: { key: ChannelFilter; label: string }[] = [
@@ -84,7 +83,7 @@ export function NotificationsView({ initialFilter }: { initialFilter?: string })
           <Attention work={work} events={events} nameOf={nameOf} onRetry={setRetrying} onOpen={setContacting} />
           <SendingQueue data={data} nameOf={nameOf} running={running} />
         </div>
-        <Ready plan={plan} running={running} hold={!!data?.restoreHold} onNotify={setConfirmDay} />
+        <Ready plan={plan} running={running} hold={!!data?.restoreHold} noGateway={data ? !data.gateway.setUp : false} onNotify={setConfirmDay} />
       </div>
 
       <History events={events} data={data} nameOf={nameOf} initialChannel={initialFilter} />
@@ -286,6 +285,8 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
   const batch = data.batch ? data.events.filter((e) => data.batch!.eventIds.includes(e.id)) : [];
   const tally = (s: string) => batch.filter((e) => e.smsStatus === s).length;
   const done = batch.length - batch.filter(waiting).length;
+  // Queued messages only go out through the phone; say so when it is missing or not answering.
+  const stuck = inFlight.some((e) => e.smsStatus === 'queued') && (!data.gateway.setUp || !!data.gateway.awaySince);
 
   if (!inFlight.length && !batch.length) {
     return (
@@ -317,15 +318,18 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
             <span className="font-medium">
               {data.batch?.status === 'paused'
                 ? `Paused after ${done} of ${batch.length}`
-                : running
-                  ? `Sending ${Math.min(done + 1, batch.length)} of ${batch.length}…`
-                  : data.batch?.status === 'stopped'
-                    ? `Stopped: ${batch.length - tally('not-sent')} of ${batch.length} handed over`
-                    : `Finished: ${batch.length} SMS`}
+                : running && stuck
+                  ? `Waiting for the gateway phone: ${done} of ${batch.length} handed over`
+                  : running
+                    ? `Sending ${Math.min(done + 1, batch.length)} of ${batch.length}…`
+                    : data.batch?.status === 'stopped'
+                      ? `Stopped: ${batch.length - tally('not-sent')} of ${batch.length} handed over`
+                      : `Finished: ${batch.length} SMS`}
             </span>
             <span className="text-muted-foreground">
               {tally('sent') + tally('delivered')} sent · {tally('failed')} failed · {tally('unconfirmed')} unconfirmed
               {running && ` · ${batch.length - done} to go`}
+              {running && !stuck && data.batch?.status === 'running' && ` · about ${gapMinutes(batch.length - done)} left`}
             </span>
           </p>
           <div
@@ -339,6 +343,14 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
             <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${(done / batch.length) * 100}%` }} />
           </div>
         </div>
+      )}
+
+      {stuck && (
+        <p role="status" className="mt-4 rounded-md bg-warning-tint px-3 py-2 text-sm text-warning">
+          {!data.gateway.setUp
+            ? 'No gateway phone is set up, so nothing is being sent. The messages wait here. The administrator sets the phone up on the branch computer; see SMS gateway in Settings.'
+            : `The gateway phone has not answered since ${formatTime(data.gateway.awaySince!)}, so nothing is being sent. Check that it is switched on, the SMS Gateway app is running and it is on the network. The messages wait and go out when it answers.`}
+        </p>
       )}
 
       {inFlight.length > 0 && (
@@ -483,11 +495,13 @@ function Ready({
   plan,
   running,
   hold,
+  noGateway,
   onNotify,
 }: {
   plan: ReturnType<typeof planNotify> | null;
   running: boolean;
   hold: boolean;
+  noGateway: boolean;
   onNotify: (day: string) => void;
 }) {
   const parcels = plan?.today.reduce((n, i) => n + i.codes.length, 0) ?? 0;
@@ -506,12 +520,21 @@ function Ready({
           <p className="text-sm text-muted-foreground">
             {parcels} {parcels === 1 ? 'parcel' : 'parcels'} from today, one SMS per phone number
           </p>
-          <Button className="mt-4 w-full" onClick={() => onNotify(arrivalDay(new Date().toISOString()))} disabled={running || hold || plan.today.length === 0}>
+          <Button className="mt-4 w-full" onClick={() => onNotify(arrivalDay(new Date().toISOString()))} disabled={running || hold || noGateway || plan.today.length === 0}>
             <Send aria-hidden />
             Notify today&apos;s customers
           </Button>
           {running && <p className="mt-2 text-xs text-muted-foreground">A run is in progress. Start the next one when it finishes.</p>}
           {hold && <p className="mt-2 text-xs text-warning">Sending is on hold after a restore. Check the gateway phone first.</p>}
+          {noGateway && (
+            <p className="mt-2 text-xs text-warning">
+              No gateway phone is set up yet, so nothing can be sent. The administrator sets it up on the branch computer; see{' '}
+              <Link href="/settings" className="font-medium underline underline-offset-4">
+                SMS gateway in Settings
+              </Link>
+              .
+            </p>
+          )}
 
           {plan.today.length === 0 ? (
             <div className="mt-4 text-sm">
@@ -558,7 +581,7 @@ function Ready({
                         · {list.length} {list.length === 1 ? 'customer' : 'customers'}
                       </span>
                     </span>
-                    <Button size="sm" variant="outline" className="shrink-0 bg-card" disabled={running || hold} onClick={() => onNotify(day)}>
+                    <Button size="sm" variant="outline" className="shrink-0 bg-card" disabled={running || hold || noGateway} onClick={() => onNotify(day)}>
                       Review
                     </Button>
                   </li>
@@ -572,11 +595,17 @@ function Ready({
   );
 }
 
+/** How long this many gaps between messages take; the gap is random, so it is a range. */
+function gapMinutes(gaps: number) {
+  const [lo, hi] = SMS_GAP_SECONDS;
+  return `${Math.max(1, Math.round((gaps * lo) / 60))}–${Math.ceil((gaps * hi) / 60)} minutes`;
+}
+
 /** How long a run takes with the random gap between messages. */
 function sendingTime(count: number) {
   const [lo, hi] = SMS_GAP_SECONDS;
   if (count <= 1) return 'One SMS.';
-  return `Takes about ${Math.max(1, Math.round(((count - 1) * lo) / 60))}–${Math.ceil(((count - 1) * hi) / 60)} minutes: the phone waits ${lo}–${hi} seconds between messages, at random, so the branch SIM is not flagged.`;
+  return `Takes about ${gapMinutes(count - 1)}: the phone waits ${lo}–${hi} seconds between messages, at random, so the branch SIM is not flagged.`;
 }
 
 /** Messages grouped by arrival day, newest day first. */
@@ -728,7 +757,8 @@ function ConfirmNotify({
             </div>
             {/* Outside the scrolling list, so Start queue stays in view however many customers there are. */}
             <footer className="flex flex-wrap items-center gap-2 border-t px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-              <Button disabled={items.length === 0 || starting || (earlier && !checked)} onClick={start}>
+              {/* Until the shared wording has loaded, the messages would carry the default wording. */}
+              <Button disabled={!templates || items.length === 0 || starting || (earlier && !checked)} onClick={start}>
                 <Send aria-hidden />
                 {starting ? 'Starting…' : earlier ? `Send ${items.length} SMS for ${label}` : `Start queue (${items.length} SMS)`}
               </Button>
@@ -956,7 +986,7 @@ function RetrySheet({ event, data, onClose }: { event: ContactEvent | null; data
   if (event && data && key !== event.id) {
     const name = data.parcels.find((p) => p.code === event.parcelCodes[0])?.recipient ?? '';
     setKey(event.id);
-    setText(event.message || composeMessage(name, event.parcelCodes, getSettings().templates));
+    setText(event.message || composeMessage(name, event.parcelCodes, currentTemplates()));
     setSendAnyway(false);
     setError('');
   }

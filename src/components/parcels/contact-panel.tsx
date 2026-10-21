@@ -17,7 +17,7 @@ import {
   type Parcel,
 } from '@/lib/parcel-logic';
 import { queueSms, recordOutcome } from '@/lib/parcel-service';
-import { useSettings } from '@/lib/mock/use-settings';
+import { useSettings } from '@/lib/settings-service';
 import { formatTime } from '@/lib/utils';
 import { SmsBadge } from './parcel-status';
 

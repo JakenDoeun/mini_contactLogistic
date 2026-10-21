@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { Check, RotateCcw } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -10,15 +9,13 @@ import { BackupCard } from './backup-card';
 import { FolderSettings } from './folder-settings';
 import { GatewayCard } from './gateway-card';
 import { PhoneSetupCard } from './phone-setup-card';
-import { composeMessage } from '@/lib/parcel-logic';
+import { composeMessage, DEFAULT_TEMPLATES } from '@/lib/parcel-logic';
 import {
-  DEFAULT_SETTINGS,
   columnError,
   templateError,
   type Settings,
 } from '@/lib/settings-logic';
-import { saveSettings } from '@/lib/mock/settings-service';
-import { useSettings } from '@/lib/mock/use-settings';
+import { saveSettings, useSettings } from '@/lib/settings-service';
 
 export function SettingsView() {
   const settings = useSettings();
@@ -27,12 +24,6 @@ export function SettingsView() {
     <>
       <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight">System Settings</h1>
       <p className="mt-1 text-muted-foreground">Folder monitoring, import rules and customer messages for this branch.</p>
-      <p className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-info-tint px-4 py-2.5 text-sm text-info">
-        <Badge variant="info" className="bg-card">
-          Preview
-        </Badge>
-        Backups, data, the watched folder and the SMS gateway are on the server. The other settings are remembered in this browser only until the backend is connected.
-      </p>
 
       {!settings ? (
         <div className="mt-6 flex flex-col gap-6" aria-busy="true" aria-label="Loading settings">
@@ -61,12 +52,14 @@ function useSection<K extends keyof Settings>(settings: Settings, keys: K[], val
   const [draft, setDraft] = useState(pick);
   const [errors, setErrors] = useState<Errors<Pick<Settings, K>>>({});
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [saveError, setSaveError] = useState('');
   const dirty = JSON.stringify(draft) !== JSON.stringify(pick());
 
   const set = <F extends K>(key: F, value: Settings[F]) => {
     setDraft((d) => ({ ...d, [key]: value }));
     setErrors((e) => ({ ...e, [key]: null }));
     setStatus('idle');
+    setSaveError('');
   };
 
   async function save(e: React.FormEvent) {
@@ -76,11 +69,17 @@ function useSection<K extends keyof Settings>(settings: Settings, keys: K[], val
     const first = Object.entries(found).find(([, v]) => v)?.[0];
     if (first) return document.getElementById(`field-${first}`)?.focus();
     setStatus('saving');
-    await saveSettings(draft);
-    setStatus('saved');
+    setSaveError('');
+    try {
+      await saveSettings(draft);
+      setStatus('saved');
+    } catch (err) {
+      setStatus('idle');
+      setSaveError(`Not saved. ${(err as Error).message}`);
+    }
   }
 
-  return { draft, set, errors, status, dirty, save, reset: () => (setDraft(pick()), setErrors({})) };
+  return { draft, set, errors, status, saveError, dirty, save, reset: () => (setDraft(pick()), setErrors({}), setSaveError('')) };
 }
 
 function SectionCard({
@@ -96,7 +95,7 @@ function SectionCard({
   description: string;
   badge?: React.ReactNode;
   children: React.ReactNode;
-  section: Pick<ReturnType<typeof useSection>, 'save' | 'dirty' | 'status' | 'reset'>;
+  section: Pick<ReturnType<typeof useSection>, 'save' | 'dirty' | 'status' | 'saveError' | 'reset'>;
 }) {
   return (
     <form onSubmit={section.save} noValidate aria-labelledby={`${id}-heading`} className="rounded-md border bg-card">
@@ -120,10 +119,12 @@ function SectionCard({
           </Button>
         )}
         <p aria-live="polite" className="text-sm">
-          {section.status === 'saved' && !section.dirty ? (
+          {section.saveError ? (
+            <span className="text-destructive">{section.saveError}</span>
+          ) : section.status === 'saved' && !section.dirty ? (
             <span className="inline-flex items-center gap-1.5 text-success">
               <Check className="size-4" aria-hidden />
-              Saved in this browser
+              Saved for every staff member
             </span>
           ) : section.dirty ? (
             <span className="text-muted-foreground">Unsaved changes</span>
@@ -253,7 +254,7 @@ function TemplateSection({ settings }: { settings: Settings }) {
     ['single', 'One parcel', SAMPLE.codes.slice(0, 1)],
     ['combined', 'Several parcels', SAMPLE.codes],
   ] as const;
-  const isDefault = JSON.stringify(s.draft.templates) === JSON.stringify(DEFAULT_SETTINGS.templates);
+  const isDefault = JSON.stringify(s.draft.templates) === JSON.stringify(DEFAULT_TEMPLATES);
 
   return (
     <SectionCard
@@ -299,7 +300,7 @@ function TemplateSection({ settings }: { settings: Settings }) {
       })}
       {!isDefault && (
         <div>
-          <Button type="button" variant="outline" size="sm" onClick={() => s.set('templates', DEFAULT_SETTINGS.templates)}>
+          <Button type="button" variant="outline" size="sm" onClick={() => s.set('templates', DEFAULT_TEMPLATES)}>
             <RotateCcw aria-hidden />
             Restore the original wording
           </Button>

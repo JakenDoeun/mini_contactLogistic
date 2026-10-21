@@ -1,26 +1,13 @@
 // Pure settings shape and checks. No React, no I/O, so it runs under `node --test`.
-import { DEFAULT_TEMPLATES } from './parcel-logic.ts';
 
+/** The settings every staff member shares, kept on the server (Phase 10). The defaults are the server's. */
 export interface Settings {
-  watchedFolder: string;
-  checkIntervalSeconds: number;
-  monitoringEnabled: boolean;
   trackingColumn: string;
   phoneColumn: string;
   /** What to do when a file with the same fingerprint was imported before. */
   duplicateFile: 'warn' | 'block';
   templates: { single: string; combined: string };
 }
-
-export const DEFAULT_SETTINGS: Settings = {
-  watchedFolder: 'D:\\Logistics\\Exports\\Arrivals',
-  checkIntervalSeconds: 60,
-  monitoringEnabled: true,
-  trackingColumn: 'Tracking code',
-  phoneColumn: 'Phone',
-  duplicateFile: 'warn',
-  templates: DEFAULT_TEMPLATES,
-};
 
 export const CHECK_INTERVALS = [30, 60, 120, 300];
 const TOKENS = ['{name}', '{codes}', '{count}'];

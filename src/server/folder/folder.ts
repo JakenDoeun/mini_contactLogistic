@@ -7,6 +7,7 @@ import path from 'node:path';
 import { writeAudit } from '../db/audit.ts';
 import type { Db } from '../db/connection.ts';
 import { checkImport } from '../importer/store.ts';
+import { readSetting, writeSetting } from '../db/settings.ts';
 
 export const FOLDER_KEY = 'folder.settings';
 const LAST_SCAN_KEY = 'folder.last_scan';
@@ -21,17 +22,6 @@ export type LastScan = { at: string; by: 'auto' | 'manual'; ok: boolean; message
 export const defaultFolder = () =>
   process.platform === 'win32' ? path.win32.join(process.env.PUBLIC || 'C:\\Users\\Public', 'Documents', 'Campus Branch Imports') : null;
 
-function readSetting(db: Db, key: string): unknown {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
-  return row ? JSON.parse(row.value) : undefined;
-}
-const writeSetting = (db: Db, key: string, value: unknown, userId: number | null, at: string) =>
-  db
-    .prepare(
-      `INSERT INTO settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
-    )
-    .run(key, JSON.stringify(value), userId, at);
 
 export function folderSettings(db: Db): FolderSettings {
   const s = (readSetting(db, FOLDER_KEY) ?? {}) as Partial<FolderSettings>;

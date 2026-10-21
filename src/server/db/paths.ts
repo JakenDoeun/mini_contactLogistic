@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -42,7 +43,39 @@ export function assertInTempDir(p: string) {
   }
 }
 
-/** Data folder for the scripts: DATA_DIR, else the development folder. Created 0700; refused if others can read it. */
+// Finding I4: on Windows the folder's access list must keep everyday accounts out, as the installer sets it (only the
+// app's account, Administrators and SYSTEM). Read as SIDs, so it works on Windows in any language.
+const BROAD: Record<string, string> = {
+  WD: 'Everyone', 'S-1-1-0': 'Everyone',
+  BU: 'Users', 'S-1-5-32-545': 'Users',
+  AU: 'Authenticated Users', 'S-1-5-11': 'Authenticated Users',
+  IU: 'Interactive users', 'S-1-5-4': 'Interactive users',
+  BG: 'Guests', 'S-1-5-32-546': 'Guests',
+};
+
+/** The everyday groups an SDDL access list lets in (allow entries only). */
+export function broadAccess(sddl: string): string[] {
+  const dacl = sddl.slice(Math.max(0, sddl.indexOf('D:')));
+  const found = [...dacl.matchAll(/\(A;[^;]*;[^;]*;[^;]*;[^;]*;([^)]+)\)/g)].map((m) => BROAD[m[1]]).filter(Boolean);
+  return [...new Set(found)];
+}
+
+/** The folder's access list as SDDL, from icacls (part of Windows). */
+function windowsSddl(dir: string) {
+  const file = path.join(os.tmpdir(), `campus-branch-acl-${process.pid}.txt`);
+  try {
+    execFileSync('icacls', [dir, '/save', file, '/q'], { windowsHide: true, stdio: 'ignore' });
+    return fs.readFileSync(file, 'utf16le').split(/\r?\n/).find((line) => line.includes('D:')) ?? '';
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+}
+const aclChecked = new Set<string>();
+
+/**
+ * Data folder for the scripts: DATA_DIR, else the development folder. Created 0700; refused if others can read it
+ * (on Windows: if its access list lets everyday accounts in, checked once per process).
+ */
 export function resolveDataDir(env: NodeJS.ProcessEnv = process.env) {
   // Finding M2: a production server without DATA_DIR must not quietly use the development folder.
   if (!env.DATA_DIR?.trim() && env.NODE_ENV === 'production') {
@@ -55,6 +88,13 @@ export function resolveDataDir(env: NodeJS.ProcessEnv = process.env) {
   const mode = fs.statSync(/*turbopackIgnore: true*/ dir).mode & 0o777;
   if (process.platform !== 'win32' && mode & 0o077) {
     throw new Error(`Data folder ${dir} has mode ${mode.toString(8)}; it must be 0700 (chmod 700 "${dir}")`);
+  }
+  if (process.platform === 'win32' && !aclChecked.has(dir)) {
+    const broad = broadAccess(windowsSddl(dir));
+    if (broad.length) {
+      throw new Error(`Data folder ${dir} can be opened by ${broad.join(', ')}. Run the installer again to lock it to the app's account.`);
+    }
+    aclChecked.add(dir);
   }
   return dir;
 }

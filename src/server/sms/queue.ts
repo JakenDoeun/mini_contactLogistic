@@ -6,7 +6,9 @@ import crypto from 'node:crypto';
 import { isValidPhone, normalizePhone, type Channel, type ContactEvent, type Outcome, type SmsStatus } from '../../lib/parcel-logic.ts';
 import { writeAudit } from '../db/audit.ts';
 import type { Db } from '../db/connection.ts';
+import { readSetting, writeSetting } from '../db/settings.ts';
 import { cambodiaDate, nowIso } from '../db/values.ts';
+import { readGatewayConfig } from '../gateway/smsgate.ts';
 
 export type AttemptState = 'queued' | 'submitting' | 'submitted' | 'sent' | 'delivered' | 'failed' | 'unconfirmed' | 'cancelled';
 /** Waiting for or at the phone: a second message for these parcels would duplicate it. */
@@ -21,19 +23,26 @@ const refuse = (error: string, message: string): QueueError => ({ ok: false, err
 // After a restore, messages sent after the copy are missing here, so their parcels look Not sent. Nothing is sent until
 // staff check the gateway phone and confirm (owner, 2026-10-20).
 export const RESTORE_HOLD = 'sms.restore_hold';
-export function restoreHold(db: Db): { copyAt: string } | null {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(RESTORE_HOLD) as { value: string } | undefined;
-  return row ? (JSON.parse(row.value) as { copyAt: string }) : null;
-}
+export const restoreHold = (db: Db) => (readSetting(db, RESTORE_HOLD) as { copyAt: string } | undefined) ?? null;
 const held = () => refuse('restore_hold', 'Sending is on hold after a restore. Check the gateway phone on the Notifications page first.');
 
-/** Called by npm run restore: holds every SMS until staff confirm they checked the phone. */
-export function holdAfterRestore(db: Db, copyAt: Date, at = nowIso()) {
-  db.prepare(
-    `INSERT INTO settings (key, value, updated_by, updated_at) VALUES (?, ?, NULL, ?)
-     ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_by = NULL, updated_at = excluded.updated_at`,
-  ).run(RESTORE_HOLD, JSON.stringify({ copyAt: copyAt.toISOString() }), at);
+// Saved by the worker while a waiting message cannot reach the gateway phone, so the pages can say why nothing goes out.
+export const PHONE_AWAY = 'sms.phone_away';
+
+/** Whether a gateway phone is set up, and since when it has not answered (null when it answers). */
+export function gatewayState(db: Db, dataDir: string) {
+  let setUp: boolean;
+  try {
+    setUp = !!readGatewayConfig(dataDir);
+  } catch {
+    setUp = false; // an incomplete gateway.json cannot be used either
+  }
+  const away = readSetting(db, PHONE_AWAY) as { since: string } | undefined;
+  return { setUp, awaySince: away?.since ?? null };
 }
+
+/** Called by npm run restore: holds every SMS until staff confirm they checked the phone. */
+export const holdAfterRestore = (db: Db, copyAt: Date, at = nowIso()) => writeSetting(db, RESTORE_HOLD, { copyAt: copyAt.toISOString() }, null, at);
 
 /**
  * Staff checked the gateway phone after a restore. Each line they saw an SMS for is saved as Sent (so it is never

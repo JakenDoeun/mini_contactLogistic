@@ -1,11 +1,13 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Db } from '../db/connection.ts';
 import { insertNewParcels } from '../db/parcels.ts';
 import { createTestDb } from '../db/test-db.ts';
 import { cambodiaDate } from '../db/values.ts';
-import { GatewayError, writeGatewayConfig, type MessageState, type SmsGate } from '../gateway/smsgate.ts';
-import { controlBatch, holdAfterRestore, listContactEvents, notifyDay, queueMessage, recordContact, releaseRestoreHold, restoreHold } from './queue.ts';
+import { GATEWAY_FILE, GatewayError, writeGatewayConfig, type MessageState, type SmsGate } from '../gateway/smsgate.ts';
+import { controlBatch, gatewayState, holdAfterRestore, listContactEvents, notifyDay, queueMessage, recordContact, releaseRestoreHold, restoreHold } from './queue.ts';
 import { randomGap, smsWorker } from './worker.ts';
 
 const TODAY = cambodiaDate();
@@ -194,11 +196,17 @@ test('an unreachable phone keeps the message waiting; a refused password fails i
     { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' },
   ] }, null);
   assert.ok(r.ok);
+  assert.deepEqual(gatewayState(db, dir), { setUp: true, awaySince: null });
   phone.sendWith = 'unreachable';
   await worker.tick();
   assert.deepEqual(attempts(db).map((a) => a.state), ['queued', 'queued']);
+  const since = gatewayState(db, dir).awaySince;
+  assert.ok(since); // the pages say the phone is not answering
+  await worker.tick();
+  assert.equal(gatewayState(db, dir).awaySince, since); // still the first time it did not answer
   phone.sendWith = 'auth';
   await worker.tick();
+  assert.equal(gatewayState(db, dir).awaySince, null); // it answered, even if with a refusal
   assert.deepEqual(attempts(db).map((a) => a.state), ['failed', 'queued']);
   assert.equal((db.prepare('SELECT status FROM send_batches').get() as { status: string }).status, 'paused');
   phone.sendWith = 'accept';
@@ -206,6 +214,19 @@ test('an unreachable phone keeps the message waiting; a refused password fails i
   assert.equal(attempts(db)[1].state, 'queued'); // paused: nothing more goes out
   assert.equal(controlBatch(db, r.batchId, 'stop', null).ok, true);
   assert.deepEqual(attempts(db).map((a) => a.state), ['failed', 'cancelled']);
+});
+
+test('with no gateway phone set up, messages wait and the pages are told why', async (t) => {
+  const { db, dir, b1 } = await setup(t);
+  fs.rmSync(path.join(dir, GATEWAY_FILE));
+  const phone = fakePhone();
+  queueMessage(db, { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' }, null);
+  await smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate }).tick();
+  assert.deepEqual(gatewayState(db, dir), { setUp: false, awaySince: null });
+  assert.equal(attempts(db)[0].state, 'queued');
+  assert.equal(phone.sends.length, 0);
+  fs.writeFileSync(path.join(dir, GATEWAY_FILE), '{"url":"http://phone:8080"}'); // incomplete: unusable as well
+  assert.equal(gatewayState(db, dir).setUp, false);
 });
 
 test('a call that reached the customer after queuing stops the SMS before it goes', async (t) => {

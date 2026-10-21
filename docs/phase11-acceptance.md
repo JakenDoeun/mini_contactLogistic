@@ -34,14 +34,14 @@ fails as written; **real day** = needs the branch laptop, the real phone or a re
 | 18 | SMS | Gateway offline, 400, 401, 503 | pass | offline and 503 wait as Queued ("an unreachable phone keeps the message waiting"); 401 fails it and pauses the batch; 400 fails it |
 | 19 | SMS | Timeout after the request left | pass | "a send that times out is unknown, never failed"; "a hand-over with no answer is looked up by ID" |
 | 20 | SMS | Failed SMS then reached call | pass | "a failed SMS then an answered call: SMS stays Failed". There is no contact status since 2026-10-20 (owner): the call is history |
-| 21 | SMS | Gateway states Pending to Delivered | pass | "the worker hands messages over one at a time and follows the phone to Delivered"; emulator 2026-10-20 |
+| 21 | SMS | Gateway states Pending to Delivered | pass | Unit test; emulator over the tailnet 2026-10-22: 3-SMS batch (one combined) Delivered, gaps 34 s and 72 s |
 | 22 | SMS | Restart app and worker mid-batch | pass | "after a crash: Sending the phone never got is Not sent, Accepted it has lost is Check phone; nothing is resent" |
-| 23 | Deploy | Reboot the host | partly | VM 2026-10-21: app back in 141 s with nobody signed in. "Queue resumes" needs a gateway: emulator |
+| 23 | Deploy | Reboot the host | pass | VM 2026-10-21: app back in 141 s with nobody signed in. Queue resumes: 2026-10-22, a run started while the phone was away waited, then went out once the phone answered |
 | 24 | Deploy | Backup and restore drill | pass | VM 2026-10-18 (217/217 parcels, integrity ok) and 2026-10-21 (restore, SMS hold, staff release) |
-| 25 | Deploy | Device outside the allowed rule; staff phone | partly | Rules applied 2026-10-21; VM 443 open, other ports and VM → laptop blocked. 8080 refusal waits for a `tag:gateway` device; staff phone opens the app: owner |
+| 25 | Deploy | Device outside the allowed rule; staff phone | partly | 2026-10-22: gateway 8080 refused from the owner's laptop, open from the VM (`tag:office`); VM → gateway 22 refused. Staff phone opens the app: owner |
 | 26 | Deploy | Browser source and API responses | finding | No password anywhere. The gateway's address is sent to every signed-in staff member by `/api/gateway` and shown in Settings (Phase 8). Owner to decide (below) |
 | 27 | Phone | Test SMS through the SIM, Wi-Fi then mobile data | real day | Needs the real phone and branch SIM |
-| 28 | Phone | Gateway phone reboot, airplane mode, low battery | partly | Reboot and airplane mode: emulator. Low battery: real phone |
+| 28 | Phone | Gateway phone reboot, airplane mode, low battery | partly | 2026-10-22: SMSGate stopped mid-morning → "Waiting for the gateway phone" and "has not answered since"; started again → both sent, 5 on the phone, none twice. Reboot: Phase 7 (emulator). Airplane mode, low battery: real phone |
 | 29 | Phone | Camera scan on iPhone Safari and Android Chrome | partly | Owner scanned with a phone camera in Phase 6. Both browsers on the real day |
 | 30 | Shopee filter | Mixed outlets, as .xlsx, .xls and .csv | pass | `scan-record-mixed.*` expected-review tests |
 | 31 | Shopee filter | Capitals and surrounding spaces, NBSP | pass | "outlet rule send-outlet-shopee-shpe/v1"; "source values are trimmed of surrounding whitespace and NBSP only" |
@@ -56,6 +56,19 @@ fails as written; **real day** = needs the branch laptop, the real phone or a re
 - **Scan lookup missed codes with a small letter or a space.** Scan upper-cased the scanned code and removed its
   spaces, then compared it with the stored spelling exactly, so `s000000018` or `SPX 123` was never found. Both sides
   are now normalized (`findByCode` in `src/lib/parcel-logic.ts`, tested).
+
+## Emulator run, 2026-10-22
+
+Android 14 emulator on the owner's old laptop (`homeserver`, Ubuntu 26.04, tagged `tag:gateway`), SMSGate 1.77.3
+(checksum as in Phase 7), Local Server and Start on boot on, port 8080 shared on the tailnet with Tailscale Serve. The
+app on the test VM (main plus Phase 11) was set up with `gateway set` to `http://homeserver.tailc4ca3f.ts.net:8080`:
+"Connected, phone checks pass", Delete after set to 7 days, `gateway.json` readable by the app account, Administrators
+and SYSTEM only. SMSGate's generated 8-character password was replaced with a random 24-character one (the old one then
+got 401). Synthetic files only, imported through Scan Folder Now with no decisions needed. A temporary staff account
+`claude.test` took the screenshots and was disabled afterwards; the emulator was stopped.
+
+Not covered by the emulator: the SIM, the carrier, delivery reports (the emulator says Delivered for everything), battery
+savers.
 
 ## Owner decisions needed
 

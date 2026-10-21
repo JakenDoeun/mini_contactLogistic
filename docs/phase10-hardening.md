@@ -67,7 +67,8 @@ New VM "win10s" (Win10 22H2 19045, VirtualBox), owner installed from main, then 
 
 ## Open
 
-- Tailnet rules: the owner applies them (admin console) and runs the checks in `docs/tailnet-rules.md`.
+- Tailnet rule checks that need a gateway device (office → gateway 8080 allowed, others refused): with the emulator on
+  the owner's old laptop tagged `tag:gateway`.
 - Linux install stays paused (Revision 5).
 - All Windows checks repeat on the branch laptop before real data.
 
@@ -75,4 +76,7 @@ New VM "win10s" (Win10 22H2 19045, VirtualBox), owner installed from main, then 
 
 - [ ] Reboot and restore pass on Windows (the branch laptop, or a test VM): the app comes back by itself after a
   reboot; a restore holds SMS until staff check the phone; the data folder's access list passes the I4 check.
-- [ ] Tailnet rules applied and checked.
+- [x] Tailnet rules applied and checked (gateway rows wait for a `tag:gateway` device)
+  - 2026-10-21: owner saved the policy from `docs/tailnet-rules.md` with the two temporary admin SSH lines and tagged the
+    test VM `tag:office`. From the owner's laptop (member, admin): VM 443 `/login` 200, SSH 22 works, 445/3389/135/5985
+    refused. From the VM (`tag:office`) to the owner's laptop, which listens on 22 and 5432: both blocked (allowed before).

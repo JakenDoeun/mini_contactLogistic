@@ -25,6 +25,23 @@ data only.
 - **Restore drill, Linux**: on a scratch data folder, a backup restored with `npm run restore -- 1` set the SMS hold
   with the copy's time and printed the staff instruction.
 
+- **Installer fix (found on the test VM):** the app's refusal says "run the installer again", but the installer's
+  `icacls /inheritance:r /grant:r` keeps entries added by hand, so a Users entry survived it. The installer now also
+  removes Everyone, Users, Authenticated Users, Interactive users and Guests (the app's list).
+
+## Windows test VM, 2026-10-21
+
+New VM "win10s" (Win10 22H2 19045, VirtualBox), owner installed from main, then updated over SSH with
+`install.ps1 -Branch phase10-hardening` (exit 0). Synthetic data only; no account created yet.
+
+- I4: installer's list (campusbranch M, Administrators F, SYSTEM F) passes: app opens the database, start backup saved.
+  Users given read on the folder by hand: the app refuses to start and logs "can be opened by Users. Run the installer
+  again". The old installer left that entry; the fixed one removed it and the app started (exit 0).
+- Restore: task stopped as printed, backup 1 restored, current database kept as before-restore-*.db, `backup.restored`
+  audited, `sms.restore_hold` saved with the copy's time; still held after the app restarted and after a reboot.
+- Reboot (`Restart-Computer -Force` over SSH, nobody signing in): `/login` 200 over Tailscale HTTPS 141 s after the
+  command; task Running.
+
 ## Tests
 
 - Unit: 185 (shared settings start from the importer's defaults, the admin's save reaches the importer and leaves
@@ -36,11 +53,11 @@ data only.
 
 ## Open
 
-- **No Windows test VM right now.** The VM used in Phases 3–5 ("Wins 10", tailnet name wins10) is no longer in
-  VirtualBox. Needed for: the I4 check on a real Windows folder, a clean install from this branch, and the restore and
-  reboot drill. Either a test VM again, or these run on the branch laptop.
+- **Staff side of the restore hold** needs a signed-in account on the test VM: Notifications shows the hold, staff
+  tick what the phone shows and confirm, sending resumes. The owner has not created the VM's first account yet.
 - Tailnet rules: the owner applies them (admin console) and runs the checks in `docs/tailnet-rules.md`.
 - Linux install stays paused (Revision 5).
+- All Windows checks repeat on the branch laptop before real data.
 
 ## Gate
 

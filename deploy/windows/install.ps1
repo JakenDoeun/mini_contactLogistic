@@ -267,6 +267,10 @@ Step "Data folder $DataDir"
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 icacls $DataDir /inheritance:r /grant:r "${Account}:(OI)(CI)M" '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Could not set the permissions of $DataDir (icacls exit code $LASTEXITCODE)." }
+# /grant:r keeps entries added by hand; drop the groups the app refuses to start with (BROAD in src/server/db/paths.ts):
+# Everyone, Users, Authenticated Users, Interactive users, Guests.
+icacls $DataDir /remove:g '*S-1-1-0' '*S-1-5-32-545' '*S-1-5-11' '*S-1-5-4' '*S-1-5-32-546' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Could not set the permissions of $DataDir (icacls exit code $LASTEXITCODE)." }
 # The watched folder's default (src/server/folder/folder.ts): staff signed in at this computer save the courier export
 # here, and the app's account can read it. It holds customer data, so it is not open to everyone.
 $ImportsDir = "$env:PUBLIC\Documents\Campus Branch Imports"

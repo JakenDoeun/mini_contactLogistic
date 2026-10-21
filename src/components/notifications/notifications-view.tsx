@@ -757,7 +757,8 @@ function ConfirmNotify({
             </div>
             {/* Outside the scrolling list, so Start queue stays in view however many customers there are. */}
             <footer className="flex flex-wrap items-center gap-2 border-t px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-              <Button disabled={items.length === 0 || starting || (earlier && !checked)} onClick={start}>
+              {/* Until the shared wording has loaded, the messages would carry the default wording. */}
+              <Button disabled={!templates || items.length === 0 || starting || (earlier && !checked)} onClick={start}>
                 <Send aria-hidden />
                 {starting ? 'Starting…' : earlier ? `Send ${items.length} SMS for ${label}` : `Start queue (${items.length} SMS)`}
               </Button>

@@ -5,7 +5,7 @@ import { Camera, ScanBarcode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { normalizeCode, phoneGroup } from '@/lib/parcel-logic';
+import { findByCode, normalizeCode, phoneGroup } from '@/lib/parcel-logic';
 import { useParcelData, useParcelError } from '@/lib/parcel-service';
 import { cameraSupport } from '@/lib/scanner/camera-barcode';
 import { CameraScanner } from './camera-scanner';
@@ -37,7 +37,7 @@ export function ScanParcel() {
     setCamera(true);
   }, []);
 
-  const parcel = scanned ? data?.parcels.find((p) => p.code === scanned) : undefined;
+  const parcel = scanned && data ? findByCode(data.parcels, scanned) : undefined;
 
   function lookup(raw: string, source: 'typed' | 'camera' = 'typed') {
     const code = normalizeCode(raw);

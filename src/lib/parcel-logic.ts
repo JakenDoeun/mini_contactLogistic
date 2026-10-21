@@ -61,6 +61,9 @@ export function formatPhone(raw: string) {
 
 export const normalizeCode = (raw: string) => raw.trim().toUpperCase().replace(/\s+/g, '');
 
+/** The parcel a scanned or typed code belongs to: stored codes keep their spelling, so both sides are normalized. */
+export const findByCode = (parcels: Parcel[], raw: string) => parcels.find((p) => normalizeCode(p.code) === normalizeCode(raw));
+
 const newestFirst = (a: ContactEvent, b: ContactEvent) => b.at.localeCompare(a.at);
 
 export const eventsFor = (code: string, events: ContactEvent[]) => events.filter((e) => e.parcelCodes.includes(code)).sort(newestFirst);

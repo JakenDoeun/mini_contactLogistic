@@ -34,6 +34,9 @@ data only.
   `sms.phone_away` (since when) when a hand-over finds the phone away and clears it when the phone answers;
   `/api/parcels` returns `gateway: { setUp, awaySince }`; Notifications shows "Waiting for the gateway phone" and what
   to check. A running batch also shows "about X–Y minutes left" (the gap is random, 25–80 s).
+- **Notify needs a gateway phone (owner, 2026-10-21).** With no gateway phone set up, "Notify today's customers" and
+  the earlier-day buttons are disabled with a note pointing to SMS gateway in Settings, and `POST /api/sms/batch`
+  refuses with `no_gateway` (409). A phone that is set up but away does not block Notify: messages wait for it.
 
 ## Windows test VM, 2026-10-21
 

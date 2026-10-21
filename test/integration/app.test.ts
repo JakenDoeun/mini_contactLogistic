@@ -13,6 +13,7 @@ import { readActiveRecoveryCode, rotateRecoveryCode } from '../../src/server/aut
 import { createSession } from '../../src/server/auth/sessions.ts';
 import { openDatabase } from '../../src/server/db/connection.ts';
 import { applyPending, migrateDatabase } from '../../src/server/db/migrate.ts';
+import { GATEWAY_FILE, writeGatewayConfig } from '../../src/server/gateway/smsgate.ts';
 import { buildCopy, freePort, REPO, startApp, tempDir } from './harness.ts';
 
 let buildDir: string;
@@ -370,6 +371,29 @@ test('backups and data: any staff member saves a backup; only the admin changes 
   const after = await (await send('/api/backup', { cookie: adminCookie })).json();
   assert.deepEqual({ isAdmin: after.isAdmin, retentionDays: after.retentionDays }, { isAdmin: true, retentionDays: 3 });
   assert.equal((await putDays(7, adminCookie)).status, 200);
+});
+
+test('sms: with no gateway phone set up, Notify is refused and the pages are told why (Phase 10)', async () => {
+  const db = openDatabase(path.join(site.dataDir, 'branch.db'));
+  const { id: adminId } = db.prepare("SELECT id FROM users WHERE username = 'first.staff'").get() as { id: number };
+  const cookie = `__Host-cb_session=${createSession(db, adminId)}`;
+  db.close();
+  const notify = () => postJson('/api/sms/batch', { requestKey: crypto.randomUUID(), day: '2026-01-01', items: [] }, { cookie });
+  const gateway = async () => (await (await send('/api/parcels', { cookie })).json()).gateway;
+
+  fs.rmSync(path.join(site.dataDir, GATEWAY_FILE), { force: true });
+  assert.deepEqual(await gateway(), { setUp: false, awaySince: null });
+  const refused = await notify();
+  assert.equal(refused.status, 409);
+  assert.equal((await refused.json()).error, 'no_gateway');
+
+  writeGatewayConfig(site.dataDir, { url: 'http://127.0.0.1:9', username: 'sms', password: 'secret' });
+  try {
+    assert.equal((await gateway()).setUp, true);
+    assert.notEqual((await (await notify()).json()).error, 'no_gateway'); // past the gateway check; refused for its own reasons
+  } finally {
+    fs.rmSync(path.join(site.dataDir, GATEWAY_FILE), { force: true });
+  }
 });
 
 test('imports: upload, review, staff decisions and Confirm through the real API (Phase 4)', async () => {

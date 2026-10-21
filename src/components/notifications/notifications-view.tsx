@@ -83,7 +83,7 @@ export function NotificationsView({ initialFilter }: { initialFilter?: string })
           <Attention work={work} events={events} nameOf={nameOf} onRetry={setRetrying} onOpen={setContacting} />
           <SendingQueue data={data} nameOf={nameOf} running={running} />
         </div>
-        <Ready plan={plan} running={running} hold={!!data?.restoreHold} onNotify={setConfirmDay} />
+        <Ready plan={plan} running={running} hold={!!data?.restoreHold} noGateway={data ? !data.gateway.setUp : false} onNotify={setConfirmDay} />
       </div>
 
       <History events={events} data={data} nameOf={nameOf} initialChannel={initialFilter} />
@@ -495,11 +495,13 @@ function Ready({
   plan,
   running,
   hold,
+  noGateway,
   onNotify,
 }: {
   plan: ReturnType<typeof planNotify> | null;
   running: boolean;
   hold: boolean;
+  noGateway: boolean;
   onNotify: (day: string) => void;
 }) {
   const parcels = plan?.today.reduce((n, i) => n + i.codes.length, 0) ?? 0;
@@ -518,12 +520,21 @@ function Ready({
           <p className="text-sm text-muted-foreground">
             {parcels} {parcels === 1 ? 'parcel' : 'parcels'} from today, one SMS per phone number
           </p>
-          <Button className="mt-4 w-full" onClick={() => onNotify(arrivalDay(new Date().toISOString()))} disabled={running || hold || plan.today.length === 0}>
+          <Button className="mt-4 w-full" onClick={() => onNotify(arrivalDay(new Date().toISOString()))} disabled={running || hold || noGateway || plan.today.length === 0}>
             <Send aria-hidden />
             Notify today&apos;s customers
           </Button>
           {running && <p className="mt-2 text-xs text-muted-foreground">A run is in progress. Start the next one when it finishes.</p>}
           {hold && <p className="mt-2 text-xs text-warning">Sending is on hold after a restore. Check the gateway phone first.</p>}
+          {noGateway && (
+            <p className="mt-2 text-xs text-warning">
+              No gateway phone is set up yet, so nothing can be sent. The administrator sets it up on the branch computer; see{' '}
+              <Link href="/settings" className="font-medium underline underline-offset-4">
+                SMS gateway in Settings
+              </Link>
+              .
+            </p>
+          )}
 
           {plan.today.length === 0 ? (
             <div className="mt-4 text-sm">
@@ -570,7 +581,7 @@ function Ready({
                         · {list.length} {list.length === 1 ? 'customer' : 'customers'}
                       </span>
                     </span>
-                    <Button size="sm" variant="outline" className="shrink-0 bg-card" disabled={running || hold} onClick={() => onNotify(day)}>
+                    <Button size="sm" variant="outline" className="shrink-0 bg-card" disabled={running || hold || noGateway} onClick={() => onNotify(day)}>
                       Review
                     </Button>
                   </li>

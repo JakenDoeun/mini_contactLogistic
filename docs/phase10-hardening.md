@@ -41,6 +41,11 @@ New VM "win10s" (Win10 22H2 19045, VirtualBox), owner installed from main, then 
   audited, `sms.restore_hold` saved with the copy's time; still held after the app restarted and after a reboot.
 - Reboot (`Restart-Computer -Force` over SSH, nobody signing in): `/login` 200 over Tailscale HTTPS 141 s after the
   command; task Running.
+- Staff side (owner, in the browser): after creating the first account, Notifications showed the hold; the owner
+  confirmed with nothing ticked (no parcels yet) and the hold was lifted, audited `sms.hold_released` (count 0). The
+  ticked-line path (saved as Sent, seen on phone) is covered by unit tests only, not on Windows.
+- Synthetic import (scan-record-mixed.xlsx via Scan Folder Now): 3 blocked (2 recipient conflicts, 1 code spelling)
+  resolved by the owner, 10 parcels added, arrival date today.
 
 ## Tests
 
@@ -53,8 +58,6 @@ New VM "win10s" (Win10 22H2 19045, VirtualBox), owner installed from main, then 
 
 ## Open
 
-- **Staff side of the restore hold** needs a signed-in account on the test VM: Notifications shows the hold, staff
-  tick what the phone shows and confirm, sending resumes. The owner has not created the VM's first account yet.
 - Tailnet rules: the owner applies them (admin console) and runs the checks in `docs/tailnet-rules.md`.
 - Linux install stays paused (Revision 5).
 - All Windows checks repeat on the branch laptop before real data.

@@ -53,6 +53,7 @@ The rules were first applied on 2026-10-21 with test devices standing in (owner'
 - [ ] Test VM `win10s`: remove `tag:office` or delete the machine; tag the branch laptop `tag:office` instead.
 - [ ] Old laptop running the emulator (if tagged `tag:gateway`): remove it from the tailnet; tag the real phone instead.
 - [ ] Delete both admin SSH lines (`tag:office:22`, `tag:gateway:22`) from `acls`.
+- [ ] Change the branch router's admin password from the factory one (owner, once the system works; 2026-10-22).
 
 ## 3. Check it
 

@@ -64,6 +64,18 @@ export const normalizeCode = (raw: string) => raw.trim().toUpperCase().replace(/
 /** The parcel a scanned or typed code belongs to: stored codes keep their spelling, so both sides are normalized. */
 export const findByCode = (parcels: Parcel[], raw: string) => parcels.find((p) => normalizeCode(p.code) === normalizeCode(raw));
 
+/** Parcels search: part of the code (any case or spaces), the recipient's name, or 4+ digits of the phone in any format. */
+export function matchesSearch(p: Parcel, q: string) {
+  const text = q.trim().toLowerCase();
+  if (!text) return true;
+  const digits = normalizePhone(text);
+  return (
+    normalizeCode(p.code).includes(normalizeCode(text)) ||
+    p.recipient.toLowerCase().includes(text) ||
+    (digits.length >= 4 && normalizePhone(p.phone).includes(digits.replace(/^0/, '')))
+  );
+}
+
 const newestFirst = (a: ContactEvent, b: ContactEvent) => b.at.localeCompare(a.at);
 
 export const eventsFor = (code: string, events: ContactEvent[]) => events.filter((e) => e.parcelCodes.includes(code)).sort(newestFirst);

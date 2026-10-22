@@ -6,6 +6,7 @@ import {
   groupByPhone,
   eligibleForMessage,
   findByCode,
+  matchesSearch,
   normalizePhone,
   phoneGroup,
   smsInFlight,
@@ -135,4 +136,12 @@ test('scan lookup finds a stored code whatever its case or spaces', () => {
   assert.equal(findByCode(parcels, 'S000000018')?.code, 's000000018');
   assert.equal(findByCode(parcels, ' spx123 ')?.code, 'SPX 123');
   assert.equal(findByCode(parcels, 'S000000019'), undefined);
+});
+
+test('parcels search finds a code, a name or a phone whatever its format', () => {
+  const p = { code: 'SPX 123456', recipient: 'Sokha Chan', phone: '012 345 678' } as Parcel;
+  for (const q of ['spx123', 'SPX 1234', '3456', 'sokha', ' CHAN ', '012345678', '+855 12 345 678', '345-678', ''])
+    assert.equal(matchesSearch(p, q), true, q);
+  for (const q of ['SPX 9', 'dara', '999 999'])
+    assert.equal(matchesSearch(p, q), false, q);
 });

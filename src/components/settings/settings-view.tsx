@@ -15,7 +15,7 @@ import {
   templateError,
   type Settings,
 } from '@/lib/settings-logic';
-import { saveSettings, useSettings } from '@/lib/settings-service';
+import { saveSettings, settingsAdmin, useSettings } from '@/lib/settings-service';
 
 export function SettingsView() {
   const settings = useSettings();
@@ -34,8 +34,8 @@ export function SettingsView() {
         <div className="mt-6 flex flex-col gap-6">
           <BackupCard />
           <FolderSettings />
-          <ImportSection settings={settings} />
-          <TemplateSection settings={settings} />
+          <ImportSection settings={settings} readOnly={!settingsAdmin()} />
+          <TemplateSection settings={settings} readOnly={!settingsAdmin()} />
           <GatewayCard />
           <PhoneSetupCard />
         </div>
@@ -89,6 +89,7 @@ function SectionCard({
   badge,
   children,
   section,
+  readOnly,
 }: {
   id: string;
   title: string;
@@ -96,6 +97,8 @@ function SectionCard({
   badge?: React.ReactNode;
   children: React.ReactNode;
   section: Pick<ReturnType<typeof useSection>, 'save' | 'dirty' | 'status' | 'saveError' | 'reset'>;
+  /** Staff see the shared settings; the server saves them for the admin only. */
+  readOnly: boolean;
 }) {
   return (
     <form onSubmit={section.save} noValidate aria-labelledby={`${id}-heading`} className="rounded-md border bg-card">
@@ -108,29 +111,35 @@ function SectionCard({
         </div>
         <p className="mt-0.5 text-muted-foreground">{description}</p>
       </div>
-      <div className="flex flex-col gap-5 px-5 py-5 sm:px-6">{children}</div>
-      <div className="flex flex-wrap items-center gap-3 border-t px-5 py-3 sm:px-6">
-        <Button type="submit" disabled={!section.dirty || section.status === 'saving'}>
-          {section.status === 'saving' ? 'Saving…' : 'Save changes'}
-        </Button>
-        {section.dirty && (
-          <Button type="button" variant="ghost" onClick={section.reset}>
-            Discard
+      <fieldset disabled={readOnly} className="flex min-w-0 flex-col gap-5 px-5 py-5 sm:px-6">
+        {children}
+      </fieldset>
+      {readOnly ? (
+        <p className="border-t px-5 py-3 text-sm text-muted-foreground sm:px-6">Only the admin account can change these.</p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3 border-t px-5 py-3 sm:px-6">
+          <Button type="submit" disabled={!section.dirty || section.status === 'saving'}>
+            {section.status === 'saving' ? 'Saving…' : 'Save changes'}
           </Button>
-        )}
-        <p aria-live="polite" className="text-sm">
-          {section.saveError ? (
-            <span className="text-destructive">{section.saveError}</span>
-          ) : section.status === 'saved' && !section.dirty ? (
-            <span className="inline-flex items-center gap-1.5 text-success">
-              <Check className="size-4" aria-hidden />
-              Saved for every staff member
-            </span>
-          ) : section.dirty ? (
-            <span className="text-muted-foreground">Unsaved changes</span>
-          ) : null}
-        </p>
-      </div>
+          {section.dirty && (
+            <Button type="button" variant="ghost" onClick={section.reset}>
+              Discard
+            </Button>
+          )}
+          <p aria-live="polite" className="text-sm">
+            {section.saveError ? (
+              <span className="text-destructive">{section.saveError}</span>
+            ) : section.status === 'saved' && !section.dirty ? (
+              <span className="inline-flex items-center gap-1.5 text-success">
+                <Check className="size-4" aria-hidden />
+                Saved for every staff member
+              </span>
+            ) : section.dirty ? (
+              <span className="text-muted-foreground">Unsaved changes</span>
+            ) : null}
+          </p>
+        </div>
+      )}
     </form>
   );
 }
@@ -176,13 +185,13 @@ const ALWAYS = [
   'Saved phone numbers and notification history are kept. A different phone number in a new file does not overwrite them.',
 ];
 
-function ImportSection({ settings }: { settings: Settings }) {
+function ImportSection({ settings, readOnly }: { settings: Settings; readOnly: boolean }) {
   const s = useSection(settings, ['trackingColumn', 'phoneColumn', 'duplicateFile'], (d) => ({
     trackingColumn: columnError(d.trackingColumn),
     phoneColumn: columnError(d.phoneColumn),
   }));
   return (
-    <SectionCard id="import" title="Import preferences" description="How export files are read and what happens with repeats." section={s}>
+    <SectionCard id="import" title="Import preferences" description="How export files are read and what happens with repeats." section={s} readOnly={readOnly}>
       <div className="grid gap-5 sm:grid-cols-2">
         <Field name="trackingColumn" label="Tracking code column" hint="Required. A file without it is not imported." error={s.errors.trackingColumn}>
           <Input
@@ -246,7 +255,7 @@ function ImportSection({ settings }: { settings: Settings }) {
 
 const SAMPLE = { name: 'Sokha Chan', codes: ['CB4810276635', 'CB2291048871', 'CB7730192245'] };
 
-function TemplateSection({ settings }: { settings: Settings }) {
+function TemplateSection({ settings, readOnly }: { settings: Settings; readOnly: boolean }) {
   const s = useSection(settings, ['templates'], (d) => ({
     templates: templateError(d.templates.single) ?? templateError(d.templates.combined),
   }));
@@ -262,6 +271,7 @@ function TemplateSection({ settings }: { settings: Settings }) {
       title="Default SMS message"
       description="The app picks the version by how many new parcels a customer has. Staff can still edit each message before it is queued."
       section={s}
+      readOnly={readOnly}
     >
       <p className="text-sm text-muted-foreground">
         Placeholders: <code className="font-mono text-foreground">{'{name}'}</code> first name,{' '}
@@ -283,7 +293,7 @@ function TemplateSection({ settings }: { settings: Settings }) {
                 rows={4}
                 aria-invalid={!!shown}
                 aria-describedby={shown ? `error-${name}` : undefined}
-                className="w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-base sm:text-sm"
+                className="w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-base disabled:opacity-60 sm:text-sm"
               />
             </Field>
             <div>
@@ -298,7 +308,7 @@ function TemplateSection({ settings }: { settings: Settings }) {
           </div>
         );
       })}
-      {!isDefault && (
+      {!isDefault && !readOnly && (
         <div>
           <Button type="button" variant="outline" size="sm" onClick={() => s.set('templates', DEFAULT_TEMPLATES)}>
             <RotateCcw aria-hidden />

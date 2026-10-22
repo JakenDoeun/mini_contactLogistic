@@ -70,6 +70,12 @@ got 401). Synthetic files only, imported through Scan Folder Now with no decisio
 Not covered by the emulator: the SIM, the carrier, delivery reports (the emulator says Delivered for everything), battery
 savers.
 
+## Owner decisions
+
+- **2026-10-22, gateway phone network.** SMSGate cannot be limited to the tailnet; on Wi-Fi it is also reachable from
+  that Wi-Fi. The owner keeps the phone on the branch Wi-Fi (staff use; customers rarely and briefly; the password is
+  never shared). Conditions in `docs/tailnet-rules.md`, "The gateway phone on the branch Wi-Fi".
+
 ## Owner decisions needed
 
 - **Row 26, the gateway's address.** The plan says no gateway URL anywhere in the browser; Phase 8 shows the address

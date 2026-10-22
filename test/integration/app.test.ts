@@ -376,7 +376,10 @@ test('backups and data: any staff member saves a backup; only the admin changes 
 test('sms: with no gateway phone set up, Notify is refused and the pages are told why (Phase 10)', async () => {
   const db = openDatabase(path.join(site.dataDir, 'branch.db'));
   const { id: adminId } = db.prepare("SELECT id FROM users WHERE username = 'first.staff'").get() as { id: number };
+  const staff = await createUser(db, 'gateway.staff', 'correct horse battery', 'cli');
+  assert.ok(staff.ok);
   const cookie = `__Host-cb_session=${createSession(db, adminId)}`;
+  const staffCookie = `__Host-cb_session=${createSession(db, staff.userId)}`;
   db.close();
   const notify = () => postJson('/api/sms/batch', { requestKey: crypto.randomUUID(), day: '2026-01-01', items: [] }, { cookie });
   const gateway = async () => (await (await send('/api/parcels', { cookie })).json()).gateway;
@@ -391,6 +394,11 @@ test('sms: with no gateway phone set up, Notify is refused and the pages are tol
   try {
     assert.equal((await gateway()).setUp, true);
     assert.notEqual((await (await notify()).json()).error, 'no_gateway'); // past the gateway check; refused for its own reasons
+    // Row 26: the gateway's address goes to the admin only.
+    assert.equal((await (await send('/api/gateway', { cookie })).json()).url, 'http://127.0.0.1:9');
+    const forStaff = await (await send('/api/gateway', { cookie: staffCookie })).json();
+    assert.equal(forStaff.configured, true);
+    assert.equal('url' in forStaff, false);
   } finally {
     fs.rmSync(path.join(site.dataDir, GATEWAY_FILE), { force: true });
   }

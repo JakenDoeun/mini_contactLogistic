@@ -39,7 +39,7 @@ fails as written; **real day** = needs the branch laptop, the real phone or a re
 | 23 | Deploy | Reboot the host | pass | VM 2026-10-21: app back in 141 s with nobody signed in. Queue resumes: 2026-10-22, a run started while the phone was away waited, then went out once the phone answered |
 | 24 | Deploy | Backup and restore drill | pass | VM 2026-10-18 (217/217 parcels, integrity ok) and 2026-10-21 (restore, SMS hold, staff release) |
 | 25 | Deploy | Device outside the allowed rule; staff phone | partly | 2026-10-22: gateway 8080 refused from the owner's laptop, open from the VM (`tag:office`); VM → gateway 22 refused. Staff phone opens the app: owner |
-| 26 | Deploy | Browser source and API responses | finding | No password anywhere. The gateway's address is sent to every signed-in staff member by `/api/gateway` and shown in Settings (Phase 8). Owner to decide (below) |
+| 26 | Deploy | Browser source and API responses | pass | No password anywhere. The gateway's address goes to the admin only (owner, 2026-10-22): `/api/gateway` leaves it out for staff (integration test) |
 | 27 | Phone | Test SMS through the SIM, Wi-Fi then mobile data | real day | Needs the real phone and branch SIM |
 | 28 | Phone | Gateway phone reboot, airplane mode, low battery | partly | 2026-10-22: SMSGate stopped mid-morning → "Waiting for the gateway phone" and "has not answered since"; started again → both sent, 5 on the phone, none twice. Reboot: Phase 7 (emulator). Airplane mode, low battery: real phone |
 | 29 | Phone | Camera scan on iPhone Safari and Android Chrome | partly | Owner scanned with a phone camera in Phase 6. Both browsers on the real day |
@@ -75,13 +75,8 @@ savers.
 - **2026-10-22, gateway phone network.** SMSGate cannot be limited to the tailnet; on Wi-Fi it is also reachable from
   that Wi-Fi. The owner keeps the phone on the branch Wi-Fi (staff use; customers rarely and briefly; the password is
   never shared). Conditions in `docs/tailnet-rules.md`, "The gateway phone on the branch Wi-Fi".
-
-## Owner decisions needed
-
-- **Row 26, the gateway's address.** The plan says no gateway URL anywhere in the browser; Phase 8 shows the address
-  in Settings to every staff member. The password never leaves the server, and the tailnet rules now stop staff
-  devices reaching the phone. Choose: show the address to the admin only, or change the row to "no password; the
-  address is shown in Settings".
+- **2026-10-22, row 26.** The gateway's address is shown in Settings to the admin only; staff still see whether the
+  phone is connected, ready, charged and on time.
 
 ## Next
 

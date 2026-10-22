@@ -462,24 +462,25 @@ test('imports: the same mixed file uploaded and found in the folder gives the sa
     new Date().toISOString(),
   );
   db.close();
-  const file = path.join(REPO, 'test/fixtures/scan-record-mixed.xlsx');
+  const file = path.join(REPO, 'test/fixtures/scan-record-mixed.csv'); // the .xlsx bytes were imported by the Phase 4 test
   const review = async (importId: number) => {
     const r = await (await send(`/api/imports/${importId}?choice=single_scan_date`, { cookie })).json();
     return { counts: r.counts, items: r.items.length };
   };
 
   try {
-    const form = new FormData();
-    form.append('file', new Blob([fs.readFileSync(file)]), 'scan-record-mixed.xlsx');
-    const uploaded = await send('/api/imports/check', { method: 'POST', body: form, cookie });
-    assert.equal(uploaded.status, 201);
-
-    fs.copyFileSync(file, path.join(watched, 'scan-record-mixed.xlsx'));
+    // Folder first: once a file's content has been imported, the folder scan lists it as imported, not waiting.
+    fs.copyFileSync(file, path.join(watched, 'scan-record-mixed.csv'));
     assert.equal((await postJson('/api/folder/scan', {}, { cookie })).status, 200);
-    const found = (await (await send('/api/folder', { cookie })).json()).files.find((f: { fileName: string }) => f.fileName === 'scan-record-mixed.xlsx');
+    const found = (await (await send('/api/folder', { cookie })).json()).files.find((f: { fileName: string }) => f.fileName === 'scan-record-mixed.csv');
     assert.equal(found?.state, 'waiting');
     const checked = await postJson(`/api/folder/files/${found.id}/check`, {}, { cookie });
     assert.equal(checked.status, 201);
+
+    const form = new FormData();
+    form.append('file', new Blob([fs.readFileSync(file)]), 'scan-record-mixed.csv');
+    const uploaded = await send('/api/imports/check', { method: 'POST', body: form, cookie });
+    assert.equal(uploaded.status, 201);
 
     const [a, b] = [await review((await uploaded.json()).importId), await review((await checked.json()).importId)];
     assert.ok(a.items > 0);

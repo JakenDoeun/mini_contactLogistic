@@ -338,7 +338,7 @@ function GapSection({ settings, readOnly }: { settings: Settings; readOnly: bool
       onChange={(e) => setGap(key, e.target.value)}
       aria-invalid={!!s.errors.smsGap}
       aria-describedby={described('smsGap', s.errors.smsGap)}
-      className="max-w-32"
+      className="w-full"
     />
   );
   return (
@@ -349,19 +349,21 @@ function GapSection({ settings, readOnly }: { settings: Settings; readOnly: bool
       section={s}
       readOnly={readOnly}
     >
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Field name="smsGap" label="Shortest wait, in seconds" hint={`At least ${SMS_GAP_LIMITS.min} seconds.`} error={s.errors.smsGap}>
-          {number('from', 'field-smsGap')}
-        </Field>
-        <Field name="smsGap-to" label="Longest wait, in seconds" hint={`At most ${SMS_GAP_LIMITS.max} seconds.`}>
-          {number('to', 'field-smsGap-to')}
-        </Field>
+      <div className="flex flex-col gap-3">
+        <div className="grid max-w-md grid-cols-1 items-start gap-4 sm:grid-cols-2">
+          <Field name="smsGap" label="Shortest wait, in seconds" hint={`At least ${SMS_GAP_LIMITS.min} seconds.`} error={s.errors.smsGap}>
+            {number('from', 'field-smsGap')}
+          </Field>
+          <Field name="smsGap-to" label="Longest wait, in seconds" hint={`At most ${SMS_GAP_LIMITS.max} seconds.`}>
+            {number('to', 'field-smsGap-to')}
+          </Field>
+        </div>
+        {!gapError(s.draft.smsGap) && (
+          <p className="max-w-xl text-sm text-muted-foreground">
+            50 customers take about {Math.max(1, Math.round((49 * from) / 60))}–{Math.ceil((49 * to) / 60)} minutes. Shorter waits send faster, but make it more likely that the carrier blocks the SIM.
+          </p>
+        )}
       </div>
-      {!gapError(s.draft.smsGap) && (
-        <p className="text-sm text-muted-foreground">
-          50 customers take about {Math.max(1, Math.round((49 * from) / 60))}–{Math.ceil((49 * to) / 60)} minutes. Shorter waits send faster, but make it more likely that the carrier blocks the SIM.
-        </p>
-      )}
     </SectionCard>
   );
 }

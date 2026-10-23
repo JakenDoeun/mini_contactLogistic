@@ -19,7 +19,8 @@
     "recovery-code": "node scripts/recovery-code.ts",
     "serve": "node scripts/serve.ts",
     "sms-worker": "node scripts/sms-worker.ts",
-    "restore": "node scripts/restore.ts"
+    "restore": "node scripts/restore.ts",
+    "locales": "node scripts/locales.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "1.2.0",

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { useT } from '@/lib/i18n-react';
 import { createTimeline, svg, type Timeline } from 'animejs';
 
 // Labels are larger below the lg breakpoint, where the diagram is drawn smaller, so they stay readable on phones.
@@ -19,12 +20,13 @@ const C = {
 };
 
 const STEPS = [
-  ['Scan', 'The parcel is scanned in at the branch.'],
-  ['Sort', 'Grouped by arrival day and phone number.'],
-  ['Notify', 'One SMS tells the customer it is ready.'],
+  ['journey.scan', 'journey.scanText'],
+  ['journey.sort', 'journey.sortText'],
+  ['journey.notify', 'journey.notifyText'],
 ] as const;
 
 export function ParcelJourney() {
+  const t = useT();
   const svgRef = useRef<SVGSVGElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
 
@@ -112,7 +114,7 @@ export function ParcelJourney() {
         role="img"
         aria-labelledby="cb-journey-title"
       >
-        <title id="cb-journey-title">A parcel is scanned, sorted, and the customer is notified by SMS</title>
+        <title id="cb-journey-title">{t('journey.svgTitle')}</title>
         {/* Paths: tracks (always visible), the drawn progress on top, and invisible guides for the parcel's motion. */}
         <path d="M70 150 C130 150 142 82 210 82" fill="none" stroke={C.track} strokeWidth={3} strokeLinecap="round" />
         <path d="M238 82 C290 82 300 150 333 150" fill="none" stroke={C.track} strokeWidth={2} strokeDasharray="3 6" strokeLinecap="round" />
@@ -127,7 +129,7 @@ export function ParcelJourney() {
             className="transition-[stroke] duration-300 group-data-[active=true]:stroke-[#9aa3f5]" />
           <path d="M54 140 v-6 h6 M80 134 h6 v6 M86 160 v6 h-6 M60 166 h-6 v-6" fill="none" stroke={C.label} strokeWidth={1.5} strokeLinecap="round" />
           <line id="cb-beam" x1={52} y1={133} x2={88} y2={133} stroke={C.active} strokeWidth={1.5} opacity={0} />
-          <text x={70} y={198} textAnchor="middle" className="fill-[#aeb8cc] font-mono text-[13px] tracking-[0.1em] transition-[fill] lg:text-[10px] lg:tracking-[0.12em] group-data-[active=true]:fill-white">SCAN</text>
+          <text x={70} y={198} textAnchor="middle" className="fill-[#aeb8cc] font-mono text-[13px] tracking-[0.1em] transition-[fill] lg:text-[10px] lg:tracking-[0.12em] group-data-[active=true]:fill-white">{t('journey.scan').toUpperCase()}</text>
         </g>
 
         {/* 2. Sort */}
@@ -140,7 +142,7 @@ export function ParcelJourney() {
               <circle cx={222} cy={y} r={2} fill={C.label} />
             </g>
           ))}
-          <text x={210} y={130} textAnchor="middle" className="fill-[#aeb8cc] font-mono text-[13px] tracking-[0.1em] transition-[fill] lg:text-[10px] lg:tracking-[0.12em] group-data-[active=true]:fill-white">SORT</text>
+          <text x={210} y={130} textAnchor="middle" className="fill-[#aeb8cc] font-mono text-[13px] tracking-[0.1em] transition-[fill] lg:text-[10px] lg:tracking-[0.12em] group-data-[active=true]:fill-white">{t('journey.sort').toUpperCase()}</text>
         </g>
 
         {/* 3. Notify */}
@@ -152,9 +154,9 @@ export function ParcelJourney() {
           <circle id="cb-badge" cx={367} cy={123} r={6} fill={C.notify} stroke="#14213a" strokeWidth={2} style={{ transformBox: 'fill-box', transformOrigin: 'center' }} />
           <g id="cb-chip">
             <rect x={300} y={92} width={66} height={20} rx={10} fill="none" stroke={C.notify} strokeWidth={1.25} />
-            <text x={333} y={105.5} textAnchor="middle" className="fill-[#e4defd] font-mono text-[11px] lg:text-[9px] lg:tracking-[0.06em]">SMS ready</text>
+            <text x={333} y={105.5} textAnchor="middle" className="fill-[#e4defd] font-mono text-[11px] lg:text-[9px] lg:tracking-[0.06em]">{t('journey.smsReady')}</text>
           </g>
-          <text x={350} y={198} textAnchor="middle" className="fill-[#aeb8cc] font-mono text-[13px] tracking-[0.1em] transition-[fill] lg:text-[10px] lg:tracking-[0.12em] group-data-[active=true]:fill-white">NOTIFY</text>
+          <text x={350} y={198} textAnchor="middle" className="fill-[#aeb8cc] font-mono text-[13px] tracking-[0.1em] transition-[fill] lg:text-[10px] lg:tracking-[0.12em] group-data-[active=true]:fill-white">{t('journey.notify').toUpperCase()}</text>
         </g>
 
         {/* The parcel, drawn around its own centre so the motion paths place it exactly. Finished state: at sorting. */}
@@ -164,7 +166,7 @@ export function ParcelJourney() {
         </g>
       </svg>
 
-      <figcaption className="sr-only">How Campus Branch handles a parcel</figcaption>
+      <figcaption className="sr-only">{t('journey.caption')}</figcaption>
       <ol ref={listRef} className="mt-6 hidden gap-3 lg:grid lg:grid-cols-3">
         {STEPS.map(([name, text], i) => (
           <li
@@ -173,8 +175,8 @@ export function ParcelJourney() {
             className="rounded-xl border border-white/8 px-3 py-3 text-sidebar-foreground transition-colors duration-300 data-[active=true]:border-white/20 data-[active=true]:text-white"
           >
             <span className="font-mono text-[11px] tracking-[0.12em] text-[#9aa3f5]">0{i + 1}</span>
-            <span className="ml-2 text-sm font-medium">{name}</span>
-            <p className="mt-1 text-[13px] leading-snug opacity-80">{text}</p>
+            <span className="ml-2 text-sm font-medium">{t(name)}</span>
+            <p className="mt-1 text-[13px] leading-snug opacity-80">{t(text)}</p>
           </li>
         ))}
       </ol>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { CircleCheck, Loader, ScanBarcode, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fetchBranchAddresses, reachesBranch } from '@/lib/branch-address';
+import { useT } from '@/lib/i18n-react';
 import { cn } from '@/lib/utils';
 
 type Platform = 'iphone' | 'android';
@@ -16,35 +17,18 @@ function detectPlatform(): Platform {
 }
 
 // The certificate is publicly trusted, so the only setup is joining the branch tailnet.
-const STEPS: Record<Platform, { title: string; body: React.ReactNode }[]> = {
-  iphone: [
-    { title: 'Install Tailscale', body: <>Get the <b>Tailscale</b> app from the App Store.</> },
-    {
-      title: 'Sign in to the branch network',
-      body: 'Use the account the branch admin gave you. If the app says the device needs approval, ask the admin to approve it.',
-    },
-    { title: 'Turn it on', body: <>In the Tailscale app, switch it on until it shows <b>Connected</b>. It works on any Wi-Fi or mobile data.</> },
-    { title: 'Come back and check', body: 'Return to this page and tap Check my phone.' },
-  ],
-  android: [
-    { title: 'Install Tailscale', body: <>Get the <b>Tailscale</b> app from Google Play.</> },
-    {
-      title: 'Sign in to the branch network',
-      body: 'Use the account the branch admin gave you. If the app says the device needs approval, ask the admin to approve it.',
-    },
-    {
-      title: 'Turn it on',
-      body: (
-        <>
-          Switch it on and allow the VPN connection Android asks about, until it shows <b>Connected</b>.
-        </>
-      ),
-    },
-    { title: 'Come back and check', body: 'Return to this page and tap Check my phone.' },
-  ],
-};
+function steps(platform: Platform, t: ReturnType<typeof useT>): { title: string; body: React.ReactNode }[] {
+  const connected = <b>{t('setup.step.connected')}</b>;
+  return [
+    { title: t('setup.step.install'), body: t.rich(platform === 'iphone' ? 'setup.step.installIphone' : 'setup.step.installAndroid', { app: <b>Tailscale</b> }) },
+    { title: t('setup.step.signIn'), body: t('setup.step.signInText') },
+    { title: t('setup.step.turnOn'), body: t.rich(platform === 'iphone' ? 'setup.step.turnOnIphone' : 'setup.step.turnOnAndroid', { connected }) },
+    { title: t('setup.step.check'), body: t('setup.step.checkText') },
+  ];
+}
 
 export function PhoneSetup() {
+  const t = useT();
   const [origin, setOrigin] = useState<string | null>(null);
   const [platform, setPlatform] = useState<Platform>('android');
   const [check, setCheck] = useState<Check>('idle');
@@ -64,21 +48,21 @@ export function PhoneSetup() {
     });
   }, []);
 
-  const steps = STEPS[platform];
+  const list = steps(platform, t);
 
   return (
     <main className="mx-auto max-w-lg px-4 py-8">
-      <p className="text-sm text-muted-foreground">Campus Branch · Parcel operations</p>
-      <h1 className="mt-1 text-[1.75rem] leading-tight font-semibold tracking-tight">Set up this phone</h1>
-      <p className="mt-2 text-muted-foreground">
-        Do this once per phone. Afterwards the phone opens the console securely and its camera can scan parcel barcodes.
+      <p className="text-sm text-muted-foreground">
+        {t('brand.name')} · {t('brand.tagline')}
       </p>
+      <h1 className="mt-1 text-[1.75rem] leading-tight font-semibold tracking-tight">{t('setup.title')}</h1>
+      <p className="mt-2 text-muted-foreground">{t('setup.lead')}</p>
 
       {check === 'ok' ? (
         <Ready origin={origin} />
       ) : (
         <>
-          <div role="group" aria-label="Phone type" className="mt-6 grid grid-cols-2 gap-1 rounded-md bg-secondary p-1">
+          <div role="group" aria-label={t('setup.phoneType')} className="mt-6 grid grid-cols-2 gap-1 rounded-md bg-secondary p-1">
             {(['iphone', 'android'] as const).map((p) => (
               <button
                 key={p}
@@ -87,13 +71,13 @@ export function PhoneSetup() {
                 onClick={() => setPlatform(p)}
                 className={cn('h-11 rounded-sm text-sm font-medium', platform === p ? 'bg-card text-foreground' : 'text-muted-foreground')}
               >
-                {p === 'iphone' ? 'iPhone or iPad' : 'Android'}
+                {p === 'iphone' ? t('setup.iphone') : t('setup.android')}
               </button>
             ))}
           </div>
 
           <ol className="mt-6 space-y-5">
-            {steps.map((s, i) => (
+            {list.map((s, i) => (
               <li key={s.title} className="flex gap-4">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent font-mono text-sm font-semibold text-primary">
                   {i + 1}
@@ -109,27 +93,21 @@ export function PhoneSetup() {
           <div className="mt-8 rounded-md border bg-card p-4">
             <Button className="h-12 w-full" onClick={() => runCheck()} disabled={!origin || check === 'checking'}>
               {check === 'checking' ? <Loader className="animate-spin motion-reduce:animate-none" aria-hidden /> : null}
-              {check === 'checking' ? 'Checking…' : 'Check my phone'}
+              {check === 'checking' ? t('setup.checking') : t('setup.checkMyPhone')}
             </Button>
             <div aria-live="polite" className="text-sm">
               {check === 'failed' && (
                 <p className="mt-3 flex items-start gap-2 text-destructive">
                   <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-                  <span>
-                    Not set up yet.{' '}
-                    Check that Tailscale shows Connected on this phone and that the admin approved it. The office computer must be on.
-                  </span>
+                  <span>{t('setup.notSetUp')}</span>
                 </p>
               )}
               {!origin && (
-                <p className="mt-3 text-muted-foreground">
-                  No secure address yet. The office needs to share the app with Tailscale Serve (Settings › Ready for phones? shows
-                  what is missing).
-                </p>
+                <p className="mt-3 text-muted-foreground">{t('setup.noAddress')}</p>
               )}
             </div>
           </div>
-          <p className="mt-4 text-sm text-muted-foreground">Stuck? Ask the branch admin. Typing tracking codes works without this setup.</p>
+          <p className="mt-4 text-sm text-muted-foreground">{t('setup.stuck')}</p>
         </>
       )}
     </main>
@@ -137,26 +115,23 @@ export function PhoneSetup() {
 }
 
 function Ready({ origin }: { origin: string | null }) {
+  const t = useT();
   return (
     <div className="mt-6 rounded-md border bg-card p-5">
       <p className="flex items-center gap-2 font-semibold text-success">
         <CircleCheck className="size-5" aria-hidden />
-        This phone is ready
+        {t('setup.ready')}
       </p>
-      <p className="mt-1 text-muted-foreground">
-        Connected through the branch Tailscale network. The camera can now scan parcel barcodes. Allow the camera when the browser asks.
-      </p>
+      <p className="mt-1 text-muted-foreground">{t('setup.readyText')}</p>
       {origin && (
         <Button asChild className="mt-4 h-12 w-full">
           <a href={`${origin}/scan`}>
             <ScanBarcode aria-hidden />
-            Open Scan Parcel
+            {t('setup.openScan')}
           </a>
         </Button>
       )}
-      <p className="mt-4 text-sm text-muted-foreground">
-        Tip: once it opens, add it to the Home Screen. iPhone: Share › Add to Home Screen. Android: the ⋮ menu › Add to Home screen.
-      </p>
+      <p className="mt-4 text-sm text-muted-foreground">{t('setup.tip')}</p>
     </div>
   );
 }

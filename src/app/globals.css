@@ -3,7 +3,8 @@
 /* Periwinkle on navy over warm neutrals. Periwinkle marks actions, focus and selection only; green, amber, red are status;
    the muted indigo "info" pair labels preview and simulated states so they never borrow a status colour. */
 @theme inline {
-  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  /* Khmer letters come from the device: Noto Sans Khmer (Android), Khmer Sangam MN (iPhone), Leelawadee UI / Khmer UI (Windows). */
+  --font-sans: var(--font-geist-sans), "Noto Sans Khmer", "Khmer Sangam MN", "Leelawadee UI", "Khmer UI", system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
   --color-background: #f5f3ef;

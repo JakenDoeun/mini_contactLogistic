@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { DaySummary as Summary } from '@/lib/import-logic';
 import { listImports, type ImportListItem } from '@/lib/import-api';
 import { cn } from '@/lib/utils';
-import { CarrierTable } from '@/components/shared/carrier-table';
+import { CarrierChips } from '@/components/shared/carrier-chips';
 import { arrivalDay, phoneKey } from '@/lib/parcel-logic';
 import { useParcelData } from '@/lib/parcel-service';
 import { DaySummary } from './day-summary';
@@ -92,9 +92,7 @@ function TodayByCarrier() {
       <h2 id="carriers-heading" className="mb-2 text-base font-semibold">
         Today&apos;s customers by carrier
       </h2>
-      <div className="rounded-md border bg-card px-4 py-2 sm:px-5">
-        <CarrierTable items={phones.map((phone) => ({ phone }))} sims={data.gateway.sims} />
-      </div>
+      <CarrierChips items={phones.map((phone) => ({ phone }))} sims={data.gateway.sims} />
     </section>
   );
 }

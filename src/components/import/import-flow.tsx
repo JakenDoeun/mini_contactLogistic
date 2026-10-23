@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PhoneText } from '@/components/parcels/parcel-status';
-import { CarrierTable } from '@/components/shared/carrier-table';
+import { CarrierChips } from '@/components/shared/carrier-chips';
 import { phoneKey } from '@/lib/parcel-logic';
 import { useParcelData } from '@/lib/parcel-service';
 import {
@@ -405,7 +405,7 @@ function FileCarriers({ review: r }: { review: Review }) {
         {plural(phones.length, 'customer')} by carrier{' '}
         <span className="font-normal text-muted-foreground">(one per phone number{noPhone ? `; ${plural(noPhone, 'parcel')} with no number` : ''})</span>
       </h4>
-      <CarrierTable items={phones.map((phone) => ({ phone }))} sims={sims} className="mt-1" />
+      <CarrierChips items={phones.map((phone) => ({ phone }))} sims={sims} className="mt-2" />
     </div>
   );
 }

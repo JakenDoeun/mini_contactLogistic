@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
-import { CircleCheck, MessageSquare, Phone, PhoneMissed, Send, Smartphone } from 'lucide-react';
+import { CircleCheck, MessageSquare, Phone, PhoneMissed, ScanBarcode, Send, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   composeMessage,
@@ -169,9 +169,10 @@ const ASK = {
   },
 } as const;
 const CHANNEL_OF = { call: 'call', telegram: 'telegram', sms: 'other' } as const;
-// A segment of the compact group: a 44 px touch target on phones, a quieter 36 px on larger screens.
+// A segment of the compact group. On phones: an even quarter of the row, icon over a small label, 44 px tall, so four
+// always fit; from sm: icon beside the label, a quieter 36 px.
 const SEGMENT =
-  'inline-flex min-h-11 items-center gap-1.5 px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary focus-visible:relative focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none sm:min-h-9';
+  'inline-flex min-h-11 flex-col items-center justify-center gap-0.5 px-1 py-1 text-xs font-medium text-foreground transition-colors hover:bg-secondary focus-visible:relative focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none sm:min-h-9 sm:flex-row sm:gap-1.5 sm:px-3 sm:py-0 sm:text-sm';
 const DONE: Record<Outcome, [string, typeof Phone, string]> = {
   answered: ['Reached by call', CircleCheck, 'text-success'],
   'no-answer': ['Called, no answer', PhoneMissed, 'text-warning'],
@@ -190,6 +191,8 @@ export function DirectContact({
   message,
   stops,
   compact = false,
+  onVerify,
+  verifying = false,
 }: {
   parcel: Parcel;
   group: Parcel[];
@@ -199,6 +202,9 @@ export function DirectContact({
   stops: number;
   /** In a list of customers (Contact by hand): no top rule, the heading for screen readers only. */
   compact?: boolean;
+  /** Compact only: a Verify segment that opens the row's optional parcel check (owner, 2026-10-23). */
+  onVerify?: () => void;
+  verifying?: boolean;
 }) {
   const [asked, setAsked] = useState<Asked | null>(null);
   const [copied, setCopied] = useState('');
@@ -255,7 +261,11 @@ export function DirectContact({
 
       {!asked && compact && (
         // One slim connected group per row, so a long list reads as phone numbers, not as rows of buttons.
-        <div role="group" aria-label={`Contact ${parcel.phone}`} className="inline-flex divide-x overflow-hidden rounded-md border bg-card">
+        <div
+          role="group"
+          aria-label={`Contact ${parcel.phone}`}
+          className={cn('grid w-full divide-x overflow-hidden rounded-md border bg-card sm:inline-flex sm:w-auto', onVerify ? 'grid-cols-4' : 'grid-cols-3')}
+        >
           <a href={`tel:${normalizePhone(parcel.phone)}`} onClick={() => setAsked('call')} className={SEGMENT}>
             <Phone className="size-4" aria-hidden />
             Call
@@ -268,6 +278,12 @@ export function DirectContact({
             <Smartphone className="size-4" aria-hidden />
             SMS
           </a>
+          {onVerify && (
+            <button type="button" aria-pressed={verifying} onClick={onVerify} className={cn(SEGMENT, verifying && 'bg-secondary')}>
+              <ScanBarcode className="size-4" aria-hidden />
+              Verify
+            </button>
+          )}
         </div>
       )}
 

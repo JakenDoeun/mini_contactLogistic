@@ -190,34 +190,18 @@ export function byHandGroups(plan: NotifyPlan, parcels: Parcel[], events: Contac
     .sort((a, b) => (a.carrier === null ? 1 : 0) - (b.carrier === null ? 1 : 0) || b.lines.length - a.lines.length || b.done - a.done);
 }
 
-export type ByHandCheck =
-  | { kind: 'not-found'; code: string }
-  | { kind: 'on-list'; code: string; line: ByHandLine; found: number }
-  | { kind: 'elsewhere'; code: string; phone: string; recipient: string; reason: string };
+export type LineCheck =
+  | { kind: 'match'; code: string; checked: number }
+  | { kind: 'other'; code: string; phone: string; recipient: string }
+  | { kind: 'not-found'; code: string };
 
 /**
- * The optional double-check on Contact by hand (owner, 2026-10-23): whose parcel a scanned or typed code is, and
- * whether it is on today's list. Never required; it only answers. `found` counts this line's parcels scanned so far.
+ * The optional Verify on a Contact by hand row (owner, 2026-10-23): is the parcel in hand for the number staff are
+ * about to contact? Any capitals or spaces. `checked` counts this line's parcels verified so far, this one included.
  */
-export function checkByHand(raw: string, parcels: Parcel[], events: ContactEvent[], groups: ByHandGroup[], sims: SimInfo[], scannedBefore: string[] = [], now = new Date()): ByHandCheck {
+export function verifyForLine(raw: string, parcels: Parcel[], line: { codes: string[] }, checkedBefore: string[] = []): LineCheck {
   const parcel = findByCode(parcels, raw);
   if (!parcel) return { kind: 'not-found', code: raw.trim().toUpperCase().replace(/\s+/g, '') };
-  const line = groups.flatMap((g) => g.lines).find((l) => l.codes.includes(parcel.code));
-  if (line) return { kind: 'on-list', code: parcel.code, line, found: new Set([...scannedBefore, parcel.code].filter((c) => line.codes.includes(c))).size };
-  const today = arrivalDay(now.toISOString());
-  const carrier = carrierOf(parcel.phone);
-  const sms = smsStatusOf(parcel.code, events);
-  const reason =
-    parcel.arrivalDate !== today
-      ? `Arrived ${parcel.arrivalDate}. Contact by hand lists today's arrivals only.`
-      : !phoneKey(parcel.phone)
-        ? 'No usable phone number. Add one on the parcel page.'
-        : toldByHand([parcel.code], events)
-          ? 'Already told by hand today.'
-          : sms !== 'not-sent'
-            ? `It has an SMS: ${sms === 'unconfirmed' ? 'check phone' : sms}.`
-            : carrier && simByCarrier(sims).has(carrier)
-              ? 'Its network has a SIM in the gateway phone, so it gets the SMS.'
-              : 'Not on the list right now.';
-  return { kind: 'elsewhere', code: parcel.code, phone: parcel.phone, recipient: parcel.recipient, reason };
+  if (!line.codes.includes(parcel.code)) return { kind: 'other', code: parcel.code, phone: parcel.phone, recipient: parcel.recipient };
+  return { kind: 'match', code: parcel.code, checked: new Set([...checkedBefore, parcel.code].filter((c) => line.codes.includes(c))).size };
 }

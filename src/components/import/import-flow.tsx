@@ -1,15 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, CircleCheck, FileSpreadsheet, Hand, Loader, Send, TriangleAlert } from 'lucide-react';
+import { AlertCircle, CircleCheck, FileSpreadsheet, Loader, TriangleAlert } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PhoneText } from '@/components/parcels/parcel-status';
-import { COLOUR } from '@/components/shared/carrier-chips';
-import { CARRIER_LABEL, carrierCounts } from '@/lib/carriers';
+import { CarrierChips } from '@/components/shared/carrier-chips';
 import { phoneKey } from '@/lib/parcel-logic';
 import { useParcelData } from '@/lib/parcel-service';
 import {
@@ -406,28 +405,7 @@ function FileCarriers({ review: r }: { review: Review }) {
         {plural(phones.length, 'customer')} by carrier{' '}
         <span className="font-normal text-muted-foreground">(one per phone number{noPhone ? `; ${plural(noPhone, 'parcel')} with no number` : ''})</span>
       </h4>
-      <ul aria-label="Customers by carrier" className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {carrierCounts(
-          phones.map((phone) => ({ phone })),
-          sims,
-        ).map((c) => (
-          <li key={c.carrier ?? 'unknown'} className="flex h-full flex-col gap-1 rounded-md border bg-card px-3 py-2.5">
-            <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: COLOUR[c.carrier ?? 'unknown'].bar }} />
-              {c.carrier ? CARRIER_LABEL[c.carrier] : 'Unknown'}
-              {!c.carrier && <span className="sr-only"> prefix</span>}
-            </span>
-            <span className="font-mono text-2xl leading-tight font-medium">
-              {c.count}
-              <span className="sr-only"> {c.count === 1 ? 'customer' : 'customers'},</span>
-            </span>
-            <span className={cn('mt-auto flex items-center gap-1 text-xs font-medium', c.sim ? 'text-success' : 'text-warning')}>
-              {c.sim ? <Send className="size-3.5 shrink-0" aria-hidden /> : <Hand className="size-3.5 shrink-0" aria-hidden />}
-              {c.sim ? `SMS · SIM ${c.sim}` : 'By hand'}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <CarrierChips items={phones.map((phone) => ({ phone }))} sims={sims} className="mt-2" />
     </div>
   );
 }

@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Check, ChevronRight, CircleCheck, MessageSquare, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Smartphone, Square } from 'lucide-react';
+import { ArrowRight, Camera, Check, ChevronRight, CircleAlert, CircleCheck, MessageSquare, ScanBarcode, X, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Smartphone, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { CameraScanner } from '@/components/parcels/camera-scanner';
 import { DirectContact } from '@/components/parcels/contact-panel';
 import { ParcelDetail } from '@/components/parcels/parcel-detail';
 import { SmsBadge } from '@/components/parcels/parcel-status';
@@ -16,7 +17,7 @@ import { CARRIER_DOT } from '@/components/shared/carrier-chips';
 import { CarrierTable } from '@/components/shared/carrier-table';
 import { DateFilter } from '@/components/shared/date-filter';
 import { CARRIER_LABEL, splitBySim, type Carrier, type SimInfo } from '@/lib/carriers';
-import { byHandGroups, planNotify, workList, type ByHandGroup, type ByHandLine, type NotifyItem } from '@/lib/dashboard-logic';
+import { byHandGroups, checkByHand, planNotify, workList, type ByHandCheck, type ByHandGroup, type ByHandLine, type NotifyItem } from '@/lib/dashboard-logic';
 import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@/lib/date-range';
 import {
   arrivalDay,
@@ -1300,6 +1301,11 @@ const networkName = (c: Carrier | null) => (c ? CARRIER_LABEL[c] : 'Unknown carr
 function ContactByHand({ groups, data }: { groups: ByHandGroup[]; data: ParcelData | null }) {
   const [pick, setPick] = useState('all');
   const [all, setAll] = useState(false);
+  const [highlight, setHighlight] = useState<string | null>(null); // the phone of the row a double-check found
+  // Scroll to the row the double-check found, once it is on screen.
+  useEffect(() => {
+    if (highlight) document.getElementById(`by-hand-row-${highlight}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [highlight]);
   useEffect(() => {
     try {
       setPick(localStorage.getItem(NETWORK_KEY) ?? 'all');
@@ -1343,6 +1349,19 @@ function ContactByHand({ groups, data }: { groups: ByHandGroup[]; data: ParcelDa
         count={totalLeft}
         hint="Today's customers on a network with no SIM in the gateway phone. Pick your phone's network: calling or texting on the same network is usually cheaper. The app asks what happened after each call or message."
       />
+      {data && (
+        <DoubleCheck
+          data={data}
+          groups={groups}
+          onFound={(line) => {
+            // Show the row: its network if another is picked (not remembered), and past "Show all" if needed.
+            if (active !== 'all' && active !== networkKey(line.carrier)) setPick(networkKey(line.carrier));
+            setAll(true);
+            setHighlight(line.phone);
+          }}
+          onClear={() => setHighlight(null)}
+        />
+      )}
 
       {groups.length === 0 ? (
         <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
@@ -1410,7 +1429,7 @@ function ContactByHand({ groups, data }: { groups: ByHandGroup[]; data: ParcelDa
                   </p>
                   <ul className="mt-1 divide-y">
                     {g.lines.map((line) => (
-                      <ByHandRow key={`${line.day}|${line.phone}`} line={line} data={data} />
+                      <ByHandRow key={`${line.day}|${line.phone}`} line={line} data={data} highlighted={highlight === line.phone} />
                     ))}
                   </ul>
                 </section>
@@ -1425,6 +1444,126 @@ function ContactByHand({ groups, data }: { groups: ByHandGroup[]; data: ParcelDa
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * The optional double-check (owner, 2026-10-23): scan or type a parcel's code to see whose it is, without comparing
+ * numbers by eye. Never required; calling and messaging work without it. Closed until someone asks for it.
+ */
+function DoubleCheck({ data, groups, onFound, onClear }: { data: ParcelData; groups: ByHandGroup[]; onFound: (line: ByHandLine) => void; onClear: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState('');
+  const [camera, setCamera] = useState(false);
+  const [result, setResult] = useState<ByHandCheck | null>(null);
+  const [checked, setChecked] = useState<string[]>([]); // codes checked in this session, for "1 of 2 parcels"
+  const input = useRef<HTMLInputElement>(null);
+  const cameraButton = useRef<HTMLButtonElement>(null);
+
+  function check(raw: string, typed: boolean) {
+    if (!raw.trim()) return;
+    const r = checkByHand(raw, data.parcels, data.events, groups, data.gateway.sims, checked);
+    setResult(r);
+    setValue(r.code);
+    if (r.kind !== 'not-found') setChecked((c) => [...new Set([...c, r.code])]);
+    if (r.kind === 'on-list') onFound(r.line);
+    else onClear();
+    // Ready for the next USB scan; skipped after the camera, where focus would pop up the phone keyboard.
+    if (typed) requestAnimationFrame(() => input.current?.select());
+  }
+  const close = () => {
+    setOpen(false);
+    setResult(null);
+    setValue('');
+    onClear();
+  };
+
+  if (!open) {
+    return (
+      <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => setOpen(true)}>
+        <ScanBarcode aria-hidden />
+        Double-check a parcel
+      </Button>
+    );
+  }
+  return (
+    <div className="mt-3 rounded-md border bg-card p-3">
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          check(value, true);
+        }}
+      >
+        <label htmlFor="double-check-code" className="sr-only">
+          Tracking code to double-check
+        </label>
+        <div className="relative min-w-0 flex-1 basis-56">
+          <ScanBarcode className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input
+            ref={input}
+            id="double-check-code"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="Scan or type a tracking code"
+            className="pl-9 font-mono"
+          />
+        </div>
+        <Button type="submit" variant="outline" disabled={!value.trim()}>
+          Check
+        </Button>
+        <Button ref={cameraButton} type="button" variant="outline" onClick={() => setCamera(true)}>
+          <Camera aria-hidden />
+          Camera
+        </Button>
+        <Button type="button" variant="ghost" size="icon" aria-label="Close the double-check" onClick={close}>
+          <X aria-hidden />
+        </Button>
+      </form>
+      <div aria-live="polite" className="empty:hidden">
+        {result?.kind === 'on-list' && (
+          <p className="mt-3 flex items-start gap-2 rounded-md bg-success-tint px-3 py-2 text-sm text-success">
+            <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>
+              <span className="font-mono">{result.code}</span> belongs to <span className="font-mono font-semibold">{formatPhone(result.line.phone)}</span> ·{' '}
+              {result.line.recipient}
+              {result.line.codes.length > 1 && ` · ${result.found} of ${result.line.codes.length} parcels checked`}. Highlighted below.
+            </span>
+          </p>
+        )}
+        {result?.kind === 'elsewhere' && (
+          <p className="mt-3 flex items-start gap-2 rounded-md bg-secondary px-3 py-2 text-sm">
+            <CircleAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span>
+              <span className="font-mono">{result.code}</span> belongs to{' '}
+              {result.phone ? <span className="font-mono font-semibold">{formatPhone(result.phone)}</span> : 'a customer with no number'} · {result.recipient}. It is
+              not on this list: {result.reason}
+            </span>
+          </p>
+        )}
+        {result?.kind === 'not-found' && (
+          <p role="alert" className="mt-3 flex items-start gap-2 rounded-md bg-destructive-tint px-3 py-2 text-sm text-destructive">
+            <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>
+              No parcel with code <span className="font-mono">{result.code}</span>. Check it against the label; if it arrived today, its file may not be imported
+              yet.
+            </span>
+          </p>
+        )}
+      </div>
+      <CameraScanner
+        open={camera}
+        onClose={() => setCamera(false)}
+        onDetected={(text) => {
+          setCamera(false);
+          check(text, false);
+        }}
+        returnFocus={cameraButton}
+      />
+    </div>
   );
 }
 
@@ -1451,12 +1590,18 @@ function NetworkButton({ label, dot, left, noAnswer, pressed, onClick }: { label
 }
 
 /** One customer: the number to dial first and largest, the name under it, then Call, Telegram and SMS. */
-function ByHandRow({ line, data }: { line: ByHandLine; data: ParcelData }) {
+function ByHandRow({ line, data, highlighted }: { line: ByHandLine; data: ParcelData; highlighted: boolean }) {
   const group = data.parcels.filter((p) => line.codes.includes(p.code));
   if (!group.length) return null;
   return (
     // A light highlight on the row under the mouse, and on the row being worked on (its button or question has focus).
-    <li className="-mx-3 grid gap-x-6 gap-y-2 rounded-md px-3 py-3 transition-colors hover:bg-secondary/60 focus-within:bg-secondary/60 motion-reduce:transition-none sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+    <li
+      id={`by-hand-row-${line.phone}`}
+      className={cn(
+        '-mx-3 grid scroll-mt-24 gap-x-6 gap-y-2 rounded-md px-3 py-3 transition-colors motion-reduce:transition-none sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center',
+        highlighted ? 'bg-success-tint ring-1 ring-success/40' : 'hover:bg-secondary/60 focus-within:bg-secondary/60',
+      )}
+    >
       <div className="min-w-0">
         <p className="flex items-center gap-2">
           <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: CARRIER_DOT[networkKey(line.carrier)] }} />

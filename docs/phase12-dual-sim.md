@@ -43,6 +43,11 @@ when a run ends, progress in the browser tab.
 - **Notifications tabs** (owner, 2026-10-23): **Today** (attention, sending queue, Ready), **Contact by hand** (today's
   arrivals only; an earlier day's customers show when that day is reviewed) with the number waiting on the tab, and **History**. `?tab=by-hand` / `?tab=history` keep the tab through a reload; a history
   filter link opens History.
+- **Contact by hand, working the list** (owner, 2026-10-23): pick a network (remembered per device) with "not
+  contacted" and "no answer" counts, today's progress, never-tried numbers first; each row leads with the phone number,
+  one slim Call · Telegram · SMS group, a light highlight on the row in use. **Double-check a parcel** (optional, never
+  required): scan with the camera or a USB scanner, or type, to see whose parcel it is; a match is highlighted ("1 of
+  2 parcels checked"), anything else says why it is not on the list (`checkByHand`, tested).
 - Customer replies are ignored: the app never reads the phone's received messages (owner, 2026-10-23).
 
 ## Checks (2026-10-23)

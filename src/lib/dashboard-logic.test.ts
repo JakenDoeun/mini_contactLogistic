@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { byHandGroups, dayProgress, planNotify, workList } from './dashboard-logic.ts';
+import { byHandGroups, checkByHand, dayProgress, planNotify, workList } from './dashboard-logic.ts';
 import { arrivalDay, smsStatusOf, type ContactEvent, type Parcel } from './parcel-logic.ts';
 
 let n = 0;
@@ -154,4 +154,20 @@ test('contact by hand: grouped by network, never-tried first, no answer after, t
     ],
   );
   assert.equal(groups[0].lines[1].tries, 1);
+});
+
+test("contact by hand double-check: whose parcel a code is, any capitals or spaces, and why one is not on the list", () => {
+  const sims = [{ simNumber: 1, carrierName: 'Cellcard', phoneNumber: null, suggested: 'cellcard' as const, carrier: 'cellcard' as const }];
+  const parcels = [parcel('M1', 'Sokha', '097 000 1111'), parcel('M2', 'Sokha', '097 000 1111'), parcel('C1', 'Dara', '012 000 111'), parcel('N1', 'Vanna', '')];
+  const now = new Date(parcels[0].importedAt);
+  const groups = byHandGroups(planNotify(parcels, [], now), parcels, [], sims, now);
+  const hit = checkByHand(' m1 ', parcels, [], groups, sims, [], now);
+  assert.equal(hit.kind, 'on-list');
+  assert.deepEqual(hit.kind === 'on-list' && [hit.line.phone, hit.found, hit.line.codes.length], ['0970001111', 1, 2]);
+  const second = checkByHand('M2', parcels, [], groups, sims, ['M1'], now);
+  assert.equal(second.kind === 'on-list' && second.found, 2);
+  const cellcard = checkByHand('C1', parcels, [], groups, sims, [], now);
+  assert.match(cellcard.kind === 'elsewhere' ? cellcard.reason : '', /SIM in the gateway phone/);
+  assert.match((checkByHand('N1', parcels, [], groups, sims, [], now) as { reason: string }).reason, /No usable phone number/);
+  assert.equal(checkByHand('ZZZ', parcels, [], groups, sims, [], now).kind, 'not-found');
 });

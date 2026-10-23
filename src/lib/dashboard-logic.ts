@@ -2,6 +2,7 @@
 // Pure: no React, no I/O, so it runs under `node --test`.
 import {
   canRetry,
+  findByCode,
   composeMessage,
   DEFAULT_TEMPLATES,
   eligibleForMessage,
@@ -187,4 +188,36 @@ export function byHandGroups(plan: NotifyPlan, parcels: Parcel[], events: Contac
       };
     })
     .sort((a, b) => (a.carrier === null ? 1 : 0) - (b.carrier === null ? 1 : 0) || b.lines.length - a.lines.length || b.done - a.done);
+}
+
+export type ByHandCheck =
+  | { kind: 'not-found'; code: string }
+  | { kind: 'on-list'; code: string; line: ByHandLine; found: number }
+  | { kind: 'elsewhere'; code: string; phone: string; recipient: string; reason: string };
+
+/**
+ * The optional double-check on Contact by hand (owner, 2026-10-23): whose parcel a scanned or typed code is, and
+ * whether it is on today's list. Never required; it only answers. `found` counts this line's parcels scanned so far.
+ */
+export function checkByHand(raw: string, parcels: Parcel[], events: ContactEvent[], groups: ByHandGroup[], sims: SimInfo[], scannedBefore: string[] = [], now = new Date()): ByHandCheck {
+  const parcel = findByCode(parcels, raw);
+  if (!parcel) return { kind: 'not-found', code: raw.trim().toUpperCase().replace(/\s+/g, '') };
+  const line = groups.flatMap((g) => g.lines).find((l) => l.codes.includes(parcel.code));
+  if (line) return { kind: 'on-list', code: parcel.code, line, found: new Set([...scannedBefore, parcel.code].filter((c) => line.codes.includes(c))).size };
+  const today = arrivalDay(now.toISOString());
+  const carrier = carrierOf(parcel.phone);
+  const sms = smsStatusOf(parcel.code, events);
+  const reason =
+    parcel.arrivalDate !== today
+      ? `Arrived ${parcel.arrivalDate}. Contact by hand lists today's arrivals only.`
+      : !phoneKey(parcel.phone)
+        ? 'No usable phone number. Add one on the parcel page.'
+        : toldByHand([parcel.code], events)
+          ? 'Already told by hand today.'
+          : sms !== 'not-sent'
+            ? `It has an SMS: ${sms === 'unconfirmed' ? 'check phone' : sms}.`
+            : carrier && simByCarrier(sims).has(carrier)
+              ? 'Its network has a SIM in the gateway phone, so it gets the SMS.'
+              : 'Not on the list right now.';
+  return { kind: 'elsewhere', code: parcel.code, phone: parcel.phone, recipient: parcel.recipient, reason };
 }

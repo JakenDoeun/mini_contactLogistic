@@ -1455,24 +1455,29 @@ function ByHandRow({ line, data }: { line: ByHandLine; data: ParcelData }) {
   const group = data.parcels.filter((p) => line.codes.includes(p.code));
   if (!group.length) return null;
   return (
-    <li className="grid gap-x-8 gap-y-3 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:items-start">
+    <li className="grid gap-x-6 gap-y-2 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="min-w-0">
         <p className="flex items-center gap-2">
           <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: CARRIER_DOT[networkKey(line.carrier)] }} />
-          <span className="font-mono text-xl font-semibold tracking-tight tabular-nums">{formatPhone(line.phone)}</span>
+          <span className="font-mono text-lg font-semibold tracking-tight tabular-nums">{formatPhone(line.phone)}</span>
           <span className="sr-only">, {networkName(line.carrier)}</span>
         </p>
-        <p className="mt-0.5 pl-4 text-sm">
+        <p className="pl-4 text-sm">
           {line.recipient}
-          <span className="text-muted-foreground">
-            {' '}
-            · {line.codes.length === 1 ? '1 parcel' : `${line.codes.length} parcels`}
-            {line.tries > 1 && ` · tried ${line.tries} times`}
-          </span>
+          <span className="text-muted-foreground"> · {line.codes.length === 1 ? '1 parcel' : `${line.codes.length} parcels`}</span>
         </p>
         <p className="truncate pl-4 font-mono text-xs text-muted-foreground">{line.codes.join(', ')}</p>
+        {line.lastTry && (
+          <p className="mt-0.5 flex items-center gap-1 pl-4 text-xs font-medium text-warning">
+            <PhoneOff className="size-3.5" aria-hidden />
+            No answer · {formatTime(line.lastTry)}
+            {line.tries > 1 && ` · tried ${line.tries} times`}
+          </p>
+        )}
       </div>
-      <DirectContact parcel={group[0]} group={group} events={data.events} message={line.message} stops={0} compact />
+      <div className="sm:justify-self-end">
+        <DirectContact parcel={group[0]} group={group} events={data.events} message={line.message} stops={0} compact />
+      </div>
     </li>
   );
 }

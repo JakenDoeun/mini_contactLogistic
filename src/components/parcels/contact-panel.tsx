@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
-import { CircleCheck, MessageSquare, Phone, PhoneMissed, Send, Smartphone } from 'lucide-react';
+import { CircleCheck, MessageSquare, MoreHorizontal, Phone, PhoneMissed, Send, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   composeMessage,
@@ -19,7 +19,7 @@ import {
 } from '@/lib/parcel-logic';
 import { queueSms, recordOutcome } from '@/lib/parcel-service';
 import { useSettings } from '@/lib/settings-service';
-import { formatTime } from '@/lib/utils';
+import { cn, formatTime } from '@/lib/utils';
 import { SmsBadge } from './parcel-status';
 
 const parcels = (n: number) => `${n} parcel${n === 1 ? '' : 's'}`;
@@ -169,6 +169,9 @@ const ASK = {
   },
 } as const;
 const CHANNEL_OF = { call: 'call', telegram: 'telegram', sms: 'other' } as const;
+// A segment of the compact group: a 44 px touch target on phones, a quieter 36 px on larger screens.
+const SEGMENT =
+  'inline-flex min-h-11 items-center gap-1.5 px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary focus-visible:relative focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none sm:min-h-9';
 const DONE: Record<Outcome, [string, typeof Phone, string]> = {
   answered: ['Reached by call', CircleCheck, 'text-success'],
   'no-answer': ['Called, no answer', PhoneMissed, 'text-warning'],
@@ -232,8 +235,9 @@ export function DirectContact({
 
   return (
     <section aria-labelledby={`${id}-heading`} className={compact ? undefined : 'border-t pt-4'}>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h3 id={`${id}-heading`} className={compact ? 'sr-only' : 'text-sm font-medium'}>
+      {/* In a list (compact) the row itself says when a call went unanswered; here only the parcel page shows it. */}
+      <div className={compact ? 'sr-only' : 'flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1'}>
+        <h3 id={`${id}-heading`} className={compact ? undefined : 'text-sm font-medium'}>
           Call, Telegram or SMS from your phone
         </h3>
         <p aria-live="polite" className="text-sm">
@@ -249,7 +253,34 @@ export function DirectContact({
         </p>
       </div>
 
-      {!asked && (
+      {!asked && compact && (
+        // One slim connected group per row, so a long list reads as phone numbers, not as rows of buttons.
+        <div role="group" aria-label={`Contact ${parcel.phone}`} className="inline-flex divide-x overflow-hidden rounded-md border bg-card">
+          <a href={`tel:${normalizePhone(parcel.phone)}`} onClick={() => setAsked('call')} className={SEGMENT}>
+            <Phone className="size-4" aria-hidden />
+            Call
+          </a>
+          <a href={telegramLink(parcel.phone)} target="_blank" rel="noreferrer" onClick={telegram} className={SEGMENT}>
+            <MessageSquare className="size-4" aria-hidden />
+            Telegram
+          </a>
+          <a href={smsLink(parcel.phone, message)} onClick={() => setAsked('sms')} className={SEGMENT}>
+            <Smartphone className="size-4" aria-hidden />
+            SMS
+          </a>
+          <button
+            type="button"
+            onClick={() => setAsked('pick')}
+            aria-label="Called or messaged from another phone? Record it"
+            title="Called or messaged from another phone? Record it"
+            className={SEGMENT}
+          >
+            <MoreHorizontal className="size-4" aria-hidden />
+          </button>
+        </div>
+      )}
+
+      {!asked && !compact && (
         <>
           <div className="mt-3 grid grid-cols-3 gap-2 sm:flex">
             <Button asChild variant="outline">
@@ -278,7 +309,7 @@ export function DirectContact({
       )}
 
       {asked === 'pick' && (
-        <div role="group" aria-labelledby={`${id}-pick`} className="mt-3 rounded-md bg-secondary px-3 py-3">
+        <div role="group" aria-labelledby={`${id}-pick`} className={cn('rounded-md bg-secondary px-3 py-3', !compact && 'mt-3')}>
           <p id={`${id}-pick`} className="font-medium">
             What did you do?
           </p>
@@ -306,7 +337,7 @@ export function DirectContact({
         <div
           role="group"
           aria-labelledby={`${id}-ask`}
-          className={compact ? 'mt-3 rounded-md bg-secondary px-3 py-3' : 'mt-3 rounded-md border-l-4 border-primary bg-secondary px-3 py-3'}
+          className={compact ? 'rounded-md bg-secondary px-3 py-3' : 'mt-3 rounded-md border-l-4 border-primary bg-secondary px-3 py-3'}
         >
           <p id={`${id}-ask`} className="font-medium">
             {ask.question}

@@ -1574,7 +1574,7 @@ function VerifyParcel({
             autoFocus
             autoComplete="off"
             spellCheck={false}
-            placeholder="Scan or type the parcel's code"
+            placeholder="Scan or type the code"
             className="bg-card pl-9 font-mono"
           />
         </div>

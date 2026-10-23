@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
-import { CircleCheck, MessageSquare, Phone, PhoneMissed, ScanBarcode, Send, Smartphone } from 'lucide-react';
+import { ChevronDown, CircleCheck, MessageSquare, Phone, PhoneMissed, ScanBarcode, Send, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   composeMessage,
@@ -211,6 +211,7 @@ export function DirectContact({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const id = useId(); // several cards can share one page (Contact by hand)
+  const [menu, setMenu] = useState(false); // phones, compact: the actions open from one button (owner, 2026-10-23)
   const last = eventsFor(parcel.code, events).find((e) => e.channel !== 'sms' && e.outcome);
 
   function telegram() {
@@ -260,11 +261,30 @@ export function DirectContact({
       </div>
 
       {!asked && compact && (
+        // On phones one button opens the choices; from sm the slim group is always there.
+        <button
+          type="button"
+          aria-expanded={menu}
+          aria-controls={`${id}-actions`}
+          onClick={() => setMenu(!menu)}
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-md border bg-card px-3 text-sm font-medium sm:hidden"
+        >
+          Contact or verify
+          <ChevronDown className={cn('size-4 transition-transform motion-reduce:transition-none', menu && 'rotate-180')} aria-hidden />
+        </button>
+      )}
+
+      {!asked && compact && (
         // One slim connected group per row, so a long list reads as phone numbers, not as rows of buttons.
         <div
+          id={`${id}-actions`}
           role="group"
           aria-label={`Contact ${parcel.phone}`}
-          className={cn('grid w-full divide-x overflow-hidden rounded-md border bg-card sm:inline-flex sm:w-auto', onVerify ? 'grid-cols-4' : 'grid-cols-3')}
+          className={cn(
+            'w-full divide-x overflow-hidden rounded-md border bg-card sm:inline-flex sm:w-auto',
+            menu ? 'mt-2 grid sm:mt-0' : 'hidden',
+            onVerify ? 'grid-cols-4' : 'grid-cols-3',
+          )}
         >
           <a href={`tel:${normalizePhone(parcel.phone)}`} onClick={() => setAsked('call')} className={SEGMENT}>
             <Phone className="size-4" aria-hidden />

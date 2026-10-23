@@ -78,6 +78,10 @@ savers.
 
 ## Owner decisions
 
+- **2026-10-23, gap between SMS.** The admin can change the random gap in Settings › Gap between SMS, never under 15
+  seconds (at most 600); the default stays 25–80. The worker reads it before each gap, and the Notifications time
+  estimates follow it. Shared settings key `sms.gap`; tested in `app-settings.test.ts` and `sms.test.ts`.
+
 - **2026-10-22, gateway phone network.** SMSGate cannot be limited to the tailnet; on Wi-Fi it is also reachable from
   that Wi-Fi. The owner keeps the phone on the branch Wi-Fi (staff use; customers rarely and briefly; the password is
   never shared). Conditions in `docs/tailnet-rules.md`, "The gateway phone on the branch Wi-Fi".

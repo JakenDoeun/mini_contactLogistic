@@ -30,8 +30,8 @@ export interface ContactEvent {
 }
 
 // A random gap between two SMS from the gateway SIM, so its traffic looks like a person's and is less likely to be
-// flagged or blocked by the carrier (owner, 2026-10-20).
-export const SMS_GAP_SECONDS = [25, 80] as const;
+// flagged or blocked by the carrier (owner, 2026-10-20). The admin can change it in Settings (owner, 2026-10-23).
+export const DEFAULT_SMS_GAP = { from: 25, to: 80 };
 
 export const SMS_STATUSES: SmsStatus[] = ['not-sent', 'queued', 'sending', 'sent', 'delivered', 'failed', 'unconfirmed'];
 

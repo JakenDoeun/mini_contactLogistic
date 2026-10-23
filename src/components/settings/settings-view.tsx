@@ -12,6 +12,8 @@ import { PhoneSetupCard } from './phone-setup-card';
 import { composeMessage, DEFAULT_TEMPLATES } from '@/lib/parcel-logic';
 import {
   columnError,
+  gapError,
+  SMS_GAP_LIMITS,
   templateError,
   type Settings,
 } from '@/lib/settings-logic';
@@ -36,6 +38,7 @@ export function SettingsView() {
           <FolderSettings />
           <ImportSection settings={settings} readOnly={!settingsAdmin()} />
           <TemplateSection settings={settings} readOnly={!settingsAdmin()} />
+          <GapSection settings={settings} readOnly={!settingsAdmin()} />
           <GatewayCard />
           <PhoneSetupCard />
         </div>
@@ -315,6 +318,49 @@ function TemplateSection({ settings, readOnly }: { settings: Settings; readOnly:
             Restore the original wording
           </Button>
         </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function GapSection({ settings, readOnly }: { settings: Settings; readOnly: boolean }) {
+  const s = useSection(settings, ['smsGap'], (d) => ({ smsGap: gapError(d.smsGap) }));
+  const { from, to } = s.draft.smsGap;
+  const setGap = (key: 'from' | 'to', value: string) => s.set('smsGap', { ...s.draft.smsGap, [key]: value === '' ? NaN : Number(value) });
+  const number = (key: 'from' | 'to', id: string) => (
+    <Input
+      id={id}
+      type="number"
+      inputMode="numeric"
+      min={SMS_GAP_LIMITS.min}
+      max={SMS_GAP_LIMITS.max}
+      value={Number.isNaN(s.draft.smsGap[key]) ? '' : s.draft.smsGap[key]}
+      onChange={(e) => setGap(key, e.target.value)}
+      aria-invalid={!!s.errors.smsGap}
+      aria-describedby={described('smsGap', s.errors.smsGap)}
+      className="max-w-32"
+    />
+  );
+  return (
+    <SectionCard
+      id="sms-gap"
+      title="Gap between SMS"
+      description="The gateway phone waits a random time in this range between two SMS, so the branch SIM looks like a person sending, not a bulk sender."
+      section={s}
+      readOnly={readOnly}
+    >
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Field name="smsGap" label="Shortest wait, in seconds" hint={`At least ${SMS_GAP_LIMITS.min} seconds.`} error={s.errors.smsGap}>
+          {number('from', 'field-smsGap')}
+        </Field>
+        <Field name="smsGap-to" label="Longest wait, in seconds" hint={`At most ${SMS_GAP_LIMITS.max} seconds.`}>
+          {number('to', 'field-smsGap-to')}
+        </Field>
+      </div>
+      {!gapError(s.draft.smsGap) && (
+        <p className="text-sm text-muted-foreground">
+          50 customers take about {Math.max(1, Math.round((49 * from) / 60))}–{Math.ceil((49 * to) / 60)} minutes. Shorter waits send faster, but make it more likely that the carrier blocks the SIM.
+        </p>
       )}
     </SectionCard>
   );

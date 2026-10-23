@@ -17,7 +17,6 @@ import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@
 import {
   arrivalDay,
   composeMessage,
-  SMS_GAP_SECONDS,
   reachedByStaff,
   formatPhone,
   normalizePhone,
@@ -28,7 +27,7 @@ import {
   type ContactEvent,
 } from '@/lib/parcel-logic';
 import { controlBatch, dismissBatch, queueBatch, queueSms, releaseRestoreHold, useParcelData, type ParcelData, type SmsBatch } from '@/lib/parcel-service';
-import { currentTemplates, useSettings } from '@/lib/settings-service';
+import { currentGap, currentTemplates, useSettings } from '@/lib/settings-service';
 import { cn, formatDateTime, formatTime } from '@/lib/utils';
 
 type ChannelFilter = 'all' | 'sms' | 'call' | 'telegram';
@@ -302,7 +301,7 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
         <Heading
           id="queue-heading"
           title="Sending queue"
-          hint={`Handed to the gateway phone one at a time, ${SMS_GAP_SECONDS[0]}–${SMS_GAP_SECONDS[1]} seconds apart so the SIM is not flagged. Accepted messages move to History; failed or unconfirmed ones move to Needs your attention.`}
+          hint={`Handed to the gateway phone one at a time, ${currentGap().from}–${currentGap().to} seconds apart so the SIM is not flagged. Accepted messages move to History; failed or unconfirmed ones move to Needs your attention.`}
         />
         {running && data.batch && <BatchControls batch={data.batch} />}
         {batch.length > 0 && !running && (
@@ -597,13 +596,13 @@ function Ready({
 
 /** How long this many gaps between messages take; the gap is random, so it is a range. */
 function gapMinutes(gaps: number) {
-  const [lo, hi] = SMS_GAP_SECONDS;
+  const { from: lo, to: hi } = currentGap();
   return `${Math.max(1, Math.round((gaps * lo) / 60))}–${Math.ceil((gaps * hi) / 60)} minutes`;
 }
 
 /** How long a run takes with the random gap between messages. */
 function sendingTime(count: number) {
-  const [lo, hi] = SMS_GAP_SECONDS;
+  const { from: lo, to: hi } = currentGap();
   if (count <= 1) return 'One SMS.';
   return `Takes about ${gapMinutes(count - 1)}: the phone waits ${lo}–${hi} seconds between messages, at random, so the branch SIM is not flagged.`;
 }

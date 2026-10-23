@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createUser } from '../auth/accounts.ts';
 import { createTestDb } from '../db/test-db.ts';
-import { DEFAULT_TEMPLATES } from '../../lib/parcel-logic.ts';
+import { DEFAULT_SMS_GAP, DEFAULT_TEMPLATES } from '../../lib/parcel-logic.ts';
 import { duplicateRule, importColumns } from '../importer/store.ts';
-import { appSettings, saveAppSettings } from './app-settings.ts';
+import { appSettings, saveAppSettings, smsGap } from './app-settings.ts';
 
 async function users(t: test.TestContext) {
   const { db, cleanup } = await createTestDb();
@@ -17,7 +17,7 @@ async function users(t: test.TestContext) {
 
 test("the shared settings start from the importer's own defaults", async (t) => {
   const { db } = await users(t);
-  assert.deepEqual(appSettings(db), { trackingColumn: 'scan order number', phoneColumn: 'consignee mobile', duplicateFile: 'warn', templates: DEFAULT_TEMPLATES });
+  assert.deepEqual(appSettings(db), { trackingColumn: 'scan order number', phoneColumn: 'consignee mobile', duplicateFile: 'warn', templates: DEFAULT_TEMPLATES, smsGap: DEFAULT_SMS_GAP });
 });
 
 test('the admin saves them for everyone, and the importer uses the saved columns and rule', async (t) => {
@@ -42,4 +42,16 @@ test('staff cannot change them, and a bad field saves nothing', async (t) => {
   assert.equal(duplicateRule(db), 'warn');
   assert.equal(saveAppSettings(db, admin, { trackingColumn: '  ' }).ok, false);
   assert.equal(saveAppSettings(db, admin, {}).ok, false);
+});
+
+test('the gap between two SMS: the admin changes it, never under 15 seconds', async (t) => {
+  const { db, admin, staff } = await users(t);
+  assert.ok(saveAppSettings(db, admin, { smsGap: { from: 15, to: 40 } }).ok);
+  assert.deepEqual(smsGap(db), { from: 15, to: 40 });
+  for (const smsGap of [{ from: 14, to: 40 }, { from: 30, to: 20 }, { from: 15.5, to: 40 }, { from: 15, to: 601 }, { from: '20', to: 40 }, null]) {
+    const r = saveAppSettings(db, admin, { smsGap });
+    assert.equal(r.ok, false, JSON.stringify(smsGap));
+  }
+  assert.equal(saveAppSettings(db, staff, { smsGap: { from: 20, to: 30 } }).ok, false);
+  assert.deepEqual(appSettings(db).smsGap, { from: 15, to: 40 }, 'refused saves change nothing');
 });

@@ -7,9 +7,9 @@
 // The launcher (scripts/serve.ts) runs it beside backups; a lease keeps a second copy from sending.
 import crypto from 'node:crypto';
 import type { Db } from '../db/connection.ts';
-import { SMS_GAP_SECONDS } from '../../lib/parcel-logic.ts';
 import { GatewayError, readGatewayConfig, smsGate, type GatewayState, type MessageState, type SmsGate } from '../gateway/smsgate.ts';
 import { readSetting, writeSetting } from '../db/settings.ts';
+import { smsGap } from '../settings/app-settings.ts';
 import { PHONE_AWAY, restoreHold, type AttemptState } from './queue.ts';
 
 const LEASE_MS = 60_000;
@@ -18,7 +18,7 @@ const PROCESSED_LIMIT_MS = 3600_000;
 // Sent waits for a delivery report; after this the report is not coming and the phone is left alone.
 const SENT_WATCH_MS = 3600_000;
 const pollEvery = (ageMs: number) => (ageMs < 120_000 ? 3_000 : 30_000);
-export const randomGap = () => (SMS_GAP_SECONDS[0] + Math.random() * (SMS_GAP_SECONDS[1] - SMS_GAP_SECONDS[0])) * 1000;
+export const randomGap = (g: { from: number; to: number }) => (g.from + Math.random() * (g.to - g.from)) * 1000;
 
 interface Attempt {
   id: string;
@@ -39,7 +39,7 @@ export function smsWorker(
 ) {
   const make = options.make ?? smsGate;
   const now = options.now ?? Date.now;
-  const gap = options.gap ?? randomGap;
+  const gap = options.gap ?? (() => randomGap(smsGap(db))); // read each time, so a change in Settings applies to the next gap
   let nextSendAt: number | null = null; // no hand-over before this time
   const holder = crypto.randomUUID();
   const iso = () => new Date(now()).toISOString();

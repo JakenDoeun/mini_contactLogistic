@@ -2,7 +2,7 @@
 // wording, the same for every staff member and device.
 import { useSyncExternalStore } from 'react';
 import { getAppSettings, putAppSettings } from '@/lib/import-api';
-import { DEFAULT_TEMPLATES } from '@/lib/parcel-logic';
+import { DEFAULT_SMS_GAP, DEFAULT_TEMPLATES } from '@/lib/parcel-logic';
 import type { Settings } from '@/lib/settings-logic';
 
 let current: Settings | null = null;
@@ -38,6 +38,9 @@ export const settingsAdmin = () => admin;
 
 /** The SMS wording now, for code outside React; the defaults until the settings have loaded. */
 export const currentTemplates = () => current?.templates ?? DEFAULT_TEMPLATES;
+
+/** The gap between two SMS now, for time estimates; the default until the settings have loaded. */
+export const currentGap = () => current?.smsGap ?? DEFAULT_SMS_GAP;
 
 /** Saves on the server (admin only). Throws with a sentence staff can act on. */
 export async function saveSettings(patch: Partial<Settings>) {

@@ -54,7 +54,13 @@ const waiting = (e: ContactEvent) => e.smsStatus === 'queued' || e.smsStatus ===
 const PAGE = 10;
 const READY_SHOWN = 6;
 
-export function NotificationsView({ initialFilter }: { initialFilter?: string }) {
+type Tab = 'today' | 'history';
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'history', label: 'History' },
+];
+
+export function NotificationsView({ initialFilter, initialTab = 'today' }: { initialFilter?: string; initialTab?: Tab }) {
   const data = useParcelData();
   const templates = useSettings()?.templates;
   const [retrying, setRetrying] = useState<ContactEvent | null>(null);
@@ -62,6 +68,15 @@ export function NotificationsView({ initialFilter }: { initialFilter?: string })
   const [contacting, setContacting] = useState<string | null>(null);
   /** The arrival day whose batch is being confirmed: today, or one earlier day under review. */
   const [confirmDay, setConfirmDay] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>(initialTab);
+  const choose = (next: Tab) => {
+    setTab(next);
+    // Kept in the address, so a reload or the back button returns to the same tab.
+    const url = new URL(window.location.href);
+    if (next === 'history') url.searchParams.set('tab', 'history');
+    else url.searchParams.delete('tab');
+    window.history.replaceState(null, '', url);
+  };
 
   const events = data ? [...data.events].sort((a, b) => b.at.localeCompare(a.at)) : null;
   const work = data ? workList(data.parcels, data.events) : null;
@@ -82,8 +97,45 @@ export function NotificationsView({ initialFilter }: { initialFilter?: string })
 
       {data?.restoreHold && <RestoreCheck data={data} copyAt={data.restoreHold.copyAt} />}
 
+      <div
+        role="tablist"
+        aria-label="Notifications"
+        className="mt-6 flex gap-1 border-b"
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+          const next = tab === 'today' ? 'history' : 'today';
+          choose(next);
+          document.getElementById(`tab-${next}`)?.focus();
+        }}
+      >
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            id={`tab-${t.key}`}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            aria-controls={`panel-${t.key}`}
+            tabIndex={tab === t.key ? 0 : -1}
+            onClick={() => choose(t.key)}
+            className={cn(
+              '-mb-px min-h-11 border-b-2 px-4 text-sm font-medium transition-colors motion-reduce:transition-none',
+              tab === t.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {/* Urgency sets the size: attention leads, the live queue follows, ready-to-send supports from the side. */}
-      <div className="mt-7 grid items-start gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_19rem]">
+      <div
+        id="panel-today"
+        role="tabpanel"
+        aria-labelledby="tab-today"
+        hidden={tab !== 'today'}
+        className={tab === 'today' ? 'mt-7 grid items-start gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_19rem]' : 'hidden'}
+      >
         <div className="flex min-w-0 flex-col gap-8">
           <Attention work={work} events={events} nameOf={nameOf} onRetry={setRetrying} onOpen={setContacting} />
           <SendingQueue data={data} nameOf={nameOf} running={running} />
@@ -92,7 +144,9 @@ export function NotificationsView({ initialFilter }: { initialFilter?: string })
         <Ready plan={plan} running={running} hold={!!data?.restoreHold} noGateway={data ? !data.gateway.setUp : false} sims={sims} onNotify={setConfirmDay} />
       </div>
 
-      <History events={events} data={data} nameOf={nameOf} initialChannel={initialFilter} />
+      <div id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden={tab !== 'history'}>
+        <History events={events} data={data} nameOf={nameOf} initialChannel={initialFilter} />
+      </div>
 
       <RunAlerts data={data} />
       <RetrySheet event={retrying} data={data} onClose={() => setRetrying(null)} />
@@ -949,9 +1003,9 @@ function History({
   const narrowed = !!text || !isAnyDate(dates) || channel !== 'all';
 
   return (
-    <section aria-labelledby="log-heading" className="mt-12">
+    <section aria-labelledby="log-heading" className="mt-7">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <Heading id="log-heading" title="History" hint="Every SMS, call and Telegram message. A combined SMS is one entry." />
+        <Heading id="log-heading" title="History" hint="Every SMS, call, Telegram message and SMS sent from a staff phone. A combined SMS is one entry." />
         {events && (
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">

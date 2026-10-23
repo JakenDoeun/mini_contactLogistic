@@ -12,7 +12,9 @@ About 114 rows, like the real export: Shopee SHPE parcels with repeat scans, oth
 "Whole package" split rows; customers on Cellcard, Smart, Metfone and Seatel, two on unknown prefixes, one with no
 number and one with a broken number; some customers with two or three parcels (one combined SMS each).
 """
-import argparse, datetime, importlib.util, random
+import argparse, datetime, importlib.util, random, sys
+
+sys.dont_write_bytecode = True  # importing make-scan-record.py must not leave a __pycache__ in the repo
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location('scan', Path(__file__).with_name('make-scan-record.py'))

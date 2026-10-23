@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Camera, Check, ChevronRight, CircleAlert, CircleCheck, MessageSquare, ScanBarcode, X, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Smartphone, Square } from 'lucide-react';
+import { ArrowRight, Camera, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, MessageSquare, ScanBarcode, X, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Smartphone, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
@@ -1456,6 +1456,7 @@ function NetworkButton({ label, dot, left, noAnswer, pressed, onClick }: { label
  * optional (owner, 2026-10-23): scan or type the parcel in hand to make sure it is this number's before contacting.
  */
 function ByHandRow({ line, data }: { line: ByHandLine; data: ParcelData }) {
+  const [open, setOpen] = useState(false); // phones: the row opens to show Call, Telegram, SMS and Verify
   const [verifying, setVerifying] = useState(false);
   const [result, setResult] = useState<LineCheck | null>(null);
   const [checked, setChecked] = useState<string[]>([]);
@@ -1465,11 +1466,13 @@ function ByHandRow({ line, data }: { line: ByHandLine; data: ParcelData }) {
     // A light highlight on the row under the mouse or being worked on; green once Verify confirmed the parcel.
     <li
       className={cn(
-        '-mx-3 grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-2 rounded-md px-3 py-3 transition-colors motion-reduce:transition-none sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center',
+        'relative -mx-3 grid grid-cols-[minmax(0,1fr)] gap-x-6 rounded-md px-3 py-3 transition-colors motion-reduce:transition-none sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-y-2',
+        open && 'gap-y-2',
         result?.kind === 'match' ? 'bg-success-tint' : 'hover:bg-secondary/60 focus-within:bg-secondary/60',
       )}
     >
-      <div className="min-w-0">
+      {/* Phones: tapping the row opens it; the chevron says so and is the keyboard and screen-reader way in. */}
+      <div className="min-w-0 max-sm:cursor-pointer max-sm:pr-10" onClick={() => setOpen(!open)}>
         <p className="flex items-center gap-2">
           <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: CARRIER_DOT[networkKey(line.carrier)] }} />
           <span className="font-mono text-lg font-semibold tracking-tight tabular-nums">{formatPhone(line.phone)}</span>
@@ -1488,8 +1491,18 @@ function ByHandRow({ line, data }: { line: ByHandLine; data: ParcelData }) {
           </p>
         )}
       </div>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={`Contact or verify ${formatPhone(line.phone)}`}
+        onClick={() => setOpen(!open)}
+        className="absolute top-2 right-1 grid size-11 place-items-center rounded-md text-muted-foreground sm:hidden"
+      >
+        <ChevronDown className={cn('size-5 transition-transform motion-reduce:transition-none', open && 'rotate-180')} aria-hidden />
+      </button>
       <div className="sm:justify-self-end">
         <DirectContact
+          actionsOpen={open}
           parcel={group[0]}
           group={group}
           events={data.events}

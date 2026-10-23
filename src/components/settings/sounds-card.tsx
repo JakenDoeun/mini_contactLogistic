@@ -5,9 +5,11 @@ import { Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { playAttention, playDone, saveSoundPrefs, soundPrefs, type SoundPrefs } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
+import { useT } from '@/lib/i18n-react';
 
 /** Sounds on this device only (Phase 12): kept in this browser, so the office computer can chime while staff phones stay quiet. */
 export function SoundsCard() {
+  const t = useT();
   const [prefs, setPrefs] = useState<SoundPrefs | null>(null);
   useEffect(() => setPrefs(soundPrefs()), []); // read after the page loads: the server has no browser storage
   const update = (next: SoundPrefs) => {
@@ -18,16 +20,16 @@ export function SoundsCard() {
   return (
     <section aria-labelledby="sounds-heading" className="rounded-md border bg-card px-5 py-5 sm:px-6">
       <h2 id="sounds-heading" className="text-base font-semibold">
-        Sounds on this device
+        {t('sounds.title')}
       </h2>
       <p className="mt-0.5 text-muted-foreground">
-        While the Notifications page is open: a soft chime when a run finishes, three short beeps when it needs someone. Saved in this browser only.
+        {t('sounds.lead')}
       </p>
       {prefs && (
         <div className="mt-4 flex flex-col gap-4">
           <div className="flex items-center justify-between gap-4 sm:justify-start">
             <span id="sounds-label" className="font-medium">
-              Play sounds here
+              {t('sounds.on')}
             </span>
             <button
               type="button"
@@ -45,7 +47,7 @@ export function SoundsCard() {
           </div>
           <div className="max-w-xs">
             <label htmlFor="sounds-volume" className="block font-medium">
-              Volume
+              {t('sounds.volume')}
             </label>
             <input
               id="sounds-volume"
@@ -62,11 +64,11 @@ export function SoundsCard() {
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => playDone(true)}>
               <Volume2 aria-hidden />
-              Test finished chime
+              {t('sounds.testDone')}
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={() => playAttention(true)}>
               <Volume2 aria-hidden />
-              Test attention beeps
+              {t('sounds.testAttention')}
             </Button>
           </div>
         </div>

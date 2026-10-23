@@ -28,15 +28,14 @@ import { ParcelDetail } from './parcel-detail';
 import { PhoneText, SmsBadge } from './parcel-status';
 import { PhoneGroups } from './phone-groups';
 import { GroupBadge, GroupList, toNotifyLine } from './phone-group';
+import { useT, type MessageKey } from '@/lib/i18n-react';
 
 // The counts double as the filters, so the summary and the filter can never disagree.
-const FILTERS: { key: ParcelFilter; label: string; empty: string }[] = [
-  { key: 'all', label: 'All parcels', empty: 'No parcels yet' },
-  { key: 'sms-failed', label: 'SMS failed', empty: 'No failed SMS' },
-  { key: 'no-phone', label: 'No phone number', empty: 'Every parcel has a phone number' },
+const FILTERS: { key: ParcelFilter; label: MessageKey; empty: MessageKey }[] = [
+  { key: 'all', label: 'parcels.filter.all', empty: 'parcels.filter.allEmpty' },
+  { key: 'sms-failed', label: 'parcels.filter.failed', empty: 'parcels.filter.failedEmpty' },
+  { key: 'no-phone', label: 'parcels.filter.noPhone', empty: 'parcels.filter.noPhoneEmpty' },
 ];
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // A customer group is one phone number in one arrival batch, the same unit a combined SMS covers.
 const batchKey = (p: Parcel) => {
   const phone = phoneKey(p.phone);
@@ -46,6 +45,7 @@ const groupCount = (parcels: Parcel[]) => new Set(parcels.flatMap((p) => batchKe
 const TODAY: DateRange = { preset: 'today' };
 
 export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { initialQuery: string; initialFilter?: string; previewError?: boolean }) {
+  const t = useT();
   const data = useParcelData();
   const loadError = useParcelError();
   const loadFailed = previewError || !!loadError;
@@ -122,7 +122,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
               setOpen(p.code);
             }}
           >
-            Add phone
+            {t('groups.addPhone')}
           </Button>
         )}
       </TableCell>
@@ -131,7 +131,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
         {sizeOf(p) > 1 ? (
           <GroupBadge size={sizeOf(p)} onClick={() => setGroupOf(p.code)} />
         ) : (
-          <span className="text-muted-foreground" aria-label="No other parcels">
+          <span className="text-muted-foreground" aria-label={t('parcels.noOthers')}>
             –
           </span>
         )}
@@ -147,9 +147,9 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
             e.stopPropagation();
             setOpen(p.code);
           }}
-          aria-label={`View details for ${p.code}`}
+          aria-label={t('parcels.viewFor', { code: p.code })}
         >
-          View details
+          {t('history.action.details')}
           <ChevronRight aria-hidden />
         </Button>
       </TableCell>
@@ -160,20 +160,20 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
     <>
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight">Parcels</h1>
-          <p className="mt-1 text-muted-foreground">Every parcel in the branch records. Find one, check its SMS, or fix a phone number.</p>
+          <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight">{t('nav.parcels')}</h1>
+          <p className="mt-1 text-muted-foreground">{t('parcels.lead')}</p>
         </div>
         <div className="relative w-full md:max-w-sm">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <label htmlFor="parcel-filter" className="sr-only">
-            Search by tracking code, name or phone
+            {t('parcels.search')}
           </label>
           <Input
             id="parcel-filter"
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Tracking code, name or phone"
+            placeholder={t('parcels.searchPlaceholder')}
             className="pl-9"
             autoComplete="off"
           />
@@ -181,12 +181,12 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
       </div>
 
       <SampleDataNotice>
-        Parcels and phone numbers are saved. Messages and calls are not saved yet: they reset when the page reloads, and no SMS leaves this device.
+        {t('parcels.sampleNotice')}
       </SampleDataNotice>
 
       {!loadFailed && (
         <div className="mt-5 flex flex-wrap items-center gap-2">
-          <div role="group" aria-label="Show parcels" className="flex flex-wrap gap-1.5">
+          <div role="group" aria-label={t('parcels.show')} className="flex flex-wrap gap-1.5">
             {/* "No phone number" appears only while there is something to fix, or when chosen. */}
             {FILTERS.filter((f) => f.key !== 'no-phone' || filter === 'no-phone' || count(f.key) > 0).map((f) => (
               <button
@@ -199,28 +199,28 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
                   filter === f.key ? 'border-primary bg-accent font-medium text-primary' : 'bg-card text-muted-foreground hover:text-foreground',
                 )}
               >
-                {f.label}
+                {t(f.label)}
                 <span className={cn('font-mono font-semibold', filter !== f.key && 'text-foreground')}>{data ? count(f.key) : '–'}</span>
               </button>
             ))}
           </div>
-          <DateFilter value={dates} onChange={setDates} label="Imported date" />
+          <DateFilter value={dates} onChange={setDates} label={t('parcels.dateLabel')} />
           {narrowed && (
             <Button variant="ghost" size="sm" onClick={reset}>
               <X aria-hidden />
-              Clear filters
+              {t('parcels.clear')}
             </Button>
           )}
         </div>
       )}
 
-      <section aria-label="Parcel list" className="mt-4 rounded-md border bg-card">
+      <section aria-label={t('parcels.list')} className="mt-4 rounded-md border bg-card">
         {loadFailed ? (
           <div role="alert" className="px-5 py-10">
-            <p className="font-medium">The parcel list could not be loaded</p>
-            <p className="mt-1 text-muted-foreground">{loadError ?? 'Nothing was changed. Check that the office computer is on, then try again.'}</p>
+            <p className="font-medium">{t('parcels.loadFailed')}</p>
+            <p className="mt-1 text-muted-foreground">{loadError ?? t('parcels.loadFailedLead')}</p>
             <Button variant="outline" className="mt-4" onClick={reloadParcels}>
-              Try again
+              {t('common.tryAgain')}
             </Button>
           </div>
         ) : (
@@ -230,28 +230,31 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
                 {rows && (
                   <>
                     <span className="font-medium text-foreground">
-                      {plural(rows.length, 'parcel')}
-                      {dates.preset === 'today' ? ' arriving today' : anyDate ? '' : ` arrived ${rangePhrase(dates)}`}
+                      {dates.preset === 'today'
+                        ? t('parcels.countToday', { count: rows.length })
+                        : anyDate
+                          ? t('parcels.count', { count: rows.length })
+                          : t('parcels.countRange', { count: rows.length, range: rangePhrase(dates, t) })}
                     </span>
-                    {view === 'grouped' && <> · {plural(groupCount(rows), 'customer group')}</>}
-                    {filter !== 'all' && <> · {active.label}</>}
-                    {query.trim() && <> · matching &ldquo;{query.trim()}&rdquo;</>}
+                    {view === 'grouped' && t('parcels.groups', { count: groupCount(rows) })}
+                    {filter !== 'all' && <> · {t(active.label)}</>}
+                    {query.trim() && t('parcels.matching', { query: query.trim() })}
                     {elsewhere > 0 && (
                       <>
                         {' · '}
                         <button type="button" onClick={() => setDates(ANY_DATE)} className="font-medium text-primary underline-offset-4 hover:underline">
-                          {elsewhere} more on other days
+                          {t('parcels.elsewhere', { count: elsewhere })}
                         </button>
                       </>
                     )}
                   </>
                 )}
               </p>
-              <div role="group" aria-label="View" className="inline-flex rounded-md bg-secondary p-0.5 text-sm">
+              <div role="group" aria-label={t('parcels.view')} className="inline-flex rounded-md bg-secondary p-0.5 text-sm">
                 {(
                   [
-                    ['grouped', 'Grouped by phone'],
-                    ['individual', 'Individual parcels'],
+                    ['grouped', 'parcels.grouped'],
+                    ['individual', 'parcels.individual'],
                   ] as const
                 ).map(([key, label]) => (
                   <button
@@ -264,7 +267,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
                       view === key ? 'bg-card font-medium text-foreground shadow-[0_0_0_1px_var(--color-border)]' : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
-                    {label}
+                    {t(label)}
                   </button>
                 ))}
               </div>
@@ -274,41 +277,40 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
                 {query.trim() ? (
                   <>
                     <p className="font-medium">
-                      No parcel matches &ldquo;{query.trim()}&rdquo;{filter !== 'all' && ` in ${active.label}`}
-                      {!anyDate && `, arrived ${rangePhrase(dates)}`}
+                      {t('parcels.noMatch', { query: query.trim() })}
+                      {filter !== 'all' && t('parcels.noMatchIn', { filter: t(active.label) })}
+                      {!anyDate && t('parcels.noMatchArrived', { range: rangePhrase(dates, t) })}
                     </p>
-                    <p className="mt-1 text-muted-foreground">Check the tracking code, or search by the recipient&apos;s phone number instead.</p>
+                    <p className="mt-1 text-muted-foreground">{t('parcels.noMatchLead')}</p>
                   </>
                 ) : data!.parcels.length === 0 ? (
                   <>
-                    <p className="font-medium">No parcels yet</p>
-                    <p className="mt-1 text-muted-foreground">Parcels appear here once an arrivals file is imported.</p>
+                    <p className="font-medium">{t('parcels.filter.allEmpty')}</p>
+                    <p className="mt-1 text-muted-foreground">{t('parcels.emptyLead')}</p>
                   </>
                 ) : (
                   <>
                     <p className="font-medium">
-                      {filter !== 'all' ? active.empty : dates.preset === 'today' ? 'No arrivals imported today yet' : 'No parcels arrived in this period'}
+                      {t(filter !== 'all' ? active.empty : dates.preset === 'today' ? 'parcels.noneToday' : 'parcels.nonePeriod')}
                     </p>
                     {!anyDate && (
                       <p className="mt-1 text-muted-foreground">
-                        {dates.preset === 'today'
-                          ? "Import today's arrival export to start notifying customers. Earlier days are under the date filter."
-                          : `Showing parcels that arrived ${rangePhrase(dates)}. Try a wider date range.`}
+                        {dates.preset === 'today' ? t('parcels.noneTodayLead') : t('parcels.nonePeriodLead', { range: rangePhrase(dates, t) })}
                       </p>
                     )}
                   </>
                 )}
                 {elsewhere > 0 ? (
                   <Button variant="outline" className="mt-4" onClick={() => setDates(ANY_DATE)}>
-                    Show {elsewhere} on other days
+                    {t('parcels.showElsewhere', { count: elsewhere })}
                   </Button>
                 ) : narrowed ? (
                   <Button variant="outline" className="mt-4" onClick={reset}>
-                    Clear filters
+                    {t('parcels.clear')}
                   </Button>
                 ) : (
                   <Button asChild variant="outline" className="mt-4">
-                    <Link href="/import-arrivals">Import arrivals</Link>
+                    <Link href="/import-arrivals">{t('parcels.importLink')}</Link>
                   </Button>
                 )}
               </div>
@@ -318,14 +320,14 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableHead>Tracking code</TableHead>
-                    <TableHead className="hidden md:table-cell">Recipient</TableHead>
-                    <TableHead className="hidden md:table-cell">Phone</TableHead>
-                    <TableHead className="hidden 2xl:table-cell">Imported</TableHead>
-                    <TableHead className="hidden xl:table-cell">Same phone</TableHead>
-                    <TableHead className="hidden md:table-cell">SMS</TableHead>
+                    <TableHead>{t('parcels.col.code')}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t('parcels.col.recipient')}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t('parcels.col.phone')}</TableHead>
+                    <TableHead className="hidden 2xl:table-cell">{t('parcels.col.imported')}</TableHead>
+                    <TableHead className="hidden xl:table-cell">{t('parcels.col.same')}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t('parcels.col.sms')}</TableHead>
                     <TableHead className="hidden xl:table-cell">
-                      <span className="sr-only">Actions</span>
+                      <span className="sr-only">{t('common.actions')}</span>
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -350,14 +352,13 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
         <SheetContent className="max-w-xl bg-background" aria-describedby={undefined}>
           {groupParcel && (
             <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-14 pb-6 sm:px-6">
-              <p className="text-xs text-muted-foreground">Phone number group</p>
+              <p className="text-xs text-muted-foreground">{t('parcels.groupTitle')}</p>
               <SheetTitle className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xl font-semibold">
                 <span className="font-mono">{formatPhone(groupParcel.phone)}</span>
                 <GroupBadge size={groupParcels.length} />
               </SheetTitle>
               <p className="mt-2 text-sm">
-                {toNotifyLine(eligibleForMessage(groupParcels, events).length, groupParcels.length)}. Matched by phone number, not name. Each parcel keeps
-                its own record and statuses.
+                {t('parcels.groupLead', { line: toNotifyLine(eligibleForMessage(groupParcels, events).length, groupParcels.length, t) })}
               </p>
               <GroupList
                 parcels={groupParcels}
@@ -375,9 +376,9 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
                   setOpen(groupParcels[0].code);
                 }}
               >
-                Contact this customer
+                {t('parcels.contactCustomer')}
               </Button>
-              <p className="mt-2 text-sm text-muted-foreground">Opens the newest parcel. Its message covers only the parcels not notified yet.</p>
+              <p className="mt-2 text-sm text-muted-foreground">{t('parcels.contactLead')}</p>
             </div>
           )}
         </SheetContent>

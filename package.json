@@ -20,7 +20,7 @@
     "serve": "node scripts/serve.ts",
     "sms-worker": "node scripts/sms-worker.ts",
     "restore": "node scripts/restore.ts",
-    "locales": "node scripts/locales.ts"
+    "locales": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/locales.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "1.2.0",

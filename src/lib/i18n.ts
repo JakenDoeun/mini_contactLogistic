@@ -10,6 +10,12 @@ export const LOCALE_NAME: Record<Locale, string> = { en: 'English', km: 'ខ្�
 
 export const isLocale = (v: unknown): v is Locale => LOCALES.includes(v as Locale);
 
+/** The language in a Cookie header or document.cookie; English when none is set. */
+export function localeFromCookie(cookie: string): Locale {
+  const value = new RegExp(`(?:^|;\\s*)${LOCALE_COOKIE}=([^;]*)`).exec(cookie)?.[1];
+  return isLocale(value) ? value : 'en';
+}
+
 export type Vars = Record<string, string | number>;
 
 const PLURAL = /\{(\w+), plural,((?:\s*(?:=\d+|zero|one|two|few|many|other)\s*\{[^{}]*\})+)\s*\}/g;

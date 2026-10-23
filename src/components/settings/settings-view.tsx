@@ -19,17 +19,20 @@ import {
   type Settings,
 } from '@/lib/settings-logic';
 import { saveSettings, settingsAdmin, useSettings } from '@/lib/settings-service';
+import { useT, type MessageKey } from '@/lib/i18n-react';
+import type { Message } from '@/lib/messages';
 
 export function SettingsView() {
+  const t = useT();
   const settings = useSettings();
 
   return (
     <>
-      <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight">System Settings</h1>
-      <p className="mt-1 text-muted-foreground">Folder monitoring, import rules and customer messages for this branch.</p>
+      <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight">{t('settings.title')}</h1>
+      <p className="mt-1 text-muted-foreground">{t('settings.lead')}</p>
 
       {!settings ? (
-        <div className="mt-6 flex flex-col gap-6" aria-busy="true" aria-label="Loading settings">
+        <div className="mt-6 flex flex-col gap-6" aria-busy="true" aria-label={t('settings.loading')}>
           <Skeleton className="h-64 w-full" />
           <Skeleton className="h-48 w-full" />
         </div>
@@ -49,10 +52,11 @@ export function SettingsView() {
   );
 }
 
-type Errors<T> = Partial<Record<keyof T, string | null>>;
+type Errors<T> = Partial<Record<keyof T, Message | null>>;
 
 /** Local draft for one section: edits stay here until Save, so a half-typed path never takes effect. */
 function useSection<K extends keyof Settings>(settings: Settings, keys: K[], validate: (d: Pick<Settings, K>) => Errors<Pick<Settings, K>>) {
+  const t = useT();
   const pick = () => Object.fromEntries(keys.map((k) => [k, settings[k]])) as Pick<Settings, K>;
   const [draft, setDraft] = useState(pick);
   const [errors, setErrors] = useState<Errors<Pick<Settings, K>>>({});
@@ -80,7 +84,7 @@ function useSection<K extends keyof Settings>(settings: Settings, keys: K[], val
       setStatus('saved');
     } catch (err) {
       setStatus('idle');
-      setSaveError(`Not saved. ${(err as Error).message}`);
+      setSaveError(t('common.notSaved', { error: (err as Error).message }));
     }
   }
 
@@ -105,6 +109,7 @@ function SectionCard({
   /** Staff see the shared settings; the server saves them for the admin only. */
   readOnly: boolean;
 }) {
+  const t = useT();
   return (
     <form onSubmit={section.save} noValidate aria-labelledby={`${id}-heading`} className="rounded-md border bg-card">
       <div className="px-5 pt-5 sm:px-6">
@@ -120,15 +125,15 @@ function SectionCard({
         {children}
       </fieldset>
       {readOnly ? (
-        <p className="border-t px-5 py-3 text-sm text-muted-foreground sm:px-6">Only the admin account can change these.</p>
+        <p className="border-t px-5 py-3 text-sm text-muted-foreground sm:px-6">{t('settings.adminOnly')}</p>
       ) : (
         <div className="flex flex-wrap items-center gap-3 border-t px-5 py-3 sm:px-6">
           <Button type="submit" disabled={!section.dirty || section.status === 'saving'}>
-            {section.status === 'saving' ? 'Saving…' : 'Save changes'}
+            {section.status === 'saving' ? t('common.saving') : t('common.saveChanges')}
           </Button>
           {section.dirty && (
             <Button type="button" variant="ghost" onClick={section.reset}>
-              Discard
+              {t('common.discard')}
             </Button>
           )}
           <p aria-live="polite" className="text-sm">
@@ -137,10 +142,10 @@ function SectionCard({
             ) : section.status === 'saved' && !section.dirty ? (
               <span className="inline-flex items-center gap-1.5 text-success">
                 <Check className="size-4" aria-hidden />
-                Saved for every staff member
+                {t('settings.savedForAll')}
               </span>
             ) : section.dirty ? (
-              <span className="text-muted-foreground">Unsaved changes</span>
+              <span className="text-muted-foreground">{t('settings.unsaved')}</span>
             ) : null}
           </p>
         </div>
@@ -159,9 +164,10 @@ function Field({
   name: string;
   label: string;
   hint?: React.ReactNode;
-  error?: string | null;
+  error?: Message | null;
   children: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <div>
       <label htmlFor={`field-${name}`} className="block font-medium">
@@ -175,30 +181,28 @@ function Field({
       <div className="mt-1.5">{children}</div>
       {error && (
         <p id={`error-${name}`} className="mt-1 text-sm text-destructive">
-          {error}
+          {t(error.key, error.vars)}
         </p>
       )}
     </div>
   );
 }
 
-const described = (name: string, error?: string | null, hint = true) =>
+const described = (name: string, error?: Message | null, hint = true) =>
   [hint && `hint-${name}`, error && `error-${name}`].filter(Boolean).join(' ') || undefined;
 
-const ALWAYS = [
-  'Rows whose tracking code is already in the branch records are skipped with a warning. The rest of the file still imports.',
-  'Saved phone numbers and notification history are kept. A different phone number in a new file does not overwrite them.',
-];
+const ALWAYS: MessageKey[] = ['settings.always1', 'settings.always2'];
 
 function ImportSection({ settings, readOnly }: { settings: Settings; readOnly: boolean }) {
+  const t = useT();
   const s = useSection(settings, ['trackingColumn', 'phoneColumn', 'duplicateFile'], (d) => ({
     trackingColumn: columnError(d.trackingColumn),
     phoneColumn: columnError(d.phoneColumn),
   }));
   return (
-    <SectionCard id="import" title="Import preferences" description="How export files are read and what happens with repeats." section={s} readOnly={readOnly}>
+    <SectionCard id="import" title={t('settings.import.title')} description={t('settings.import.lead')} section={s} readOnly={readOnly}>
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field name="trackingColumn" label="Tracking code column" hint="Required. A file without it is not imported." error={s.errors.trackingColumn}>
+        <Field name="trackingColumn" label={t('settings.import.tracking')} hint={t('settings.import.trackingHint')} error={s.errors.trackingColumn}>
           <Input
             id="field-trackingColumn"
             value={s.draft.trackingColumn}
@@ -207,7 +211,7 @@ function ImportSection({ settings, readOnly }: { settings: Settings; readOnly: b
             aria-describedby={described('trackingColumn', s.errors.trackingColumn)}
           />
         </Field>
-        <Field name="phoneColumn" label="Phone number column" hint="Used to group parcels by customer." error={s.errors.phoneColumn}>
+        <Field name="phoneColumn" label={t('settings.import.phone')} hint={t('settings.import.phoneHint')} error={s.errors.phoneColumn}>
           <Input
             id="field-phoneColumn"
             value={s.draft.phoneColumn}
@@ -219,13 +223,13 @@ function ImportSection({ settings, readOnly }: { settings: Settings; readOnly: b
       </div>
 
       <fieldset>
-        <legend className="font-medium">When the same file is imported again</legend>
-        <p className="text-sm text-muted-foreground">Recognised by the file&apos;s fingerprint, even if it was renamed.</p>
+        <legend className="font-medium">{t('settings.import.again')}</legend>
+        <p className="text-sm text-muted-foreground">{t('settings.import.againHint')}</p>
         <div className="mt-2 flex flex-col gap-1">
           {(
             [
-              ['warn', 'Warn, and let staff decide', 'Shows which earlier import it matches before anything is saved.'],
-              ['block', 'Do not import it', 'The file is refused. Staff can still upload a corrected export.'],
+              ['warn', 'settings.import.warn', 'settings.import.warnHelp'],
+              ['block', 'settings.import.block', 'settings.import.blockHelp'],
             ] as const
           ).map(([value, label, help]) => (
             <label key={value} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md px-1 py-1.5">
@@ -238,8 +242,8 @@ function ImportSection({ settings, readOnly }: { settings: Settings; readOnly: b
                 className="mt-1 size-4 accent-primary"
               />
               <span>
-                {label}
-                <span className="block text-sm text-muted-foreground">{help}</span>
+                {t(label)}
+                <span className="block text-sm text-muted-foreground">{t(help)}</span>
               </span>
             </label>
           ))}
@@ -247,10 +251,10 @@ function ImportSection({ settings, readOnly }: { settings: Settings; readOnly: b
       </fieldset>
 
       <div>
-        <p className="font-medium">Always applied</p>
+        <p className="font-medium">{t('settings.import.always')}</p>
         <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
           {ALWAYS.map((rule) => (
-            <li key={rule}>{rule}</li>
+            <li key={rule}>{t(rule)}</li>
           ))}
         </ul>
       </div>
@@ -261,27 +265,30 @@ function ImportSection({ settings, readOnly }: { settings: Settings; readOnly: b
 const SAMPLE = { name: 'Sokha Chan', codes: ['CB4810276635', 'CB2291048871', 'CB7730192245'] };
 
 function TemplateSection({ settings, readOnly }: { settings: Settings; readOnly: boolean }) {
+  const t = useT();
   const s = useSection(settings, ['templates'], (d) => ({
     templates: templateError(d.templates.single) ?? templateError(d.templates.combined),
   }));
   const kinds = [
-    ['single', 'One parcel', SAMPLE.codes.slice(0, 1)],
-    ['combined', 'Several parcels', SAMPLE.codes],
+    ['single', 'settings.sms.single', SAMPLE.codes.slice(0, 1)],
+    ['combined', 'settings.sms.combined', SAMPLE.codes],
   ] as const;
   const isDefault = JSON.stringify(s.draft.templates) === JSON.stringify(DEFAULT_TEMPLATES);
 
   return (
     <SectionCard
       id="templates"
-      title="Default SMS message"
-      description="The app picks the version by how many new parcels a customer has. Staff can still edit each message before it is queued."
+      title={t('settings.sms.title')}
+      description={t('settings.sms.lead')}
       section={s}
       readOnly={readOnly}
     >
       <p className="text-sm text-muted-foreground">
-        Placeholders: <code className="font-mono text-foreground">{'{name}'}</code> first name,{' '}
-        <code className="font-mono text-foreground">{'{codes}'}</code> tracking codes (required),{' '}
-        <code className="font-mono text-foreground">{'{count}'}</code> number of parcels.
+        {t.rich('settings.sms.placeholders', {
+          name: <code className="font-mono text-foreground">{'{name}'}</code>,
+          codes: <code className="font-mono text-foreground">{'{codes}'}</code>,
+          count: <code className="font-mono text-foreground">{'{count}'}</code>,
+        })}
       </p>
       {kinds.map(([kind, label, codes]) => {
         const text = s.draft.templates[kind];
@@ -290,7 +297,7 @@ function TemplateSection({ settings, readOnly }: { settings: Settings; readOnly:
         const name = kind === 'single' ? 'templates' : 'templates-combined';
         return (
           <div key={kind} className="grid gap-3 lg:grid-cols-2">
-            <Field name={name} label={label} error={shown ? error : null}>
+            <Field name={name} label={t(label)} error={shown ? error : null}>
               <textarea
                 id={`field-${name}`}
                 value={text}
@@ -302,12 +309,12 @@ function TemplateSection({ settings, readOnly }: { settings: Settings; readOnly:
               />
             </Field>
             <div>
-              <p className="font-medium text-muted-foreground">Preview</p>
+              <p className="font-medium text-muted-foreground">{t('settings.sms.preview')}</p>
               <p className="mt-1.5 rounded-md bg-secondary px-3 py-2 text-sm">
-                {error ? <span className="text-muted-foreground">Fix the message to see a preview.</span> : composeMessage(SAMPLE.name, [...codes], s.draft.templates)}
+                {error ? <span className="text-muted-foreground">{t('settings.sms.fixFirst')}</span> : composeMessage(SAMPLE.name, [...codes], s.draft.templates)}
               </p>
               <p className="mt-1 font-mono text-xs text-muted-foreground">
-                {error ? '' : `${composeMessage(SAMPLE.name, [...codes], s.draft.templates).length} characters`}
+                {error ? '' : t('settings.sms.characters', { count: composeMessage(SAMPLE.name, [...codes], s.draft.templates).length })}
               </p>
             </div>
           </div>
@@ -317,7 +324,7 @@ function TemplateSection({ settings, readOnly }: { settings: Settings; readOnly:
         <div>
           <Button type="button" variant="outline" size="sm" onClick={() => s.set('templates', DEFAULT_TEMPLATES)}>
             <RotateCcw aria-hidden />
-            Restore the original wording
+            {t('settings.sms.restore')}
           </Button>
         </div>
       )}
@@ -326,6 +333,7 @@ function TemplateSection({ settings, readOnly }: { settings: Settings; readOnly:
 }
 
 function GapSection({ settings, readOnly }: { settings: Settings; readOnly: boolean }) {
+  const t = useT();
   const s = useSection(settings, ['smsGap'], (d) => ({ smsGap: gapError(d.smsGap) }));
   const { from, to } = s.draft.smsGap;
   const setGap = (key: 'from' | 'to', value: string) => s.set('smsGap', { ...s.draft.smsGap, [key]: value === '' ? NaN : Number(value) });
@@ -346,23 +354,23 @@ function GapSection({ settings, readOnly }: { settings: Settings; readOnly: bool
   return (
     <SectionCard
       id="sms-gap"
-      title="Gap between SMS"
-      description="The gateway phone waits a random time in this range between two SMS, so the branch SIM looks like a person sending, not a bulk sender."
+      title={t('settings.gap.title')}
+      description={t('settings.gap.lead')}
       section={s}
       readOnly={readOnly}
     >
       <div className="flex flex-col gap-3">
         <div className="grid max-w-md grid-cols-1 items-start gap-4 sm:grid-cols-2">
-          <Field name="smsGap" label="Shortest wait, in seconds" hint={`At least ${SMS_GAP_LIMITS.min} seconds.`} error={s.errors.smsGap}>
+          <Field name="smsGap" label={t('settings.gap.from')} hint={t('settings.gap.fromHint', { min: SMS_GAP_LIMITS.min })} error={s.errors.smsGap}>
             {number('from', 'field-smsGap')}
           </Field>
-          <Field name="smsGap-to" label="Longest wait, in seconds" hint={`At most ${SMS_GAP_LIMITS.max} seconds.`}>
+          <Field name="smsGap-to" label={t('settings.gap.to')} hint={t('settings.gap.toHint', { max: SMS_GAP_LIMITS.max })}>
             {number('to', 'field-smsGap-to')}
           </Field>
         </div>
         {!gapError(s.draft.smsGap) && (
           <p className="max-w-xl text-sm text-muted-foreground">
-            50 customers take about {Math.max(1, Math.round((49 * from) / 60))}–{Math.ceil((49 * to) / 60)} minutes. Shorter waits send faster, but make it more likely that the carrier blocks the SIM.
+            {t('settings.gap.estimate', { from: Math.max(1, Math.round((49 * from) / 60)), to: Math.ceil((49 * to) / 60) })}
           </p>
         )}
       </div>

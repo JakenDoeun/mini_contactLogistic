@@ -10,38 +10,39 @@ import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@
 import type { ImportListItem } from '@/lib/import-api';
 import { cn, formatDateTime } from '@/lib/utils';
 import { StatusBadge } from './status-badge';
+import { useT, type MessageKey } from '@/lib/i18n-react';
 
 type Item = ImportListItem;
 type SortKey = 'fileName' | 'source' | 'at' | 'added' | 'duplicates' | 'status';
 
-const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
-  { key: 'fileName', label: 'File' },
-  { key: 'source', label: 'Source' },
-  { key: 'at', label: 'When' },
-  { key: 'added', label: 'Added', numeric: true },
-  { key: 'duplicates', label: 'Skipped', numeric: true },
-  { key: 'status', label: 'Status' },
+const COLUMNS: { key: SortKey; label: MessageKey; numeric?: boolean }[] = [
+  { key: 'fileName', label: 'history.col.file' },
+  { key: 'source', label: 'history.col.source' },
+  { key: 'at', label: 'history.col.when' },
+  { key: 'added', label: 'history.col.added', numeric: true },
+  { key: 'duplicates', label: 'history.col.skipped', numeric: true },
+  { key: 'status', label: 'history.col.status' },
 ];
 
 const STATUS_ORDER: Record<Item['status'], number> = { checked: 0, failed: 1, no_eligible_rows: 2, cancelled: 3, imported: 4 };
 
 type Filter = 'all' | 'checked' | 'failed';
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'checked', label: 'Waiting' },
-  { key: 'failed', label: 'Failed' },
+const FILTERS: { key: Filter; label: MessageKey }[] = [
+  { key: 'all', label: 'history.filter.all' },
+  { key: 'checked', label: 'history.filter.waiting' },
+  { key: 'failed', label: 'history.filter.failed' },
 ];
 
-export const importAction = (status: Item['status']) => (status === 'checked' ? 'Continue review' : status === 'failed' ? 'See why' : 'View details');
+export const importAction = (status: Item['status']): MessageKey =>
+  status === 'checked' ? 'history.action.continue' : status === 'failed' ? 'history.action.why' : 'history.action.details';
 /** When it was imported, or when it was checked if it never was. */
 export const importTime = (r: Item) => r.confirmedAt ?? r.checkedAt;
 
-const NOT_IMPORTED: Record<Item['status'], string> = {
-  checked: 'Not confirmed',
-  failed: 'Not imported',
-  no_eligible_rows: 'No Shopee parcels',
-  cancelled: 'Discarded',
-  imported: '',
+const NOT_IMPORTED: Record<Exclude<Item['status'], 'imported'>, MessageKey> = {
+  checked: 'history.notImported.checked',
+  failed: 'history.notImported.failed',
+  no_eligible_rows: 'history.notImported.noShopee',
+  cancelled: 'history.notImported.cancelled',
 };
 
 const sortValue = (r: Item, key: SortKey): string | number => {
@@ -66,6 +67,7 @@ export function ImportHistory({
   onRetry: () => void;
   onView: (record: Item) => void;
 }) {
+  const t = useT();
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'at', dir: -1 });
   const [filter, setFilter] = useState<Filter>('all');
   const [dates, setDates] = useState<DateRange>(ANY_DATE);
@@ -94,12 +96,12 @@ export function ImportHistory({
     <section aria-labelledby="history-heading" className="rounded-md border bg-card">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-3">
         <h2 id="history-heading" className="text-base font-semibold">
-          Import history
+          {t('history.title')}
         </h2>
         {records && records.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
-            <DateFilter value={dates} onChange={setDates} label="Import date" compact />
-            <div role="group" aria-label="Show imports" className="flex flex-wrap gap-1">
+            <DateFilter value={dates} onChange={setDates} label={t('history.dateLabel')} compact />
+            <div role="group" aria-label={t('history.show')} className="flex flex-wrap gap-1">
               {FILTERS.map((f) => (
                 <button
                   key={f.key}
@@ -111,7 +113,7 @@ export function ImportHistory({
                     filter === f.key ? 'border-primary bg-accent font-medium text-primary' : 'bg-card text-muted-foreground hover:text-foreground',
                   )}
                 >
-                  {f.label}
+                  {t(f.label)}
                   <span className="font-mono text-xs">{count(f.key)}</span>
                 </button>
               ))}
@@ -122,30 +124,32 @@ export function ImportHistory({
 
       {error ? (
         <div role="alert" className="border-t px-5 py-8">
-          <p className="font-medium text-destructive">Import history could not be loaded.</p>
-          <p className="mt-1 text-muted-foreground">{error} Your imported parcels are not affected.</p>
+          <p className="font-medium text-destructive">{t('history.loadFailed')}</p>
+          <p className="mt-1 text-muted-foreground">{t('history.notAffected', { error })}</p>
           <Button variant="outline" className="mt-4" onClick={onRetry}>
-            Try again
+            {t('common.tryAgain')}
           </Button>
         </div>
       ) : sorted && sorted.length === 0 && records!.length > 0 ? (
         <div className="border-t px-5 py-10">
           <p className="font-medium">
             {anyDate
-              ? `No ${filter === 'failed' ? 'failed imports' : 'files waiting for review'}.`
-              : `No ${filter === 'failed' ? 'failed ' : filter === 'checked' ? 'waiting ' : ''}imports ${rangePhrase(dates)}.`}
+              ? t(filter === 'failed' ? 'history.noneFailed' : 'history.noneWaiting')
+              : t(filter === 'failed' ? 'history.noneInRange.failed' : filter === 'checked' ? 'history.noneInRange.waiting' : 'history.noneInRange.all', {
+                  range: rangePhrase(dates, t),
+                })}
           </p>
           <p className="mt-1 text-muted-foreground">
             <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={showAll}>
-              Show all imports
+              {t('history.showAll')}
             </button>
           </p>
         </div>
       ) : sorted && sorted.length === 0 ? (
         <div className="border-t px-5 py-10">
-          <p className="font-medium">No imports yet</p>
+          <p className="font-medium">{t('history.empty')}</p>
           <p className="mt-1 text-muted-foreground">
-            Upload an export. Every file you upload is listed here with its result.
+            {t('history.emptyLead')}
           </p>
         </div>
       ) : (
@@ -166,14 +170,14 @@ export function ImportHistory({
                       onClick={() => toggle(c.key)}
                       className="-mx-1 inline-flex h-11 items-center sm:h-8 gap-1 rounded-sm px-1 hover:text-foreground"
                     >
-                      {c.label}
+                      {t(c.label)}
                       <Icon className="size-3.5" aria-hidden />
                     </button>
                   </TableHead>
                 );
               })}
               <TableHead>
-                <span className="sr-only">Actions</span>
+                <span className="sr-only">{t('common.actions')}</span>
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -196,12 +200,12 @@ export function ImportHistory({
                     <TableCell className="max-w-64 truncate font-mono" title={r.fileName}>
                       {r.fileName}
                     </TableCell>
-                    <TableCell>{r.source === 'manual' ? 'Manual upload' : 'Watched folder'}</TableCell>
+                    <TableCell>{r.source === 'manual' ? t('import.source.manual') : t('import.source.folder')}</TableCell>
                     <TableCell className="font-mono">{formatDateTime(importTime(r))}</TableCell>
                     {r.status !== 'imported' ? (
                       // Nothing was imported, so counts would only look like an empty file.
                       <TableCell colSpan={2} className="text-right text-muted-foreground">
-                        {NOT_IMPORTED[r.status]}
+                        {t(NOT_IMPORTED[r.status])}
                       </TableCell>
                     ) : (
                       <>
@@ -213,8 +217,8 @@ export function ImportHistory({
                       <StatusBadge status={r.status} />
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="link" size="sm" onClick={() => onView(r)} aria-label={`${importAction(r.status)} for ${r.fileName}`}>
-                        {importAction(r.status)}
+                      <Button variant="link" size="sm" onClick={() => onView(r)} aria-label={t('import.latest.actionFor', { action: t(importAction(r.status)), file: r.fileName })}>
+                        {t(importAction(r.status))}
                       </Button>
                     </TableCell>
                   </TableRow>

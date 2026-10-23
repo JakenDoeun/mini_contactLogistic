@@ -126,10 +126,10 @@ test("a phone line's summary shows its most urgent SMS status", () => {
 });
 
 test('the contact line says what one SMS would cover, without repeating the count', () => {
-  assert.equal(contactLine(1, 1, 'today'), 'Not messaged yet');
-  assert.equal(contactLine(3, 3, 'today'), 'Not messaged yet · one SMS covers all 3 parcels on this number today');
-  assert.equal(contactLine(1, 3, 'yesterday'), '1 of 3 parcels on this number yesterday not messaged yet');
-  assert.equal(contactLine(0, 2, 'today'), 'Messaged or reached already · all 2 parcels on this number today');
+  assert.equal(contactLine(1, 1, 'today').key, 'parcel.contactLine.allNotMessaged');
+  assert.deepEqual(contactLine(3, 3, 'today'), { key: 'parcel.contactLine.allNotMessagedMany', vars: { count: 3, day: 'today', toMessage: 3 } });
+  assert.equal(contactLine(1, 3, 'yesterday').key, 'parcel.contactLine.some');
+  assert.equal(contactLine(0, 2, 'today').key, 'parcel.contactLine.allDoneMany');
 });
 
 test('scan lookup finds a stored code whatever its case or spaces', () => {

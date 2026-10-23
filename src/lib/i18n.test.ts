@@ -26,3 +26,14 @@ test('km.json has exactly the keys of en.json, each with the same placeholders (
     assert.deepEqual(placeholders(text), placeholders(en[key]), `${key}: keep the {placeholders} exactly as in en.json`);
   }
 });
+
+test('every plural in the catalogues is one the formatter can read', () => {
+  // An option text holding another {placeholder} would not parse and would show raw on screen.
+  for (const locale of ['en', 'km']) {
+    for (const [key, text] of Object.entries(catalog(locale))) {
+      const plurals = text.split(', plural,').length - 1;
+      const filled = format(text, Object.fromEntries(placeholders(text).map((n) => [n, 2])), locale as 'en' | 'km');
+      assert.ok(!plurals || !filled.includes(', plural,'), `${locale} ${key}`);
+    }
+  }
+});

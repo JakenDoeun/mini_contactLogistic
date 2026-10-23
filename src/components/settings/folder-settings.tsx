@@ -10,11 +10,11 @@ import { FolderMonitor } from '@/components/import/folder-monitor';
 import { browseFolder, getFolder, saveFolderSettings, type FolderState } from '@/lib/import-api';
 import { CHECK_INTERVALS } from '@/lib/settings-logic';
 import { cn } from '@/lib/utils';
-
-const label = (n: number) => (n < 60 ? `${n} seconds` : n === 60 ? '1 minute' : `${n / 60} minutes`);
+import { useT } from '@/lib/i18n-react';
 
 /** The watched folder on the server (Phase 5). Automatic checks start off; only the admin account changes these. */
 export function FolderSettings() {
+  const t = useT();
   const [state, setState] = useState<FolderState | null>(null);
   const [draft, setDraft] = useState({ path: '', auto: false, intervalSeconds: 60 });
   const [status, setStatus] = useState<{ kind: 'idle' | 'saving' | 'saved' } | { kind: 'error'; message: string }>({ kind: 'idle' });
@@ -53,10 +53,10 @@ export function FolderSettings() {
       <form onSubmit={save} noValidate aria-labelledby="folder-heading" className="rounded-md border bg-card">
         <div className="px-5 pt-5 sm:px-6">
           <h2 id="folder-heading" className="text-base font-semibold">
-            Watched folder
+            {t('folder.title')}
           </h2>
           <p className="mt-0.5 text-muted-foreground">
-            Where staff save the courier export. Scan Folder Now on Import Arrivals checks it; files found still wait for review and confirmation.
+            {t('folder.lead')}
           </p>
         </div>
 
@@ -69,10 +69,10 @@ export function FolderSettings() {
             <div className="flex flex-col gap-5 px-5 py-5 sm:px-6">
               <div>
                 <label htmlFor="field-folder-path" className="block font-medium">
-                  Folder
+                  {t('folder.field')}
                 </label>
                 <p id="hint-folder-path" className="mt-0.5 text-sm text-muted-foreground">
-                  The full path as the branch computer sees it. The installer creates C:\Users\Public\Documents\Campus Branch Imports for this.
+                  {t('folder.hint')}
                 </p>
                 <div className="mt-1.5 flex gap-2">
                   <Input
@@ -91,10 +91,10 @@ export function FolderSettings() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p id="auto-label" className="font-medium">
-                    Automatic checks
+                    {t('folder.auto')}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {draft.auto ? 'On: the folder is also checked on its own while the app runs.' : 'Off: files are found only when someone uses Scan Folder Now.'}
+                    {draft.auto ? t('folder.autoOn') : t('folder.autoOff')}
                   </p>
                 </div>
                 <button
@@ -116,7 +116,7 @@ export function FolderSettings() {
               {draft.auto && (
                 <div>
                   <label htmlFor="field-folder-interval" className="block font-medium">
-                    Check every
+                    {t('folder.every')}
                   </label>
                   <select
                     id="field-folder-interval"
@@ -127,7 +127,7 @@ export function FolderSettings() {
                   >
                     {CHECK_INTERVALS.map((n) => (
                       <option key={n} value={n}>
-                        {label(n)}
+                        {n < 60 ? t('time.seconds', { count: n }) : t('time.minutes', { count: n / 60 })}
                       </option>
                     ))}
                   </select>
@@ -137,15 +137,15 @@ export function FolderSettings() {
 
             <div className="flex flex-wrap items-center gap-3 border-t px-5 py-3 sm:px-6">
               {readOnly ? (
-                <p className="text-sm text-muted-foreground">Only the admin account can change the watched folder.</p>
+                <p className="text-sm text-muted-foreground">{t('folder.adminOnly')}</p>
               ) : (
                 <>
                   <Button type="submit" disabled={!dirty || status.kind === 'saving'}>
-                    {status.kind === 'saving' ? 'Saving…' : 'Save changes'}
+                    {status.kind === 'saving' ? t('common.saving') : t('common.saveChanges')}
                   </Button>
                   {dirty && (
                     <Button type="button" variant="ghost" onClick={() => (adopt(state), setStatus({ kind: 'idle' }))}>
-                      Discard
+                      {t('common.discard')}
                     </Button>
                   )}
                 </>
@@ -154,7 +154,7 @@ export function FolderSettings() {
                 {status.kind === 'saved' && !dirty && (
                   <span className="inline-flex items-center gap-1.5 text-success">
                     <Check className="size-4" aria-hidden />
-                    Saved
+                    {t('common.saved')}
                   </span>
                 )}
                 {status.kind === 'error' && <span className="text-destructive">{status.message}</span>}
@@ -170,6 +170,7 @@ export function FolderSettings() {
 
 /** Walks the branch computer's folders through the server; the browser's own picker cannot give a server path. */
 function FolderPicker({ start, onPick }: { start: string; onPick: (path: string) => void }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [listing, setListing] = useState<Awaited<ReturnType<typeof browseFolder>> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -192,20 +193,20 @@ function FolderPicker({ start, onPick }: { start: string; onPick: (path: string)
     <Sheet open={open} onOpenChange={show}>
       <Button type="button" variant="outline" onClick={() => show(true)}>
         <FolderOpen className="size-4" aria-hidden />
-        Browse
+        {t('folder.browse')}
       </Button>
       <SheetContent aria-describedby="browse-desc">
         <div className="border-b px-5 py-4 pr-14 sm:px-6">
-          <SheetTitle>Choose the watched folder</SheetTitle>
-          <SheetDescription id="browse-desc">Folders on the branch computer. Open one, then use it.</SheetDescription>
+          <SheetTitle>{t('folder.choose')}</SheetTitle>
+          <SheetDescription id="browse-desc">{t('folder.chooseLead')}</SheetDescription>
         </div>
         <div className="flex items-center gap-2 border-b px-5 py-3 sm:px-6">
           <Button type="button" variant="ghost" size="sm" disabled={listing?.parent == null} onClick={() => listing && go(listing.parent)}>
             <ArrowUp className="size-4" aria-hidden />
-            Up
+            {t('folder.up')}
           </Button>
           <p className="min-w-0 truncate font-mono text-sm" title={listing?.path ?? undefined}>
-            {listing ? (listing.path ?? 'This computer') : 'Loading…'}
+            {listing ? (listing.path ?? t('folder.thisComputer')) : t('common.loading')}
           </p>
         </div>
         {error && (
@@ -213,13 +214,13 @@ function FolderPicker({ start, onPick }: { start: string; onPick: (path: string)
             {error}
           </p>
         )}
-        <ul className="flex-1 overflow-y-auto px-3 py-2" aria-label="Folders">
+        <ul className="flex-1 overflow-y-auto px-3 py-2" aria-label={t('folder.list')}>
           {!listing ? (
             <li className="px-2 py-2">
               <Skeleton className="h-24 w-full" />
             </li>
           ) : listing.folders.length === 0 ? (
-            <li className="px-2 py-2 text-sm text-muted-foreground">No folders inside this one.</li>
+            <li className="px-2 py-2 text-sm text-muted-foreground">{t('folder.empty')}</li>
           ) : (
             listing.folders.map((f) => (
               <li key={f.path}>
@@ -237,10 +238,10 @@ function FolderPicker({ start, onPick }: { start: string; onPick: (path: string)
         </ul>
         <div className="flex flex-wrap gap-3 border-t px-5 py-3 sm:px-6">
           <Button type="button" disabled={!listing?.path} onClick={() => listing?.path && (onPick(listing.path), setOpen(false))}>
-            Use this folder
+            {t('folder.use')}
           </Button>
           <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-            Cancel
+            {t('common.cancel')}
           </Button>
         </div>
       </SheetContent>

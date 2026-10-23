@@ -13,7 +13,6 @@ import {
   isValidPhone,
   phoneGroup,
   phoneKey,
-  smsScope,
   smsStatusOf,
   type ContactEvent,
   type Parcel,
@@ -22,7 +21,8 @@ import { updatePhone, type ParcelData } from '@/lib/parcel-service';
 import { formatDateTime } from '@/lib/utils';
 import { ContactPanel } from './contact-panel';
 import { PhoneText, SmsBadge } from './parcel-status';
-import { batchLabel, GroupList } from './phone-group';
+import { batchLabel, daysAgo, GroupList } from './phone-group';
+import { useT, type MessageKey } from '@/lib/i18n-react';
 
 /**
  * One parcel with its phone line, the same on Scan, Parcels and Notifications.
@@ -33,7 +33,7 @@ export function ParcelDetail({
   data,
   Title = 'h2',
   onSelect,
-  label = 'Parcel',
+  label,
 }: {
   parcel: Parcel;
   data: ParcelData;
@@ -42,7 +42,9 @@ export function ParcelDetail({
   /** Small text before the code, e.g. "Scanned" to confirm what the camera read. */
   label?: string;
 }) {
+  const t = useT();
   const group = phoneGroup(parcel, data.parcels); // this arrival batch only
+  const line = phoneKey(parcel.phone) ? contactLine(eligibleForMessage(group, data.events).length, group.length, batchLabel(parcel.arrivalDate, t)) : null;
   const related = group.filter((p) => p.code !== parcel.code);
   // Other days' parcels on the same number stay out of this group and its SMS, but staff can still find them.
   const key = phoneKey(parcel.phone);
@@ -54,13 +56,13 @@ export function ParcelDetail({
       <div className="grid gap-5 @3xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] @3xl:items-start">
         <section aria-labelledby="contact-heading" className="rounded-md border bg-card px-4 py-4 sm:px-5">
           <p className="text-xs text-muted-foreground">
-            {label} <span className="font-mono">{parcel.code}</span>
+            {label ?? t('parcel.label')} <span className="font-mono">{parcel.code}</span>
           </p>
           <Title id="contact-heading" tabIndex={-1} className="mt-0.5 text-xl font-semibold outline-none">
             {parcel.recipient}
           </Title>
           <PhoneField key={parcel.code} parcel={parcel} />
-          {key && <p className="mt-2 font-medium">{contactLine(eligibleForMessage(group, data.events).length, group.length, batchLabel(parcel.arrivalDate))}</p>}
+          {line && <p className="mt-2 font-medium">{t(line.key, line.vars)}</p>}
           <div className="mt-4">
             <ContactPanel parcel={parcel} group={group} events={data.events} />
           </div>
@@ -69,16 +71,16 @@ export function ParcelDetail({
         <div className="flex min-w-0 flex-col gap-5">
           <section aria-labelledby="parcel-heading" className="rounded-md border bg-card px-4 py-4 sm:px-5">
             <h3 id="parcel-heading" className="font-semibold">
-              Parcel
+              {t('parcel.heading')}
             </h3>
             <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2.5">
-              <dt className="text-muted-foreground">Status</dt>
+              <dt className="text-muted-foreground">{t('parcel.status')}</dt>
               <dd className="flex flex-wrap gap-1.5">
                 <SmsBadge status={smsStatusOf(parcel.code, data.events)} />
               </dd>
-              <dt className="text-muted-foreground">Arrived</dt>
-              <dd>{arrivedText(parcel.arrivalDate)}</dd>
-              <dt className="text-muted-foreground">Imported</dt>
+              <dt className="text-muted-foreground">{t('parcel.arrived')}</dt>
+              <dd>{arrivedText(parcel.arrivalDate, t)}</dd>
+              <dt className="text-muted-foreground">{t('parcel.imported')}</dt>
               <dd>
                 {formatDateTime(parcel.importedAt)}
                 <span className="block text-sm break-all text-muted-foreground">{parcel.sourceFile}</span>
@@ -89,16 +91,16 @@ export function ParcelDetail({
               <div className="mt-5">
                 <h4 className="flex items-center gap-2 text-sm font-medium">
                   <Boxes className="size-4 text-info" aria-hidden />
-                  Same phone, {batchLabel(parcel.arrivalDate)}: {related.length} more
+                  {t('parcel.sameDay', { day: batchLabel(parcel.arrivalDate, t), count: related.length })}
                 </h4>
                 <GroupList parcels={related} events={data.events} onSelect={onSelect} className="mt-2" />
               </div>
             )}
             {otherDays > 0 && (
               <p className="mt-3 text-sm text-muted-foreground">
-                {otherDays} more {otherDays === 1 ? 'parcel' : 'parcels'} on this number from other arrival days, not part of this message.{' '}
+                {t('parcel.otherDays', { count: otherDays })}{' '}
                 <Link href={`/parcels?q=${key}`} className="font-medium text-primary underline-offset-4 hover:underline">
-                  Show all
+                  {t('parcel.showAll')}
                 </Link>
               </p>
             )}
@@ -111,14 +113,16 @@ export function ParcelDetail({
   );
 }
 
-/** "Today, Oct 19" or "Oct 12": the arrival batch, never the import time. */
-function arrivedText(day: string) {
-  const label = batchLabel(day);
-  const date = new Date(`${day}T00:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric' });
-  return label === date ? date : `${label[0].toUpperCase()}${label.slice(1)}, ${date}`;
+/** "Today, 19 Oct" or "12 Oct": the arrival batch, never the import time. */
+function arrivedText(day: string, t: (key: MessageKey, vars?: Record<string, string>) => string) {
+  const date = new Date(`${day}T00:00:00`).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  if (daysAgo(day) !== 0 && daysAgo(day) !== 1) return date;
+  const label = batchLabel(day, t);
+  return t('parcel.arrivedOn', { day: `${label[0].toUpperCase()}${label.slice(1)}`, date });
 }
 
 function PhoneField({ parcel }: { parcel: Parcel }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(parcel.phone);
   const [error, setError] = useState('');
@@ -138,20 +142,20 @@ function PhoneField({ parcel }: { parcel: Parcel }) {
                 setSaved(false);
                 setEditing(true);
               }}
-              aria-label={`Edit phone number ${formatPhone(parcel.phone)}`}
+              aria-label={t('parcel.editPhone', { phone: formatPhone(parcel.phone) })}
             >
               <Pencil aria-hidden />
-              Edit
+              {t('common.edit')}
             </Button>
           ) : (
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
               <Plus aria-hidden />
-              Add phone
+              {t('groups.addPhone')}
             </Button>
           )}
         </span>
         <p aria-live="polite" className="text-sm text-success">
-          {saved && 'Saved for this parcel only. Related parcels now follow the new number.'}
+          {saved && t('parcel.phoneSaved')}
         </p>
       </>
     );
@@ -162,14 +166,14 @@ function PhoneField({ parcel }: { parcel: Parcel }) {
       className="flex flex-wrap items-start gap-2"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!isValidPhone(value)) return setError('Enter a full phone number, for example 012 345 678.');
+        if (!isValidPhone(value)) return setError(t('parcel.phoneInvalid'));
         setSaving(true);
         try {
           await updatePhone(parcel, value);
           setEditing(false);
           setSaved(true);
         } catch (err) {
-          setError(`Not saved. ${(err as Error).message}`);
+          setError(t('common.notSaved', { error: (err as Error).message }));
         } finally {
           setSaving(false);
         }
@@ -177,7 +181,7 @@ function PhoneField({ parcel }: { parcel: Parcel }) {
     >
       <div className="min-w-40 flex-1">
         <label htmlFor="phone-edit" className="sr-only">
-          Phone number
+          {t('parcel.phoneNumber')}
         </label>
         <Input
           id="phone-edit"
@@ -199,7 +203,7 @@ function PhoneField({ parcel }: { parcel: Parcel }) {
         )}
       </div>
       <Button type="submit" size="sm" disabled={saving}>
-        {saving ? 'Saving…' : 'Save'}
+        {saving ? t('common.saving') : t('common.save')}
       </Button>
       <Button
         type="button"
@@ -212,24 +216,25 @@ function PhoneField({ parcel }: { parcel: Parcel }) {
           setEditing(false);
         }}
       >
-        Cancel
+        {t('common.cancel')}
       </Button>
     </form>
   );
 }
 
 const CHANNEL = { sms: Send, call: Phone, telegram: MessageSquare, other: Smartphone };
-const OUTCOME_LABEL = { answered: 'Reached customer', 'no-answer': 'No answer', messaged: 'Sent on Telegram' };
-const CHANNEL_LABEL = { call: 'Call: ', telegram: 'Telegram: ', other: '' };
+const OUTCOME_LABEL: Record<string, MessageKey> = { answered: 'event.outcome.answered', 'no-answer': 'event.outcome.noAnswer', messaged: 'event.outcome.messaged' };
+const CHANNEL_LABEL: Record<'call' | 'telegram', MessageKey> = { call: 'event.channel.call', telegram: 'event.channel.telegram' };
 
 function History({ events }: { events: ContactEvent[] }) {
+  const t = useT();
   return (
     <section aria-labelledby="history-heading" className="rounded-md border bg-card px-4 py-4 sm:px-5">
       <h3 id="history-heading" className="font-semibold">
-        Contact history
+        {t('parcel.contactHistory')}
       </h3>
       {events.length === 0 ? (
-        <p className="mt-1 text-muted-foreground">No messages or calls yet.</p>
+        <p className="mt-1 text-muted-foreground">{t('parcel.noContact')}</p>
       ) : (
         <ol className="mt-2 divide-y">
           {events.map((e) => {
@@ -241,10 +246,10 @@ function History({ events }: { events: ContactEvent[] }) {
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="font-medium">
                       {e.channel === 'sms'
-                        ? smsScope(e.parcelCodes.length)
+                        ? t('sms.scope', { count: e.parcelCodes.length })
                         : e.channel === 'other'
-                          ? 'SMS from another phone'
-                          : `${CHANNEL_LABEL[e.channel]}${OUTCOME_LABEL[e.outcome!]}`}
+                          ? t('event.otherPhone')
+                          : t(CHANNEL_LABEL[e.channel], { outcome: t(OUTCOME_LABEL[e.outcome!]) })}
                     </span>
                     {e.smsStatus && <SmsBadge status={e.smsStatus} bare />}
                   </p>

@@ -1,5 +1,6 @@
 // Pure parcel and contact rules. No React, no I/O, so it runs under `node --test`.
 // Statuses are derived from the append-only event log, so history is never overwritten.
+import type { Message } from '@/lib/messages';
 
 export type SmsStatus = 'not-sent' | 'queued' | 'sending' | 'sent' | 'delivered' | 'failed' | 'unconfirmed';
 // Calls, Telegram and SMS from another phone ("other", Phase 12) are history entries only: SMS is the one status a
@@ -146,15 +147,12 @@ export function addNewParcels(existing: Parcel[], incoming: Parcel[]) {
 }
 
 /** What the card's buttons would do, in one line: "Not messaged yet · one SMS covers all 3 parcels on this number today". */
-export function contactLine(toMessage: number, size: number, day: string) {
-  const all = `${size} parcels on this number ${day}`;
-  if (toMessage === size) return size === 1 ? 'Not messaged yet' : `Not messaged yet · one SMS covers all ${all}`;
-  if (toMessage === 0) return size === 1 ? 'Messaged or reached already' : `Messaged or reached already · all ${all}`;
-  return `${toMessage} of ${all} not messaged yet`;
+export function contactLine(toMessage: number, size: number, day: string): Message {
+  const vars = { count: size, day, toMessage };
+  if (toMessage === size) return { key: size === 1 ? 'parcel.contactLine.allNotMessaged' : 'parcel.contactLine.allNotMessagedMany', vars };
+  if (toMessage === 0) return { key: size === 1 ? 'parcel.contactLine.allDone' : 'parcel.contactLine.allDoneMany', vars };
+  return { key: 'parcel.contactLine.some', vars };
 }
-
-/** One label for what a message covers, used wherever an SMS is shown. */
-export const smsScope = (count: number) => (count === 1 ? 'Individual SMS · 1 parcel' : `Combined SMS · ${count} parcels`);
 
 /** Parcels a new message should cover: a valid phone, never messaged, and not already reached by other means. */
 export function eligibleForMessage(group: Parcel[], events: ContactEvent[]) {

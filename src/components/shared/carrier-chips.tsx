@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 // Each carrier's brand colour (from its website, 2026-10-23: Cellcard #ff7900, Smart #009639, Metfone #db1a21; Seatel's
 // site did not answer, so a neutral blue) as the card's top bar, and the name in a darker shade of it on a light tint
 // (5:1 contrast or more). No logos: they are the carriers' trademarks.
-const COLOUR: Record<Carrier | 'unknown', { bar: string; text: string; tint: string }> = {
+export const COLOUR: Record<Carrier | 'unknown', { bar: string; text: string; tint: string }> = {
   cellcard: { bar: '#ff7900', text: '#a84f00', tint: '#fff0e0' },
   smart: { bar: '#009639', text: '#006b29', tint: '#e3f4e9' },
   metfone: { bar: '#db1a21', text: '#b0151b', tint: '#fce8e9' },

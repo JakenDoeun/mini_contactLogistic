@@ -1455,7 +1455,8 @@ function ByHandRow({ line, data }: { line: ByHandLine; data: ParcelData }) {
   const group = data.parcels.filter((p) => line.codes.includes(p.code));
   if (!group.length) return null;
   return (
-    <li className="grid gap-x-6 gap-y-2 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+    // A light highlight on the row under the mouse, and on the row being worked on (its button or question has focus).
+    <li className="-mx-3 grid gap-x-6 gap-y-2 rounded-md px-3 py-3 transition-colors hover:bg-secondary/60 focus-within:bg-secondary/60 motion-reduce:transition-none sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="min-w-0">
         <p className="flex items-center gap-2">
           <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: CARRIER_DOT[networkKey(line.carrier)] }} />

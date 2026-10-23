@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
-import { CircleCheck, MessageSquare, MoreHorizontal, Phone, PhoneMissed, Send, Smartphone } from 'lucide-react';
+import { CircleCheck, MessageSquare, Phone, PhoneMissed, Send, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   composeMessage,
@@ -268,15 +268,6 @@ export function DirectContact({
             <Smartphone className="size-4" aria-hidden />
             SMS
           </a>
-          <button
-            type="button"
-            onClick={() => setAsked('pick')}
-            aria-label="Called or messaged from another phone? Record it"
-            title="Called or messaged from another phone? Record it"
-            className={SEGMENT}
-          >
-            <MoreHorizontal className="size-4" aria-hidden />
-          </button>
         </div>
       )}
 

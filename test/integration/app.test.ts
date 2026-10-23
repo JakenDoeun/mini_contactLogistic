@@ -385,7 +385,7 @@ test('sms: with no gateway phone set up, Notify is refused and the pages are tol
   const gateway = async () => (await (await send('/api/parcels', { cookie })).json()).gateway;
 
   fs.rmSync(path.join(site.dataDir, GATEWAY_FILE), { force: true });
-  assert.deepEqual(await gateway(), { setUp: false, awaySince: null });
+  assert.deepEqual(await gateway(), { setUp: false, awaySince: null, sims: [], simMissing: [], simPause: null });
   const refused = await notify();
   assert.equal(refused.status, 409);
   assert.equal((await refused.json()).error, 'no_gateway');

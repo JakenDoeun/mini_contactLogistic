@@ -319,6 +319,20 @@ export function controlBatch(db: Db, batchId: number, action: 'pause' | 'resume'
     .immediate();
 }
 
+/**
+ * Staff chose to contact by hand the customers whose SMS wait for a SIM that is not in the phone (Phase 12): those SMS
+ * are cancelled, never sent, so the customers show again as not notified, on Contact by hand.
+ */
+export function releaseSimMessages(db: Db, sim: number, userId: number | null, at = nowIso()) {
+  return db
+    .transaction(() => {
+      const r = db.prepare(`UPDATE sms_attempts SET state = 'cancelled', error_code = 'sim_missing', failed_at = ? WHERE state = 'queued' AND sim_number = ?`).run(at, sim);
+      writeAudit(db, { action: 'sms.sim_released', entity: 'sms_attempt', entityIds: [sim], outcome: 'ok', userId, at, detail: { count: r.changes } });
+      return r.changes;
+    })
+    .immediate();
+}
+
 const OUTCOME_IN: Record<Outcome, string> = { answered: 'reached', 'no-answer': 'no_answer', messaged: 'messaged' };
 const OUTCOME_OUT: Record<string, Outcome> = { reached: 'answered', no_answer: 'no-answer', messaged: 'messaged' };
 
@@ -380,6 +394,8 @@ function resultText(a: { state: AttemptState; gateway_state: string | null; erro
         ? 'Not sent: the batch was stopped.'
         : a.error_code === 'reached'
           ? 'Not sent: staff reached the customer by phone first.'
+          : a.error_code === 'sim_missing'
+            ? 'Not sent: its SIM was not in the gateway phone, so staff contact this customer by hand.'
           : 'Not sent: the computer stopped before the phone got it.';
   }
 }

@@ -5,6 +5,8 @@ import { RefreshCw, Send } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CARRIER_LABEL, CARRIERS, carrierOf, simByCarrier, type Carrier, type SimInfo } from '@/lib/carriers';
+import { formatPhone } from '@/lib/parcel-logic';
 
 type Check = { description?: string; observedValue: number; status: string };
 type Test = {
@@ -14,8 +16,10 @@ type Test = {
   state: 'Pending' | 'Processed' | 'Sent' | 'Delivered' | 'Failed' | 'Unknown' | 'Missing';
   states: Partial<Record<'Pending' | 'Processed' | 'Sent' | 'Delivered' | 'Failed', string>>;
   error: string | null;
+  sim?: number | null;
 };
-type Status = { isAdmin: boolean; test: Test | null } & (
+type SimScan = { scannedAt: string | null; sims: SimInfo[]; problem: string | null };
+type Status = { isAdmin: boolean; tests: Test[]; sims: SimScan } & (
   | { configured: false; problem?: string }
   | {
       configured: true;
@@ -133,7 +137,8 @@ export function GatewayCard() {
           </Button>
         </div>
 
-        {s?.configured && !s.problem && <TestSms isAdmin={s.isAdmin} initial={s.test} />}
+        {s?.configured && <SimsBox initial={s.sims} />}
+        {s?.configured && !s.problem && <TestSms isAdmin={s.isAdmin} initial={s.tests} sims={s.sims.sims} />}
       </div>
     </section>
   );
@@ -184,34 +189,35 @@ function Details({ status }: { status: Extract<Status, { configured: true }> }) 
   );
 }
 
-function TestSms({ isAdmin, initial }: { isAdmin: boolean; initial: Test | null }) {
+function TestSms({ isAdmin, initial, sims }: { isAdmin: boolean; initial: Test[]; sims: SimInfo[] }) {
   const [phone, setPhone] = useState('');
-  const [test, setTest] = useState(initial);
+  const [sim, setSim] = useState<'auto' | 'both' | number>('auto');
+  const [tests, setTests] = useState(initial);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
 
-  // Ask the phone every 2 seconds until the SMS is delivered or failed, for at most 2 minutes after sending.
+  // Ask the phone every 2 seconds until each SMS is delivered or failed, for at most 2 minutes after sending.
   useEffect(() => {
-    if (!test || FINAL.includes(test.state) || Date.now() - Date.parse(test.sentAt) > 120_000) return;
+    if (!tests.length || tests.every((t) => FINAL.includes(t.state)) || Date.now() - Date.parse(tests[0].sentAt) > 120_000) return;
     const timer = setTimeout(async () => {
       try {
         const res = await fetch('/api/gateway/test-sms', { cache: 'no-store' });
-        if (res.ok) setTest((await res.json()).test);
+        if (res.ok) setTests((await res.json()).tests);
       } catch {
         // keep the last state; the next render tries again
       }
     }, 2000);
     return () => clearTimeout(timer);
-  }, [test]);
+  }, [tests]);
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
     setSending(true);
     setError('');
     try {
-      const res = await fetch('/api/gateway/test-sms', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ phone }) });
+      const res = await fetch('/api/gateway/test-sms', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ phone, sim }) });
       const body = await res.json().catch(() => ({}));
-      if (res.ok) setTest(body.test);
+      if (res.ok) setTests(body.tests);
       else setError(body.message ?? `The test SMS could not be sent (${res.status}).`);
     } catch {
       setError('The branch app could not be reached. Check the connection, then try again.');
@@ -219,26 +225,52 @@ function TestSms({ isAdmin, initial }: { isAdmin: boolean; initial: Test | null 
     setSending(false);
   }
 
-  const label = test && TEST_LABEL[test.state];
+  // What "By carrier" would do with the number typed so far, before anything is sent.
+  const carrier = carrierOf(phone);
+  const slot = carrier ? simByCarrier(sims).get(carrier) : undefined;
+  const preview =
+    sim !== 'auto' || !carrier ? null : slot ? `${CARRIER_LABEL[carrier]} → SIM ${slot}` : `${CARRIER_LABEL[carrier]}: no ${CARRIER_LABEL[carrier]} SIM is set up, so nothing would be sent`;
+
   return (
     <div className="border-t pt-5">
       <h3 className="text-sm font-medium">Test SMS</h3>
       {isAdmin ? (
-        <form onSubmit={send} className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start">
-          <div className="sm:w-64">
+        <form onSubmit={send} className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
+          <div className="sm:w-56">
             <label htmlFor="test-phone" className="sr-only">
-              Staff phone number
+              Phone number to send the test to
             </label>
             <Input
               id="test-phone"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               inputMode="tel"
-              placeholder="Staff phone, e.g. 012 345 678"
+              placeholder="Any phone, e.g. 012 345 678"
               aria-invalid={!!error}
               aria-describedby={error ? 'test-error' : 'test-hint'}
             />
           </div>
+          {sims.length > 0 && (
+            <div>
+              <label htmlFor="test-sim" className="sr-only">
+                Which SIM sends it
+              </label>
+              <select
+                id="test-sim"
+                value={String(sim)}
+                onChange={(e) => setSim(e.target.value === 'auto' || e.target.value === 'both' ? e.target.value : Number(e.target.value))}
+                className="h-11 w-full rounded-md border border-input bg-card px-3 text-base sm:h-10 sm:w-auto sm:text-sm"
+              >
+                <option value="auto">By carrier</option>
+                {sims.map((s) => (
+                  <option key={s.simNumber} value={s.simNumber}>
+                    From SIM {s.simNumber}
+                  </option>
+                ))}
+                {sims.length > 1 && <option value="both">From each SIM</option>}
+              </select>
+            </div>
+          )}
           <Button type="submit" variant="outline" disabled={sending || !phone.trim()}>
             <Send aria-hidden />
             {sending ? 'Sending…' : 'Send test SMS'}
@@ -254,36 +286,188 @@ function TestSms({ isAdmin, initial }: { isAdmin: boolean; initial: Test | null 
       ) : (
         isAdmin && (
           <p id="test-hint" className="mt-1 text-xs text-muted-foreground">
-            Sends “Campus Branch test message” from the branch SIM to a staff number.
+            {preview ?? 'Sends a short test message, naming the SIM it came from, to the number you type.'}
           </p>
         )
       )}
 
-      {test && label && (
-        <div aria-live="polite" className="mt-4 rounded-md bg-secondary px-4 py-3 text-sm">
-          <p className="flex flex-wrap items-center gap-2">
-            <Badge variant={label.variant} className="bg-card">
-              {label.text}
-            </Badge>
-            <span>
-              To a number ending {test.toEnding}, sent at {clock(test.sentAt)}
-            </span>
-          </p>
-          {Object.keys(test.states).length > 0 && (
-            <ol className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-              {(['Pending', 'Processed', 'Sent', 'Delivered', 'Failed'] as const)
-                .filter((k) => test.states[k])
-                .map((k) => (
-                  <li key={k}>
-                    {k} <span className="tabular-nums">{clock(test.states[k]!)}</span>
-                  </li>
-                ))}
-            </ol>
-          )}
-          {test.error && <p className="mt-1 text-destructive">The phone said: {test.error}</p>}
-          {test.state === 'Sent' && <p className="mt-1 text-muted-foreground">Some carriers never confirm delivery. If the staff phone got it, the test passed.</p>}
-        </div>
+      {tests.length > 0 && (
+        <ul aria-live="polite" className="mt-4 flex flex-col gap-2">
+          {tests.map((test) => {
+            const label = TEST_LABEL[test.state];
+            return (
+              <li key={test.id} className="rounded-md bg-secondary px-4 py-3 text-sm">
+                <p className="flex flex-wrap items-center gap-2">
+                  <Badge variant={label.variant} className="bg-card">
+                    {label.text}
+                  </Badge>
+                  <span>
+                    {test.sim ? `From SIM ${test.sim} to` : 'To'} a number ending {test.toEnding}, sent at {clock(test.sentAt)}
+                  </span>
+                </p>
+                {Object.keys(test.states).length > 0 && (
+                  <ol className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                    {(['Pending', 'Processed', 'Sent', 'Delivered', 'Failed'] as const)
+                      .filter((k) => test.states[k])
+                      .map((k) => (
+                        <li key={k}>
+                          {k} <span className="tabular-nums">{clock(test.states[k]!)}</span>
+                        </li>
+                      ))}
+                  </ol>
+                )}
+                {test.error && <p className="mt-1 text-destructive">The phone said: {test.error}</p>}
+                {test.state === 'Sent' && <p className="mt-1 text-muted-foreground">Some carriers never confirm delivery. If the phone got it, the test passed.</p>}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
+  );
+}
+
+/** The gateway phone's SIMs (Phase 12): scanned from the phone; any staff member confirms which carrier each one is. */
+function SimsBox({ initial }: { initial: SimScan }) {
+  const [scan, setScan] = useState(initial);
+  const [scanning, setScanning] = useState(false);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [error, setError] = useState('');
+
+  async function rescan() {
+    setScanning(true);
+    setError('');
+    try {
+      const res = await fetch('/api/gateway/sims', { cache: 'no-store' });
+      if (res.ok) setScan(await res.json());
+      else setError(`The SIMs could not be scanned (${res.status}).`);
+    } catch {
+      setError('The branch app could not be reached. Check the connection, then try again.');
+    }
+    setScanning(false);
+  }
+
+  return (
+    <div className="border-t pt-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-medium">SIMs in the gateway phone</h3>
+        <Button type="button" variant="outline" size="sm" onClick={rescan} disabled={scanning}>
+          <RefreshCw aria-hidden className={scanning ? 'animate-spin motion-reduce:animate-none' : undefined} />
+          {scanning ? 'Scanning…' : 'Scan SIMs'}
+        </Button>
+      </div>
+      <p className="mt-0.5 text-sm text-muted-foreground">
+        Each SMS goes from the SIM of its customer&apos;s carrier. Customers on a carrier with no confirmed SIM here are listed under Contact by hand on
+        Notifications.
+      </p>
+      <div aria-live="polite">
+        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+        {scan.problem && <p className="mt-2 text-sm text-warning">The phone could not be asked just now: {scan.problem} The SIMs below are from the last scan.</p>}
+        {scan.sims.length === 0 ? (
+          <p className="mt-3 text-sm">
+            No SIMs found. Check that SMSGate is allowed the Phone permission on the gateway phone, then press Scan SIMs.
+          </p>
+        ) : (
+          <ul className="mt-3 flex flex-col gap-2">
+            {scan.sims.map((sim) =>
+              editing === sim.simNumber || !sim.carrier ? (
+                <ConfirmSim key={sim.simNumber} sim={sim} onSaved={(next) => (setScan({ ...scan, ...next }), setEditing(null))} onCancel={sim.carrier ? () => setEditing(null) : undefined} />
+              ) : (
+                <li key={sim.simNumber} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-sm">
+                  <span className="font-medium">SIM {sim.simNumber}</span>
+                  <Badge variant="success">{CARRIER_LABEL[sim.carrier]}</Badge>
+                  <span className="text-muted-foreground">
+                    {sim.carrierName ?? 'No carrier name'} · {sim.phoneNumber ? formatPhone(sim.phoneNumber) : 'number not known'}
+                  </span>
+                  <Button type="button" variant="ghost" size="sm" className="ml-auto" onClick={() => setEditing(sim.simNumber)}>
+                    Change
+                  </Button>
+                </li>
+              ),
+            )}
+          </ul>
+        )}
+        {scan.scannedAt && <p className="mt-2 text-xs text-muted-foreground">Last scanned at {clock(scan.scannedAt)}</p>}
+      </div>
+    </div>
+  );
+}
+
+function ConfirmSim({ sim, onSaved, onCancel }: { sim: SimInfo; onSaved: (state: Omit<SimScan, 'problem'>) => void; onCancel?: () => void }) {
+  const [carrier, setCarrier] = useState<Carrier | ''>(sim.carrier ?? sim.suggested ?? '');
+  const [own, setOwn] = useState(sim.phoneNumber ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const id = `sim-${sim.simNumber}`;
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!carrier) return setError('Choose the carrier of this SIM.');
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch('/api/gateway/sims', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ simNumber: sim.simNumber, carrier, ownNumber: own }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) onSaved(body);
+      else setError(body.message ?? `Not saved (${res.status}).`);
+    } catch {
+      setError('The branch app could not be reached. Check the connection, then try again.');
+    }
+    setSaving(false);
+  }
+
+  return (
+    <li className="rounded-md border border-warning/50 bg-warning/5 px-3 py-3 text-sm">
+      <form onSubmit={save} noValidate>
+        <p>
+          <span className="font-medium">SIM {sim.simNumber}</span>
+          {!sim.carrier && <Badge variant="warning" className="ml-2">Not confirmed</Badge>}
+          <span className="ml-2 text-muted-foreground">The phone calls it “{sim.carrierName ?? 'no name'}”.</span>
+        </p>
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+          <div>
+            <label htmlFor={`${id}-carrier`} className="block text-sm font-medium">
+              Carrier
+            </label>
+            <select
+              id={`${id}-carrier`}
+              value={carrier}
+              onChange={(e) => setCarrier(e.target.value as Carrier | '')}
+              className="mt-1 h-11 w-full rounded-md border border-input bg-card px-3 text-base sm:h-10 sm:w-40 sm:text-sm"
+            >
+              <option value="">Choose…</option>
+              {CARRIERS.map((c) => (
+                <option key={c} value={c}>
+                  {CARRIER_LABEL[c]}
+                  {c === sim.suggested ? ' (suggested)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor={`${id}-own`} className="block text-sm font-medium">
+              This SIM&apos;s number <span className="font-normal text-muted-foreground">(optional)</span>
+            </label>
+            <Input id={`${id}-own`} value={own} onChange={(e) => setOwn(e.target.value)} inputMode="tel" placeholder="e.g. 010 123 456" className="mt-1 sm:w-44" />
+          </div>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Saving…' : 'Confirm'}
+            </Button>
+            {onCancel && (
+              <Button type="button" variant="ghost" onClick={onCancel}>
+                Cancel
+              </Button>
+            )}
+          </div>
+        </div>
+        {error && <p className="mt-2 text-destructive">{error}</p>}
+        <p className="mt-2 text-xs text-muted-foreground">Until it is confirmed, this SIM sends nothing and its carrier&apos;s customers are contacted by hand.</p>
+      </form>
+    </li>
   );
 }

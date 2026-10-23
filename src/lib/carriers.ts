@@ -46,3 +46,20 @@ export function simByCarrier(sims: SimInfo[]) {
   for (const s of [...sims].sort((a, b) => a.simNumber - b.simNumber)) if (s.carrier && !slot.has(s.carrier)) slot.set(s.carrier, s.simNumber);
   return slot;
 }
+
+/**
+ * Splits customers into those the gateway phone texts (their carrier has a confirmed SIM in it now) and those staff
+ * contact by hand (owner, 2026-10-23: no fallback SIM). Each keeps its carrier and SIM.
+ */
+export function splitBySim<T extends { phone: string }>(items: T[], sims: SimInfo[]) {
+  const slot = simByCarrier(sims);
+  const auto: (T & { carrier: Carrier; sim: number })[] = [];
+  const byHand: (T & { carrier: Carrier | null })[] = [];
+  for (const i of items) {
+    const carrier = carrierOf(i.phone);
+    const sim = carrier ? slot.get(carrier) : undefined;
+    if (carrier && sim) auto.push({ ...i, carrier, sim });
+    else byHand.push({ ...i, carrier });
+  }
+  return { auto, byHand };
+}

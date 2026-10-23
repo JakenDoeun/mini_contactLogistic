@@ -18,6 +18,7 @@ import {
   queueMessage,
   recordContact,
   releaseRestoreHold,
+  releaseSimMessages,
   restoreHold,
   SIM_MISSING,
   SIM_PAUSE,
@@ -217,7 +218,7 @@ test('an unreachable phone keeps the message waiting; a refused password fails i
     { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' },
   ] }, null);
   assert.ok(r.ok);
-  assert.deepEqual(gatewayState(db, dir), { setUp: true, awaySince: null });
+  assert.deepEqual(gatewayState(db, dir), { setUp: true, awaySince: null, sims: [], simMissing: [], simPause: null });
   phone.sendWith = 'unreachable';
   await worker.tick();
   assert.deepEqual(attempts(db).map((a) => a.state), ['queued', 'queued']);
@@ -243,7 +244,7 @@ test('with no gateway phone set up, messages wait and the pages are told why', a
   const phone = fakePhone();
   queueMessage(db, { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' }, null);
   await smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate }).tick();
-  assert.deepEqual(gatewayState(db, dir), { setUp: false, awaySince: null });
+  assert.deepEqual(gatewayState(db, dir), { setUp: false, awaySince: null, sims: [], simMissing: [], simPause: null });
   assert.equal(attempts(db)[0].state, 'queued');
   assert.equal(phone.sends.length, 0);
   fs.writeFileSync(path.join(dir, GATEWAY_FILE), '{"url":"http://phone:8080"}'); // incomplete: unusable as well
@@ -487,4 +488,23 @@ test('Phase 12: an SMS sent from another phone is recorded in the history', asyn
   assert.equal(recordContact(db, { phone: '097 880 1123', parcelIds: [b1], channel: 'other', outcome: 'answered' }, null).ok, false);
   const e = listContactEvents(db).find((x) => x.channel === 'other');
   assert.deepEqual([e?.outcome, e?.parcelCodes], ['messaged', ['B1']]);
+});
+
+test('Phase 12: staff can move the SMS waiting for a missing SIM to Contact by hand; they are never sent', async (t) => {
+  const { db, dir, a1, a2 } = await setup(t);
+  const phone = fakePhone();
+  phone.simCards = CELLCARD_SMART;
+  const make = () => phone.gate;
+  await scanSims(db, dir, make);
+  confirmSim(db, null, { simNumber: 1, carrier: 'cellcard' });
+  assert.ok(queueMessage(db, { phone: '012 345 678', parcelIds: [a1, a2], text: 'Hi Dara' }, null, undefined, routeFor(await scanSims(db, dir, make))).ok);
+  phone.simCards = [CELLCARD_SMART[1]];
+  const worker = smsWorker(db, dir, silent, { gap: () => 0, make });
+  await worker.tick();
+  assert.equal(releaseSimMessages(db, 1, null), 1);
+  phone.simCards = CELLCARD_SMART;
+  await worker.tick();
+  assert.equal(phone.sends.length, 0);
+  const e = listContactEvents(db).find((x) => x.channel === 'sms');
+  assert.deepEqual([e?.smsStatus, e?.result], ['not-sent', 'Not sent: its SIM was not in the gateway phone, so staff contact this customer by hand.']);
 });

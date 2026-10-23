@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { carrierFromName, carrierOf } from './carriers.ts';
+import { carrierFromName, carrierOf, splitBySim } from './carriers.ts';
 
 test('every TRC prefix maps to its carrier, in any number format', () => {
   const expected = {
@@ -24,4 +24,14 @@ test("a SIM's carrier name is matched in any capitals, inside longer names", () 
   assert.equal(carrierFromName('KH Metfone'), 'metfone');
   assert.equal(carrierFromName('Viettel'), null);
   assert.equal(carrierFromName(null), null);
+});
+
+test('customers split into automatic (their carrier has a confirmed SIM) and by hand, with no fallback SIM', () => {
+  const sims = [
+    { simNumber: 1, carrierName: 'Cellcard', phoneNumber: null, suggested: 'cellcard' as const, carrier: 'cellcard' as const },
+    { simNumber: 2, carrierName: 'SMART', phoneNumber: null, suggested: 'smart' as const, carrier: null },
+  ];
+  const { auto, byHand } = splitBySim([{ phone: '012 345 678' }, { phone: '010 345 678' }, { phone: '097 123 4567' }, { phone: '019 345 678' }], sims);
+  assert.deepEqual(auto.map((i) => [i.phone, i.sim]), [['012 345 678', 1]]);
+  assert.deepEqual(byHand.map((i) => i.carrier), ['smart', 'metfone', null], 'an unconfirmed SIM sends nothing');
 });

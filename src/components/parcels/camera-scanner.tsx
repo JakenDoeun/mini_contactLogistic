@@ -35,12 +35,15 @@ export function CameraScanner({
   onClose,
   onDetected,
   returnFocus,
+  typeInstead = true,
 }: {
   open: boolean;
   onClose: () => void;
   onDetected: (text: string) => void;
   /** Where focus goes when the scanner closes. A button, so the phone keyboard stays down. */
   returnFocus: React.RefObject<HTMLElement | null>;
+  /** False where only the camera is offered (Verify on Contact by hand): the close button is labelled Cancel. */
+  typeInstead?: boolean;
 }) {
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
@@ -50,12 +53,12 @@ export function CameraScanner({
           e.preventDefault();
           returnFocus.current?.focus();
         }}
-      >{open && <Scanner onClose={onClose} onDetected={onDetected} />}</SheetContent>
+      >{open && <Scanner onClose={onClose} onDetected={onDetected} typeInstead={typeInstead} />}</SheetContent>
     </Sheet>
   );
 }
 
-function Scanner({ onClose, onDetected }: { onClose: () => void; onDetected: (text: string) => void }) {
+function Scanner({ onClose, onDetected, typeInstead }: { onClose: () => void; onDetected: (text: string) => void; typeInstead: boolean }) {
   const frame = useRef<HTMLDivElement>(null);
   const current = useRef<string | undefined>(undefined);
   const [state, setState] = useState<State>({ status: 'starting' });
@@ -190,7 +193,7 @@ function Scanner({ onClose, onDetected }: { onClose: () => void; onDetected: (te
             </Button>
           )}
           <Button variant={problem || insecure ? 'outline' : 'ghost'} onClick={onClose}>
-            Type the code instead
+            {typeInstead ? 'Type the code instead' : 'Cancel'}
           </Button>
         </div>
       </div>

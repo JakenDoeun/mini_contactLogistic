@@ -1536,7 +1536,10 @@ function ByHandRow({ line, data }: { line: ByHandLine; data: ParcelData }) {
   );
 }
 
-/** The row's check: scan with the camera or a USB scanner, or type, and see whether the parcel is this number's. */
+/**
+ * The row's check, camera only (owner, 2026-10-23): it opens straight into the camera, and after a scan shows whether
+ * the parcel is this number's. Closing the camera before any scan closes the check.
+ */
 function VerifyParcel({
   line,
   parcels,
@@ -1552,59 +1555,13 @@ function VerifyParcel({
   onResult: (r: LineCheck) => void;
   onClose: () => void;
 }) {
-  const [value, setValue] = useState('');
-  const [camera, setCamera] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
-  const cameraButton = useRef<HTMLButtonElement>(null);
-  const id = `verify-${normalizePhone(line.phone)}`;
-  function check(raw: string, typed: boolean) {
-    if (!raw.trim()) return;
-    const r = verifyForLine(raw, parcels, line, checked);
-    setValue(r.code);
-    onResult(r);
-    // Ready for the next USB scan; skipped after the camera, where focus would pop up the phone keyboard.
-    if (typed) requestAnimationFrame(() => input.current?.select());
-  }
+  const [camera, setCamera] = useState(true);
+  const again = useRef<HTMLButtonElement>(null);
   return (
     <div className="sm:col-span-2">
-      <form
-        className="flex flex-wrap items-center gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          check(value, true);
-        }}
-      >
-        <label htmlFor={id} className="sr-only">
-          Tracking code of the parcel for {formatPhone(line.phone)}
-        </label>
-        <div className="relative min-w-0 flex-1 basis-48 sm:max-w-xs">
-          <ScanBarcode className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input
-            ref={input}
-            id={id}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            autoFocus
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="Scan or type the code"
-            className="bg-card pl-9 font-mono"
-          />
-        </div>
-        <Button type="submit" variant="outline" className="bg-card" disabled={!value.trim()}>
-          Check
-        </Button>
-        <Button ref={cameraButton} type="button" variant="outline" className="bg-card" onClick={() => setCamera(true)}>
-          <Camera aria-hidden />
-          Camera
-        </Button>
-        <Button type="button" variant="ghost" size="icon" aria-label="Close the parcel check" onClick={onClose}>
-          <X aria-hidden />
-        </Button>
-      </form>
       <div aria-live="polite" className="empty:hidden">
         {result?.kind === 'match' && (
-          <p className="mt-2 flex items-start gap-2 text-sm font-medium text-success">
+          <p className="flex items-start gap-2 text-sm font-medium text-success">
             <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span>
               Right parcel: <span className="font-mono">{result.code}</span> is for {formatPhone(line.phone)} · {line.recipient}
@@ -1613,7 +1570,7 @@ function VerifyParcel({
           </p>
         )}
         {result?.kind === 'other' && (
-          <p role="alert" className="mt-2 flex items-start gap-2 rounded-md bg-destructive-tint px-3 py-2 text-sm text-destructive">
+          <p role="alert" className="flex items-start gap-2 rounded-md bg-destructive-tint px-3 py-2 text-sm text-destructive">
             <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span>
               <span className="font-semibold">Not this customer&apos;s parcel.</span> <span className="font-mono">{result.code}</span> is for{' '}
@@ -1622,22 +1579,37 @@ function VerifyParcel({
           </p>
         )}
         {result?.kind === 'not-found' && (
-          <p role="alert" className="mt-2 flex items-start gap-2 rounded-md bg-destructive-tint px-3 py-2 text-sm text-destructive">
+          <p role="alert" className="flex items-start gap-2 rounded-md bg-destructive-tint px-3 py-2 text-sm text-destructive">
             <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span>
-              No parcel with code <span className="font-mono">{result.code}</span>. Check it against the label.
+              No parcel with code <span className="font-mono">{result.code}</span>. Scan the label again.
             </span>
           </p>
         )}
       </div>
+      {result && (
+        <div className="mt-2 flex items-center gap-2">
+          <Button ref={again} type="button" variant="outline" size="sm" className="bg-card" onClick={() => setCamera(true)}>
+            <Camera aria-hidden />
+            Scan again
+          </Button>
+          <Button type="button" variant="ghost" size="icon" aria-label="Close the parcel check" onClick={onClose}>
+            <X aria-hidden />
+          </Button>
+        </div>
+      )}
       <CameraScanner
         open={camera}
-        onClose={() => setCamera(false)}
+        onClose={() => {
+          setCamera(false);
+          if (!result) onClose(); // closed before any scan: nothing to show
+        }}
         onDetected={(text) => {
           setCamera(false);
-          check(text, false);
+          onResult(verifyForLine(text, parcels, line, checked));
         }}
-        returnFocus={cameraButton}
+        returnFocus={again}
+        typeInstead={false}
       />
     </div>
   );

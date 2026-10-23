@@ -6,7 +6,7 @@ import { createUser } from '../auth/accounts.ts';
 import { writeAudit } from './audit.ts';
 import type { Db } from './connection.ts';
 import { editParcelPhone, insertNewParcels } from './parcels.ts';
-import { cutoffDate, purgeExpired, retentionDays, setRetentionDays } from './retention.ts';
+import { cutoffDate, nextDeletion, purgeExpired, retentionDays, setRetentionDays } from './retention.ts';
 import { createTestDb } from './test-db.ts';
 import { cambodiaDate } from './values.ts';
 
@@ -124,4 +124,13 @@ test('retention setting: default 7; only the admin changes it, within 1–14, an
   arrival(db, 2, 'D-2');
   purgeExpired(db, dir, NOW);
   assert.equal(count(db, 'parcels'), 1, 'with 3 days, the parcel from 3 days ago is gone');
+});
+
+test('next deletion: after midnight the parcels that arrived on the next day past the cutoff go, counted by customer', async (t) => {
+  const { db, cleanup } = await createTestDb();
+  t.after(cleanup);
+  arrival(db, 6, 'SIX-A'); // 11 Oct: with 7 days, deleted after midnight (cutoff 11 Oct on 18 Oct)
+  arrival(db, 6, 'SIX-B'); // same customer (same number)
+  arrival(db, 5, 'FIVE'); // 12 Oct: kept one more day
+  assert.deepEqual(nextDeletion(db, NOW), { arrivedOn: '2026-10-11', parcels: 2, customers: 1 });
 });

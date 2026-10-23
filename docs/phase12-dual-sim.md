@@ -45,9 +45,11 @@ when a run ends, progress in the browser tab.
   filter link opens History.
 - **Contact by hand, working the list** (owner, 2026-10-23): pick a network (remembered per device) with "not
   contacted" and "no answer" counts, today's progress, never-tried numbers first; each row leads with the phone number,
-  one slim Call · Telegram · SMS group, a light highlight on the row in use. **Verify** on each row (optional, never required): scan the parcel in
-  hand with the camera or a USB scanner, or type its code, to confirm it is for that number before contacting ("Right
+  one slim Call · Telegram · SMS group, a light highlight on the row in use. **Verify** on each row (optional, never required): Verify opens the camera straight away (camera only, owner
+  2026-10-23); scan the parcel in hand to confirm it is for that number before contacting ("Right
   parcel … 1 of 2 checked", or "Not this customer's parcel … is for 012 000 111"); `verifyForLine`, tested.
+- **Deletion notice** (owner, 2026-10-23): Settings › Backups and data says what the hourly deletion takes after
+  midnight, e.g. "4 parcels for 3 customers that arrived on 17 Oct or earlier" (`nextDeletion`, tested).
 - Customer replies are ignored: the app never reads the phone's received messages (owner, 2026-10-23).
 
 ## Checks (2026-10-23)

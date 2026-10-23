@@ -12,6 +12,7 @@ import { DirectContact } from '@/components/parcels/contact-panel';
 import { ParcelDetail } from '@/components/parcels/parcel-detail';
 import { SmsBadge } from '@/components/parcels/parcel-status';
 import { batchLabel } from '@/components/parcels/phone-group';
+import { CARRIER_DOT } from '@/components/shared/carrier-chips';
 import { CarrierTable } from '@/components/shared/carrier-table';
 import { DateFilter } from '@/components/shared/date-filter';
 import { CARRIER_LABEL, splitBySim, type Carrier, type SimInfo } from '@/lib/carriers';
@@ -1300,18 +1301,29 @@ function byHandList(plan: ReturnType<typeof planNotify> | null, data: ParcelData
   return splitBySim(plan.today, sims).byHand.filter((i) => !told(i.codes)); // today's arrivals only (owner, 2026-10-23)
 }
 
-/** The Contact by hand tab: staff call them, message them on Telegram or send the SMS from their own phone. */
+/** The order and wording of each carrier group: the busiest network first, numbers with no known carrier last. */
+function byCarrier(list: ByHandItem[]) {
+  const groups = new Map<Carrier | null, ByHandItem[]>();
+  for (const i of list) groups.set(i.carrier, [...(groups.get(i.carrier) ?? []), i]);
+  return [...groups].sort(([a, x], [b, y]) => (a === null ? 1 : 0) - (b === null ? 1 : 0) || y.length - x.length);
+}
+
+/**
+ * The Contact by hand tab, grouped by the customer's network so whoever holds that network's phone can work through
+ * their group. Each row leads with the number to dial; the name is there to check you have the right person.
+ */
 function ContactByHand({ list, data }: { list: ByHandItem[]; data: ParcelData | null }) {
   const [all, setAll] = useState(false);
   if (!data) return <Skeleton className="h-40 w-full" />;
-  const shown = all ? list : list.slice(0, BY_HAND_SHOWN);
+  const ordered = byCarrier(list).flatMap(([, items]) => items);
+  const shown = byCarrier(all ? ordered : ordered.slice(0, BY_HAND_SHOWN));
   return (
     <section aria-labelledby="by-hand-heading" className="rounded-lg bg-card px-5 py-5 sm:px-7">
       <Heading
         id="by-hand-heading"
         title="Contact by hand"
         count={list.length}
-        hint="Their carrier has no SIM in the gateway phone, so no SMS goes to them. Call, use Telegram, or send the SMS from your own phone; the app then asks what happened."
+        hint="No SIM in the gateway phone for their network, so no SMS goes to them. Grouped by network: calling or texting from a phone on the same network is usually cheaper. The app asks what happened after each call or message."
       />
       {list.length === 0 ? (
         <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
@@ -1319,14 +1331,31 @@ function ContactByHand({ list, data }: { list: ByHandItem[]; data: ParcelData | 
           Nobody to contact by hand. Every customer&apos;s carrier has a SIM in the gateway phone, or they were told already.
         </p>
       ) : (
-        <ul className="mt-2 divide-y">
-          {shown.map((i) => (
-            <ByHandRow key={`${i.day}|${i.phone}`} item={i} data={data} />
-          ))}
-        </ul>
+        shown.map(([carrier, items]) => {
+          const name = carrier ? CARRIER_LABEL[carrier] : 'Unknown carrier';
+          const total = list.filter((i) => i.carrier === carrier).length;
+          const id = `by-hand-${carrier ?? 'unknown'}`;
+          return (
+            <section key={carrier ?? 'unknown'} aria-labelledby={id} className="mt-3 border-t pt-5 first-of-type:mt-6 first-of-type:border-t-0 first-of-type:pt-0">
+              <h3 id={id} className="flex items-center gap-2 font-semibold">
+                <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: CARRIER_DOT[carrier ?? 'unknown'] }} />
+                {name}
+                <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-xs font-medium">{total}</span>
+              </h3>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {carrier ? `Use a ${name} phone if you have one.` : 'The first three digits are not on the carrier list. Use any phone.'}
+              </p>
+              <ul className="mt-1 divide-y">
+                {items.map((i) => (
+                  <ByHandRow key={`${i.day}|${i.phone}`} item={i} data={data} />
+                ))}
+              </ul>
+            </section>
+          );
+        })
       )}
       {list.length > BY_HAND_SHOWN && (
-        <Button variant="link" size="sm" className="mt-1 px-0" onClick={() => setAll(!all)}>
+        <Button variant="link" size="sm" className="mt-2 px-0" onClick={() => setAll(!all)}>
           {all ? 'Show fewer' : `Show all ${list.length}`}
         </Button>
       )}
@@ -1334,21 +1363,24 @@ function ContactByHand({ list, data }: { list: ByHandItem[]; data: ParcelData | 
   );
 }
 
-/** One customer to contact by hand, with the same Call, Telegram and SMS card as the parcel page. */
+/** One customer: the number to dial first and largest, the name under it, then Call, Telegram and SMS. */
 function ByHandRow({ item, data }: { item: ByHandItem; data: ParcelData }) {
   const group = data.parcels.filter((p) => item.codes.includes(p.code));
-  const today = item.day === arrivalDay(new Date().toISOString());
   if (!group.length) return null;
   return (
-    <li className="py-4">
-      <p>
-        <span className="font-medium">{item.recipient}</span> <span className="font-mono text-sm text-muted-foreground">{formatPhone(item.phone)}</span>
-      </p>
-      <p className="mb-2 text-xs text-muted-foreground">
-        {item.carrier ? `${CARRIER_LABEL[item.carrier]}: no ${CARRIER_LABEL[item.carrier]} SIM in the gateway phone` : 'Prefix not on the carrier list'} ·{' '}
-        {item.codes.length === 1 ? '1 parcel' : `${item.codes.length} parcels`} · <span className="font-mono">{item.codes.join(', ')}</span>
-        {!today && ` · arrived ${batchLabel(item.day)}`}
-      </p>
+    <li className="grid gap-x-8 gap-y-3 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:items-start">
+      <div className="min-w-0">
+        <p className="flex items-center gap-2">
+          <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: CARRIER_DOT[item.carrier ?? 'unknown'] }} />
+          <span className="font-mono text-xl font-semibold tracking-tight tabular-nums">{formatPhone(item.phone)}</span>
+          <span className="sr-only">, {item.carrier ? CARRIER_LABEL[item.carrier] : 'unknown carrier'}</span>
+        </p>
+        <p className="mt-0.5 pl-4 text-sm">
+          {item.recipient}
+          <span className="text-muted-foreground"> · {item.codes.length === 1 ? '1 parcel' : `${item.codes.length} parcels`}</span>
+        </p>
+        <p className="truncate pl-4 font-mono text-xs text-muted-foreground">{item.codes.join(', ')}</p>
+      </div>
       <DirectContact parcel={group[0]} group={group} events={data.events} message={item.message} stops={0} compact />
     </li>
   );

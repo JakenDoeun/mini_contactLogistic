@@ -271,7 +271,7 @@ export function DirectContact({
               </a>
             </Button>
           </div>
-          <button type="button" onClick={() => setAsked('pick')} className="mt-1 min-h-11 text-sm font-medium text-primary sm:min-h-8">
+          <button type="button" onClick={() => setAsked('pick')} className="mt-1 min-h-11 text-left text-sm font-medium text-primary sm:min-h-8">
             Called or messaged from another phone? Record it
           </button>
         </>
@@ -303,7 +303,11 @@ export function DirectContact({
       )}
 
       {ask && (
-        <div role="group" aria-labelledby={`${id}-ask`} className="mt-3 rounded-md border-l-4 border-primary bg-secondary px-3 py-3">
+        <div
+          role="group"
+          aria-labelledby={`${id}-ask`}
+          className={compact ? 'mt-3 rounded-md bg-secondary px-3 py-3' : 'mt-3 rounded-md border-l-4 border-primary bg-secondary px-3 py-3'}
+        >
           <p id={`${id}-ask`} className="font-medium">
             {ask.question}
           </p>

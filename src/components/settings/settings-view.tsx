@@ -9,6 +9,7 @@ import { BackupCard } from './backup-card';
 import { FolderSettings } from './folder-settings';
 import { GatewayCard } from './gateway-card';
 import { PhoneSetupCard } from './phone-setup-card';
+import { SoundsCard } from './sounds-card';
 import { composeMessage, DEFAULT_TEMPLATES } from '@/lib/parcel-logic';
 import {
   columnError,
@@ -40,6 +41,7 @@ export function SettingsView() {
           <TemplateSection settings={settings} readOnly={!settingsAdmin()} />
           <GapSection settings={settings} readOnly={!settingsAdmin()} />
           <GatewayCard />
+          <SoundsCard />
           <PhoneSetupCard />
         </div>
       )}

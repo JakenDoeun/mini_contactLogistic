@@ -13,6 +13,9 @@ import { readActiveRecoveryCode, rotateRecoveryCode } from '../../src/server/aut
 import { createSession } from '../../src/server/auth/sessions.ts';
 import { openDatabase } from '../../src/server/db/connection.ts';
 import { applyPending, migrateDatabase } from '../../src/server/db/migrate.ts';
+import http from 'node:http';
+import { insertNewParcels } from '../../src/server/db/parcels.ts';
+import { cambodiaDate } from '../../src/server/db/values.ts';
 import { GATEWAY_FILE, writeGatewayConfig } from '../../src/server/gateway/smsgate.ts';
 import { buildCopy, freePort, REPO, startApp, tempDir } from './harness.ts';
 
@@ -400,6 +403,79 @@ test('sms: with no gateway phone set up, Notify is refused and the pages are tol
     assert.equal(forStaff.configured, true);
     assert.equal('url' in forStaff, false);
   } finally {
+    fs.rmSync(path.join(site.dataDir, GATEWAY_FILE), { force: true });
+  }
+});
+
+test('Phase 12: SIMs scanned from the phone, confirmed by staff; Notify texts only carriers with a SIM; an SMS from another phone is recorded', async () => {
+  // A stand-in SMSGate with a Cellcard SIM in slot 1 and a Smart SIM in slot 2; it keeps what it is given.
+  const got: { simNumber?: number }[] = [];
+  const phone = http.createServer(async (req, res) => {
+    let body = '';
+    for await (const c of req) body += c;
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/device') return res.end(JSON.stringify([{ id: 'd', simCards: [{ simNumber: 1, carrierName: 'Cellcard', phoneNumber: null }, { simNumber: 2, carrierName: 'SMART', phoneNumber: null }] }]));
+    if (req.method === 'POST' && req.url === '/messages') {
+      got.push(JSON.parse(body));
+      res.statusCode = 202;
+      return res.end('{}');
+    }
+    res.statusCode = 404;
+    res.end('{}');
+  });
+  await new Promise<void>((r) => phone.listen(0, '127.0.0.1', r));
+  cleanups.push(() => void phone.close());
+
+  const db = openDatabase(path.join(site.dataDir, 'branch.db'));
+  const staff = await createUser(db, 'sim.staff', 'correct horse battery', 'cli');
+  assert.ok(staff.ok);
+  const cookie = `__Host-cb_session=${createSession(db, staff.userId)}`;
+  const importId = Number(
+    db
+      .prepare(
+        `INSERT INTO imports (source, original_filename, stored_path, sha256, size_bytes, status, rules, headers_found, scan_dates,
+           rows_total, rows_shopee, rows_excluded, excluded_codes, rows_collapsed, parcels_unique, db_duplicates, left_out, blocked, ready, checked_at)
+         VALUES ('manual', 'x.xlsx', '/tmp/x', ?, 1, 'checked', '[]', '{}', '{}', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?)`,
+      )
+      .run(crypto.randomUUID(), new Date().toISOString()).lastInsertRowid,
+  );
+  const today = cambodiaDate();
+  const [cellcard, metfone] = insertNewParcels(db, importId, [
+    { trackingCode: 'P12C1', recipientName: 'Dara', phoneRaw: '012 121 212', arrivalDate: today },
+    { trackingCode: 'P12M1', recipientName: 'Sokha', phoneRaw: '097 121 2121', arrivalDate: today },
+  ]).inserted;
+  db.close();
+  writeGatewayConfig(site.dataDir, { url: `http://127.0.0.1:${(phone.address() as { port: number }).port}`, username: 'sms', password: 'secret' });
+
+  try {
+    const scan = await (await send('/api/gateway/sims', { cookie })).json();
+    assert.deepEqual(scan.sims.map((x: { suggested: string; carrier: string | null }) => [x.suggested, x.carrier]), [['cellcard', null], ['smart', null]]);
+    const notify = (items: { phone: string; parcelIds: number[]; text: string }[]) =>
+      postJson('/api/sms/batch', { requestKey: crypto.randomUUID(), day: today, items }, { cookie });
+    const lines = [
+      { phone: '012 121 212', parcelIds: [cellcard], text: 'Hi Dara' },
+      { phone: '097 121 2121', parcelIds: [metfone], text: 'Hi Sokha' },
+    ];
+    assert.equal((await (await notify(lines)).json()).error, 'no_sim', 'nothing goes before a staff member confirms a SIM');
+
+    assert.equal((await postJson('/api/gateway/sims', { simNumber: 1, carrier: 'cellcard' }, { cookie, origin: 'https://evil.example' })).status, 403);
+    const confirmed = await postJson('/api/gateway/sims', { simNumber: 1, carrier: 'cellcard' }, { cookie });
+    assert.equal(confirmed.status, 200, 'any signed-in staff member confirms (owner, 2026-10-23)');
+    const started = await (await notify(lines)).json();
+    assert.deepEqual([started.queued, started.byHand], [1, 1]);
+    const gateway = (await (await send('/api/parcels', { cookie })).json()).gateway;
+    assert.deepEqual(gateway.sims.map((x: { carrier: string | null }) => x.carrier), ['cellcard', null]);
+
+    const other = await postJson('/api/contacts', { phone: '097 121 2121', parcelIds: [metfone], channel: 'other', outcome: 'messaged' }, { cookie });
+    assert.equal(other.status, 200);
+    const events = (await (await send('/api/parcels', { cookie })).json()).events as { channel: string; parcelCodes: string[]; sim?: number }[];
+    assert.ok(events.some((e) => e.channel === 'other' && e.parcelCodes.includes('P12M1')));
+    assert.equal(events.find((e) => e.channel === 'sms' && e.parcelCodes.includes('P12C1'))?.sim, 1);
+  } finally {
+    const check = siteDb();
+    check.prepare(`UPDATE send_batches SET status = 'stopped' WHERE status IN ('running', 'paused')`).run();
+    check.prepare(`UPDATE sms_attempts SET state = 'cancelled' WHERE state = 'queued'`).run();
+    check.close();
     fs.rmSync(path.join(site.dataDir, GATEWAY_FILE), { force: true });
   }
 });

@@ -1,7 +1,8 @@
 import { json, readJson, refuseCrossSite, withSession } from '@/server/auth/guard';
 import { recordContact } from '@/server/sms/queue';
 
-// A call or Telegram message made outside the app. A reached call stops the SMS for those parcels.
+// A call, Telegram message or SMS from another phone (Phase 12) made outside the app. A reached call stops the SMS for
+// those parcels.
 export const POST = withSession(async (req, user, db) => {
   const refused = await refuseCrossSite(req);
   if (refused) return refused;

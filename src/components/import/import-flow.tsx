@@ -8,6 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PhoneText } from '@/components/parcels/parcel-status';
+import { CarrierTable } from '@/components/shared/carrier-table';
+import { phoneKey } from '@/lib/parcel-logic';
+import { useParcelData } from '@/lib/parcel-service';
 import {
   cancelImport,
   checkFile,
@@ -381,7 +384,29 @@ function Counts({ review: r }: { review: Review }) {
       {r.counts.db_duplicate > 0 && (
         <p className="mt-2 text-sm text-muted-foreground">Parcels already in the records keep their phone numbers and SMS history exactly as they are.</p>
       )}
+      <FileCarriers review={r} />
     </>
+  );
+}
+
+/**
+ * The customers this file brings, by carrier, and how each will be told with the gateway phone's SIMs now (Phase 12).
+ * One customer per phone number; before Confirm, only the parcels it would add.
+ */
+function FileCarriers({ review: r }: { review: Review }) {
+  const sims = useParcelData()?.gateway.sims ?? [];
+  const counted = r.parcels.filter((p) => (r.status === 'imported' ? p.state !== 'left_out' : p.state === 'ready' || p.state === 'blocked'));
+  const phones = [...new Set(counted.map((p) => phoneKey(p.phone)).filter((k): k is string => k !== null))];
+  const noPhone = counted.filter((p) => phoneKey(p.phone) === null).length;
+  if (!phones.length) return null;
+  return (
+    <div className="mt-5">
+      <h4 className="text-sm font-semibold">
+        {plural(phones.length, 'customer')} by carrier{' '}
+        <span className="font-normal text-muted-foreground">(one per phone number{noPhone ? `; ${plural(noPhone, 'parcel')} with no number` : ''})</span>
+      </h4>
+      <CarrierTable items={phones.map((phone) => ({ phone }))} sims={sims} className="mt-1" />
+    </div>
   );
 }
 

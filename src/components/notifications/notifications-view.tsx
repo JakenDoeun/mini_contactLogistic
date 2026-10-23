@@ -12,8 +12,9 @@ import { DirectContact } from '@/components/parcels/contact-panel';
 import { ParcelDetail } from '@/components/parcels/parcel-detail';
 import { SmsBadge } from '@/components/parcels/parcel-status';
 import { batchLabel } from '@/components/parcels/phone-group';
+import { CarrierTable } from '@/components/shared/carrier-table';
 import { DateFilter } from '@/components/shared/date-filter';
-import { CARRIER_LABEL, carrierCounts, splitBySim, type Carrier, type SimInfo } from '@/lib/carriers';
+import { CARRIER_LABEL, splitBySim, type Carrier, type SimInfo } from '@/lib/carriers';
 import { planNotify, workList, type NotifyItem } from '@/lib/dashboard-logic';
 import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@/lib/date-range';
 import {
@@ -758,43 +759,6 @@ function Ready({
   );
 }
 
-/** Customers per carrier and how each group is told: by SMS from its SIM, or by hand (Phase 12). */
-function CarrierTable({ items, sims, className, compact }: { items: { phone: string }[]; sims: SimInfo[]; className?: string; compact?: boolean }) {
-  const rows = carrierCounts(items, sims);
-  if (!rows.length) return null;
-  return (
-    <table className={cn('w-full', compact ? 'text-xs' : 'text-sm', className)}>
-      <caption className="sr-only">Customers by carrier</caption>
-      <thead>
-        <tr className="border-b text-left text-xs text-muted-foreground">
-          <th scope="col" className="py-1.5 font-medium">
-            Carrier
-          </th>
-          <th scope="col" className="py-1.5 text-right font-medium">
-            Customers
-          </th>
-          <th scope="col" className={cn('py-1.5 font-medium', compact ? 'pl-3' : 'pl-4')}>
-            {compact ? 'How' : 'How they are told'}
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.carrier ?? 'unknown'} className="border-b last:border-0">
-            <th scope="row" className="py-1.5 text-left font-normal">
-              {r.carrier ? CARRIER_LABEL[r.carrier] : 'Unknown prefix'}
-            </th>
-            <td className="py-1.5 text-right font-mono">{r.count}</td>
-            <td className={cn('py-1.5', compact ? 'pl-3' : 'pl-4')}>
-              {r.sim ? `SMS from SIM ${r.sim}` : <span className="text-warning">{compact ? 'By hand' : 'Contact by hand'}</span>}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
 /** How long this many gaps between messages take; the gap is random, so it is a range. */
 function gapMinutes(gaps: number) {
   const { from: lo, to: hi } = currentGap();
@@ -1325,14 +1289,15 @@ const BY_HAND_SHOWN = 8;
 type ByHandItem = NotifyItem & { carrier: Carrier | null };
 
 /**
- * Customers the gateway phone cannot text, because their carrier has no confirmed SIM in it right now (Phase 12, owner
- * 2026-10-23: no fallback SIM). A line told by Telegram or an SMS from a staff phone leaves the list.
+ * Today's customers the gateway phone cannot text, because their carrier has no confirmed SIM in it right now (Phase 12,
+ * owner 2026-10-23: no fallback SIM, today's arrivals only). A line told by Telegram or an SMS from a staff phone leaves
+ * the list. Earlier days' customers are shown when their day is reviewed in the Ready panel.
  */
 function byHandList(plan: ReturnType<typeof planNotify> | null, data: ParcelData | null, sims: SimInfo[]): ByHandItem[] {
   if (!plan || !data) return [];
   const told = (codes: string[]) =>
     data.events.some((e) => (e.channel === 'telegram' || e.channel === 'other') && e.outcome === 'messaged' && e.parcelCodes.some((c) => codes.includes(c)));
-  return splitBySim([...plan.today, ...plan.older], sims).byHand.filter((i) => !told(i.codes));
+  return splitBySim(plan.today, sims).byHand.filter((i) => !told(i.codes)); // today's arrivals only (owner, 2026-10-23)
 }
 
 /** The Contact by hand tab: staff call them, message them on Telegram or send the SMS from their own phone. */

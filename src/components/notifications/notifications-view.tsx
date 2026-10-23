@@ -32,12 +32,13 @@ import { currentGap, currentTemplates, useSettings } from '@/lib/settings-servic
 import { playAttention, playDone } from '@/lib/sounds';
 import { cn, formatDateTime, formatTime } from '@/lib/utils';
 
-type ChannelFilter = 'all' | 'sms' | 'call' | 'telegram';
+type ChannelFilter = 'all' | 'sms' | 'call' | 'telegram' | 'other';
 const CHANNEL_FILTERS: { key: ChannelFilter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'sms', label: 'SMS' },
   { key: 'call', label: 'Calls' },
   { key: 'telegram', label: 'Telegram' },
+  { key: 'other', label: 'Other phone' },
 ];
 
 const CHANNEL: Record<Channel, { label: string; icon: typeof Send }> = {
@@ -313,7 +314,7 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
         <Heading
           id="queue-heading"
           title="Sending queue"
-          hint={`Handed to the gateway phone one at a time, ${currentGap().from}–${currentGap().to} seconds apart so the SIM is not flagged. Accepted messages move to History; failed or unconfirmed ones move to Needs your attention.`}
+          hint={`Handed to the gateway phone one at a time, ${gapSeconds()} apart so the SIM is not flagged. Accepted messages move to History; failed or unconfirmed ones move to Needs your attention.`}
         />
         {running && data.batch && <BatchControls batch={data.batch} />}
         {batch.length > 0 && !running && (
@@ -670,14 +671,20 @@ function Ready({
 /** How long this many gaps between messages take; the gap is random, so it is a range. */
 function gapMinutes(gaps: number) {
   const { from: lo, to: hi } = currentGap();
-  return `${Math.max(1, Math.round((gaps * lo) / 60))}–${Math.ceil((gaps * hi) / 60)} minutes`;
+  const [a, b] = [Math.max(1, Math.round((gaps * lo) / 60)), Math.max(1, Math.ceil((gaps * hi) / 60))];
+  return a === b ? `${a} ${a === 1 ? 'minute' : 'minutes'}` : `${a}–${b} minutes`;
+}
+
+/** The gap between two SMS as staff read it: "25–80 seconds", or "15 seconds" when the admin set one fixed gap. */
+function gapSeconds() {
+  const { from, to } = currentGap();
+  return from === to ? `${from} seconds` : `${from}–${to} seconds`;
 }
 
 /** How long a run takes with the random gap between messages. */
 function sendingTime(count: number) {
-  const { from: lo, to: hi } = currentGap();
   if (count <= 1) return 'One SMS.';
-  return `Takes about ${gapMinutes(count - 1)}: the phone waits ${lo}–${hi} seconds between messages, at random, so the branch SIM is not flagged.`;
+  return `Takes about ${gapMinutes(count - 1)}: the phone waits ${gapSeconds()} between messages, at random, so the branch SIM is not flagged.`;
 }
 
 /** Messages grouped by arrival day, newest day first. */
@@ -1294,7 +1301,7 @@ function ByHandRow({ item, events }: { item: ByHandItem; events: ContactEvent[] 
   }
 
   return (
-    <li className="flex flex-col gap-2 py-3 lg:flex-row lg:items-start lg:justify-between">
+    <li className="flex flex-col gap-2 py-3">
       <div className="min-w-0">
         <p>
           <span className="font-medium">{item.recipient}</span> <span className="font-mono text-sm text-muted-foreground">{formatPhone(item.phone)}</span>
@@ -1311,16 +1318,18 @@ function ByHandRow({ item, events }: { item: ByHandItem; events: ContactEvent[] 
           </p>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-1">
-        <ReachLinks phone={item.phone} />
-        <Button size="sm" variant="ghost" onClick={() => copy('number', formatPhone(item.phone))}>
-          {copied === 'number' ? <Check aria-hidden /> : <Copy aria-hidden />}
-          {copied === 'number' ? 'Copied' : 'Number'}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => copy('message', item.message)}>
-          {copied === 'message' ? <Check aria-hidden /> : <Copy aria-hidden />}
-          {copied === 'message' ? 'Copied' : 'Message'}
-        </Button>
+      <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
+        <div className="-ml-3 flex flex-wrap items-center gap-1">
+          <ReachLinks phone={item.phone} />
+          <Button size="sm" variant="ghost" onClick={() => copy('number', formatPhone(item.phone))}>
+            {copied === 'number' ? <Check aria-hidden /> : <Copy aria-hidden />}
+            {copied === 'number' ? 'Copied' : 'Number'}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => copy('message', item.message)}>
+            {copied === 'message' ? <Check aria-hidden /> : <Copy aria-hidden />}
+            {copied === 'message' ? 'Copied' : 'Message'}
+          </Button>
+        </div>
         <label htmlFor={id} className="sr-only">
           Mark how {item.recipient} was contacted
         </label>

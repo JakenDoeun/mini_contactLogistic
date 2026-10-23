@@ -98,7 +98,7 @@ export function GatewayCard() {
           </h2>
           {badge}
         </div>
-        <p className="mt-0.5 text-muted-foreground">The Android phone with the branch SIM sends every SMS. Its address and password are set on the branch computer, not here.</p>
+        <p className="mt-0.5 text-muted-foreground">The Android phone with the branch SIMs sends every SMS. Its address and password are set on the branch computer, not here.</p>
       </div>
 
       <div className="flex flex-col gap-5 px-5 py-5 sm:px-6">
@@ -395,7 +395,7 @@ function SimsBox({ initial }: { initial: SimScan }) {
 
 function ConfirmSim({ sim, onSaved, onCancel }: { sim: SimInfo; onSaved: (state: Omit<SimScan, 'problem'>) => void; onCancel?: () => void }) {
   const [carrier, setCarrier] = useState<Carrier | ''>(sim.carrier ?? sim.suggested ?? '');
-  const [own, setOwn] = useState(sim.phoneNumber ?? '');
+  const [own, setOwn] = useState(sim.phoneNumber ? formatPhone(sim.phoneNumber) : '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const id = `sim-${sim.simNumber}`;
@@ -437,7 +437,7 @@ function ConfirmSim({ sim, onSaved, onCancel }: { sim: SimInfo; onSaved: (state:
               id={`${id}-carrier`}
               value={carrier}
               onChange={(e) => setCarrier(e.target.value as Carrier | '')}
-              className="mt-1 h-11 w-full rounded-md border border-input bg-card px-3 text-base sm:h-10 sm:w-40 sm:text-sm"
+              className="mt-1 h-11 w-full rounded-md border border-input bg-card px-3 text-base sm:h-10 sm:w-52 sm:text-sm"
             >
               <option value="">Choose…</option>
               {CARRIERS.map((c) => (

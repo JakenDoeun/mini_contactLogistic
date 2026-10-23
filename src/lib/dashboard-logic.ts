@@ -15,6 +15,7 @@ import {
   type Parcel,
   type PhoneGroup,
 } from './parcel-logic.ts';
+import { carrierOf, simByCarrier, splitBySim, type Carrier, type SimInfo } from './carriers.ts';
 
 /** A phone line in the work list. `codes` are the parcels the item is about; `size` counts every parcel on the line. */
 export interface WorkGroup extends PhoneGroup {
@@ -114,4 +115,76 @@ export function dayProgress(parcels: Parcel[], events: ContactEvent[], day: stri
     else out.notYet++;
   }
   return out;
+}
+
+// ---- Contact by hand (Phase 12) -------------------------------------------------------------------------------------
+
+/** Told by staff another way: reached by phone, or messaged on Telegram or from a staff phone. */
+const toldByHand = (codes: string[], events: ContactEvent[]) =>
+  events.some(
+    (e) =>
+      ((e.channel === 'call' && e.outcome === 'answered') || ((e.channel === 'telegram' || e.channel === 'other') && e.outcome === 'messaged')) &&
+      e.parcelCodes.some((c) => codes.includes(c)),
+  );
+
+export interface ByHandLine extends NotifyItem {
+  carrier: Carrier | null;
+  /** Calls with no answer so far, and the latest one. */
+  tries: number;
+  lastTry: string | null;
+}
+
+export interface ByHandGroup {
+  carrier: Carrier | null;
+  /** Still to do, in working order: never tried first, then no answer, longest waiting first. */
+  lines: ByHandLine[];
+  notContacted: number;
+  noAnswer: number;
+  /** Today's lines on this network that staff already told. */
+  done: number;
+}
+
+/**
+ * Today's customers whose network has no confirmed SIM in the gateway phone, by network: the busiest first, numbers
+ * with no known carrier last. Lines told by hand leave the list and count as done.
+ */
+export function byHandGroups(plan: NotifyPlan, parcels: Parcel[], events: ContactEvent[], sims: SimInfo[], now = new Date()): ByHandGroup[] {
+  const tries = (codes: string[]) =>
+    events.filter((e) => e.channel === 'call' && e.outcome === 'no-answer' && e.parcelCodes.some((c) => codes.includes(c))).map((e) => e.at).sort();
+  const lines: ByHandLine[] = splitBySim(plan.today, sims)
+    .byHand.filter((i) => !toldByHand(i.codes, events))
+    .map((i) => {
+      const t = tries(i.codes);
+      return { ...i, tries: t.length, lastTry: t.at(-1) ?? null };
+    });
+
+  // Done: today's lines on a network the phone cannot text, already told by hand.
+  const today = arrivalDay(now.toISOString());
+  const slot = simByCarrier(sims);
+  const todayLines = new Map<string, string[]>();
+  for (const p of parcels) {
+    const k = phoneKey(p.phone);
+    if (p.arrivalDate === today && k) todayLines.set(k, [...(todayLines.get(k) ?? []), p.code]);
+  }
+  const done = new Map<Carrier | null, number>();
+  for (const [phone, codes] of todayLines) {
+    const c = carrierOf(phone);
+    if (!(c && slot.has(c)) && toldByHand(codes, events)) done.set(c, (done.get(c) ?? 0) + 1);
+  }
+
+  const carriers = new Set<Carrier | null>([...lines.map((l) => l.carrier), ...done.keys()]);
+  return [...carriers]
+    .map((carrier) => {
+      const mine = lines
+        .filter((l) => l.carrier === carrier)
+        .sort((a, b) => (a.tries ? 1 : 0) - (b.tries ? 1 : 0) || (a.lastTry ?? '').localeCompare(b.lastTry ?? ''));
+      return {
+        carrier,
+        lines: mine,
+        notContacted: mine.filter((l) => !l.tries).length,
+        noAnswer: mine.filter((l) => l.tries).length,
+        done: done.get(carrier) ?? 0,
+      };
+    })
+    .sort((a, b) => (a.carrier === null ? 1 : 0) - (b.carrier === null ? 1 : 0) || b.lines.length - a.lines.length || b.done - a.done);
 }

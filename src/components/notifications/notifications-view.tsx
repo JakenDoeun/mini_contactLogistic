@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ChevronRight, CircleCheck, MessageSquare, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Smartphone, Square } from 'lucide-react';
+import { ArrowRight, Check, ChevronRight, CircleCheck, MessageSquare, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Smartphone, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
@@ -16,7 +16,7 @@ import { CARRIER_DOT } from '@/components/shared/carrier-chips';
 import { CarrierTable } from '@/components/shared/carrier-table';
 import { DateFilter } from '@/components/shared/date-filter';
 import { CARRIER_LABEL, splitBySim, type Carrier, type SimInfo } from '@/lib/carriers';
-import { planNotify, workList, type NotifyItem } from '@/lib/dashboard-logic';
+import { byHandGroups, planNotify, workList, type ByHandGroup, type ByHandLine, type NotifyItem } from '@/lib/dashboard-logic';
 import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@/lib/date-range';
 import {
   arrivalDay,
@@ -88,7 +88,8 @@ export function NotificationsView({ initialFilter, initialTab = 'today' }: { ini
   const contactParcel = data?.parcels.find((p) => p.code === contacting);
   const running = !!data?.batch && (data.batch.status === 'running' || data.batch.status === 'paused');
   const sims = data?.gateway.sims ?? [];
-  const byHand = byHandList(plan, data, sims);
+  const byHandByNetwork = plan && data ? byHandGroups(plan, data.parcels, data.events, sims) : [];
+  const byHand = byHandByNetwork.reduce((n, g) => n + g.lines.length, 0);
 
   return (
     <>
@@ -129,10 +130,10 @@ export function NotificationsView({ initialFilter, initialTab = 'today' }: { ini
             )}
           >
             {t.label}
-            {t.key === 'by-hand' && byHand.length > 0 && (
+            {t.key === 'by-hand' && byHand > 0 && (
               <span className="ml-2 rounded-full bg-warning-tint px-2 py-0.5 font-mono text-xs font-medium text-warning">
                 <span className="sr-only">, </span>
-                {byHand.length}
+                {byHand}
                 <span className="sr-only"> waiting</span>
               </span>
             )}
@@ -158,14 +159,14 @@ export function NotificationsView({ initialFilter, initialTab = 'today' }: { ini
           hold={!!data?.restoreHold}
           noGateway={data ? !data.gateway.setUp : false}
           sims={sims}
-          byHand={byHand.length}
+          byHand={byHand}
           onNotify={setConfirmDay}
           onByHand={() => choose('by-hand')}
         />
       </div>
 
       <div id="panel-by-hand" role="tabpanel" aria-labelledby="tab-by-hand" hidden={tab !== 'by-hand'} className="mt-7">
-        <ContactByHand list={byHand} data={data} />
+        <ContactByHand groups={byHandByNetwork} data={data} />
       </div>
 
       <div id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden={tab !== 'history'}>
@@ -1287,101 +1288,191 @@ function RetrySheet({ event, data, onClose }: { event: ContactEvent | null; data
 }
 
 const BY_HAND_SHOWN = 8;
-type ByHandItem = NotifyItem & { carrier: Carrier | null };
+const NETWORK_KEY = 'cb.byHandNetwork';
+const networkKey = (c: Carrier | null) => c ?? 'unknown';
+const networkName = (c: Carrier | null) => (c ? CARRIER_LABEL[c] : 'Unknown carrier');
 
 /**
- * Today's customers the gateway phone cannot text, because their carrier has no confirmed SIM in it right now (Phase 12,
- * owner 2026-10-23: no fallback SIM, today's arrivals only). A line told by Telegram or an SMS from a staff phone leaves
- * the list. Earlier days' customers are shown when their day is reviewed in the Ready panel.
+ * The Contact by hand tab (Phase 12): today's customers whose network has no SIM in the gateway phone. Staff pick their
+ * own phone's network (remembered on this device) and work down the list: never tried first, then no answer. Each
+ * network shows how many are not contacted yet and how many are done today.
  */
-function byHandList(plan: ReturnType<typeof planNotify> | null, data: ParcelData | null, sims: SimInfo[]): ByHandItem[] {
-  if (!plan || !data) return [];
-  const told = (codes: string[]) =>
-    data.events.some((e) => (e.channel === 'telegram' || e.channel === 'other') && e.outcome === 'messaged' && e.parcelCodes.some((c) => codes.includes(c)));
-  return splitBySim(plan.today, sims).byHand.filter((i) => !told(i.codes)); // today's arrivals only (owner, 2026-10-23)
-}
-
-/** The order and wording of each carrier group: the busiest network first, numbers with no known carrier last. */
-function byCarrier(list: ByHandItem[]) {
-  const groups = new Map<Carrier | null, ByHandItem[]>();
-  for (const i of list) groups.set(i.carrier, [...(groups.get(i.carrier) ?? []), i]);
-  return [...groups].sort(([a, x], [b, y]) => (a === null ? 1 : 0) - (b === null ? 1 : 0) || y.length - x.length);
-}
-
-/**
- * The Contact by hand tab, grouped by the customer's network so whoever holds that network's phone can work through
- * their group. Each row leads with the number to dial; the name is there to check you have the right person.
- */
-function ContactByHand({ list, data }: { list: ByHandItem[]; data: ParcelData | null }) {
+function ContactByHand({ groups, data }: { groups: ByHandGroup[]; data: ParcelData | null }) {
+  const [pick, setPick] = useState('all');
   const [all, setAll] = useState(false);
+  useEffect(() => {
+    try {
+      setPick(localStorage.getItem(NETWORK_KEY) ?? 'all');
+    } catch {
+      // private window or blocked storage: start from All
+    }
+  }, []);
+  const choose = (next: string) => {
+    setPick(next);
+    setAll(false);
+    try {
+      localStorage.setItem(NETWORK_KEY, next);
+    } catch {
+      // not kept on this device; it applies until the page closes
+    }
+  };
+
   if (!data) return <Skeleton className="h-40 w-full" />;
-  const ordered = byCarrier(list).flatMap(([, items]) => items);
-  const shown = byCarrier(all ? ordered : ordered.slice(0, BY_HAND_SHOWN));
+  // A remembered network with nobody on it today falls back to All.
+  const active = groups.some((g) => networkKey(g.carrier) === pick) ? pick : 'all';
+  const inView = active === 'all' ? groups : groups.filter((g) => networkKey(g.carrier) === active);
+  const left = inView.reduce((n, g) => n + g.lines.length, 0);
+  const done = inView.reduce((n, g) => n + g.done, 0);
+  const totalLeft = groups.reduce((n, g) => n + g.lines.length, 0);
+  // The first lines in working order, then regrouped, so "Show all" never splits a network's order.
+  let budget = all ? Infinity : BY_HAND_SHOWN;
+  const shown = inView
+    .filter((g) => g.lines.length)
+    .map((g) => {
+      const lines = g.lines.slice(0, Math.max(0, budget));
+      budget -= lines.length;
+      return { ...g, lines };
+    })
+    .filter((g) => g.lines.length);
+
   return (
     <section aria-labelledby="by-hand-heading" className="rounded-lg bg-card px-5 py-5 sm:px-7">
       <Heading
         id="by-hand-heading"
         title="Contact by hand"
-        count={list.length}
-        hint="No SIM in the gateway phone for their network, so no SMS goes to them. Grouped by network: calling or texting from a phone on the same network is usually cheaper. The app asks what happened after each call or message."
+        count={totalLeft}
+        hint="Today's customers on a network with no SIM in the gateway phone. Pick your phone's network: calling or texting on the same network is usually cheaper. The app asks what happened after each call or message."
       />
-      {list.length === 0 ? (
+
+      {groups.length === 0 ? (
         <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
           <CircleCheck className="size-4 text-success" aria-hidden />
-          Nobody to contact by hand. Every customer&apos;s carrier has a SIM in the gateway phone, or they were told already.
+          Nobody to contact by hand today. Every customer&apos;s network has a SIM in the gateway phone.
         </p>
       ) : (
-        shown.map(([carrier, items]) => {
-          const name = carrier ? CARRIER_LABEL[carrier] : 'Unknown carrier';
-          const total = list.filter((i) => i.carrier === carrier).length;
-          const id = `by-hand-${carrier ?? 'unknown'}`;
-          return (
-            <section key={carrier ?? 'unknown'} aria-labelledby={id} className="mt-3 border-t pt-5 first-of-type:mt-6 first-of-type:border-t-0 first-of-type:pt-0">
-              <h3 id={id} className="flex items-center gap-2 font-semibold">
-                <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: CARRIER_DOT[carrier ?? 'unknown'] }} />
-                {name}
-                <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-xs font-medium">{total}</span>
-              </h3>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                {carrier ? `Use a ${name} phone if you have one.` : 'The first three digits are not on the carrier list. Use any phone.'}
-              </p>
-              <ul className="mt-1 divide-y">
-                {items.map((i) => (
-                  <ByHandRow key={`${i.day}|${i.phone}`} item={i} data={data} />
-                ))}
-              </ul>
-            </section>
-          );
-        })
-      )}
-      {list.length > BY_HAND_SHOWN && (
-        <Button variant="link" size="sm" className="mt-2 px-0" onClick={() => setAll(!all)}>
-          {all ? 'Show fewer' : `Show all ${list.length}`}
-        </Button>
+        <>
+          <div role="group" aria-label="Show customers on network" className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+            <NetworkButton label="All" left={totalLeft} noAnswer={groups.reduce((n, g) => n + g.noAnswer, 0)} pressed={active === 'all'} onClick={() => choose('all')} />
+            {groups.map((g) => (
+              <NetworkButton
+                key={networkKey(g.carrier)}
+                label={g.carrier ? CARRIER_LABEL[g.carrier] : 'Unknown'}
+                dot={CARRIER_DOT[networkKey(g.carrier)]}
+                left={g.lines.length}
+                noAnswer={g.noAnswer}
+                pressed={active === networkKey(g.carrier)}
+                onClick={() => choose(networkKey(g.carrier))}
+              />
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <p className="flex flex-wrap items-baseline justify-between gap-x-4 text-sm">
+              <span className="font-medium">
+                {active === 'all' ? 'All networks' : networkName(inView[0].carrier)}: {done} of {done + left} done today
+              </span>
+              <span className="text-muted-foreground">
+                {left === 0 ? 'Nobody left' : `${left} left`}
+              </span>
+            </p>
+            <div
+              role="progressbar"
+              aria-label="Contacted by hand today"
+              aria-valuemin={0}
+              aria-valuemax={done + left}
+              aria-valuenow={done}
+              className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-secondary"
+            >
+              <div className="h-full rounded-full bg-success transition-[width] motion-reduce:transition-none" style={{ width: `${done + left ? (done / (done + left)) * 100 : 0}%` }} />
+            </div>
+          </div>
+
+          {left === 0 ? (
+            <p className="mt-5 flex items-center gap-2 text-sm text-muted-foreground">
+              <CircleCheck className="size-4 text-success" aria-hidden />
+              {active === 'all' ? 'Everyone is done for today.' : `Every ${networkName(inView[0].carrier)} customer is done for today.`}
+            </p>
+          ) : (
+            shown.map((g) => {
+              const id = `by-hand-${networkKey(g.carrier)}`;
+              return (
+                <section key={id} aria-labelledby={id} className="mt-3 border-t pt-5 first-of-type:mt-6 first-of-type:border-t-0 first-of-type:pt-0">
+                  {/* With one network picked, its button already says this; the heading stays for screen readers. */}
+                  <h3 id={id} className={active === 'all' ? 'flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold' : 'sr-only'}>
+                    <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: CARRIER_DOT[networkKey(g.carrier)] }} />
+                    {networkName(g.carrier)}
+                    <span className="text-sm font-normal text-muted-foreground">
+                      {g.notContacted} not contacted{g.noAnswer ? ` · ${g.noAnswer} no answer` : ''}
+                    </span>
+                  </h3>
+                  <p className={cn('text-sm text-muted-foreground', active === 'all' && 'mt-0.5')}>
+                    {g.carrier ? `Use a ${networkName(g.carrier)} phone if you have one.` : 'The first three digits are not on the carrier list. Use any phone.'}
+                  </p>
+                  <ul className="mt-1 divide-y">
+                    {g.lines.map((line) => (
+                      <ByHandRow key={`${line.day}|${line.phone}`} line={line} data={data} />
+                    ))}
+                  </ul>
+                </section>
+              );
+            })
+          )}
+          {left > BY_HAND_SHOWN && (
+            <Button variant="link" size="sm" className="mt-2 px-0" onClick={() => setAll(!all)}>
+              {all ? 'Show fewer' : `Show all ${left}`}
+            </Button>
+          )}
+        </>
       )}
     </section>
   );
 }
 
+/** One network in the selector: how many are still to contact, and how many of those did not answer. */
+function NetworkButton({ label, dot, left, noAnswer, pressed, onClick }: { label: string; dot?: string; left: number; noAnswer: number; pressed: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onClick}
+      className={cn(
+        'flex min-h-11 flex-col items-start rounded-md border px-3 py-1.5 text-left text-sm transition-colors motion-reduce:transition-none',
+        pressed ? 'border-primary bg-accent text-foreground' : 'bg-card text-muted-foreground hover:text-foreground',
+      )}
+    >
+      <span className="flex items-center gap-1.5 font-medium">
+        {dot && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: dot }} />}
+        {label}
+        <span className={cn('font-mono', left ? 'text-foreground' : 'text-success')}>{left || <Check className="size-3.5" aria-label="done" />}</span>
+      </span>
+      <span className="text-xs">{left === 0 ? 'All done' : noAnswer ? `${left - noAnswer} not contacted · ${noAnswer} no answer` : `${left} not contacted`}</span>
+    </button>
+  );
+}
+
 /** One customer: the number to dial first and largest, the name under it, then Call, Telegram and SMS. */
-function ByHandRow({ item, data }: { item: ByHandItem; data: ParcelData }) {
-  const group = data.parcels.filter((p) => item.codes.includes(p.code));
+function ByHandRow({ line, data }: { line: ByHandLine; data: ParcelData }) {
+  const group = data.parcels.filter((p) => line.codes.includes(p.code));
   if (!group.length) return null;
   return (
     <li className="grid gap-x-8 gap-y-3 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:items-start">
       <div className="min-w-0">
         <p className="flex items-center gap-2">
-          <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: CARRIER_DOT[item.carrier ?? 'unknown'] }} />
-          <span className="font-mono text-xl font-semibold tracking-tight tabular-nums">{formatPhone(item.phone)}</span>
-          <span className="sr-only">, {item.carrier ? CARRIER_LABEL[item.carrier] : 'unknown carrier'}</span>
+          <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: CARRIER_DOT[networkKey(line.carrier)] }} />
+          <span className="font-mono text-xl font-semibold tracking-tight tabular-nums">{formatPhone(line.phone)}</span>
+          <span className="sr-only">, {networkName(line.carrier)}</span>
         </p>
         <p className="mt-0.5 pl-4 text-sm">
-          {item.recipient}
-          <span className="text-muted-foreground"> · {item.codes.length === 1 ? '1 parcel' : `${item.codes.length} parcels`}</span>
+          {line.recipient}
+          <span className="text-muted-foreground">
+            {' '}
+            · {line.codes.length === 1 ? '1 parcel' : `${line.codes.length} parcels`}
+            {line.tries > 1 && ` · tried ${line.tries} times`}
+          </span>
         </p>
-        <p className="truncate pl-4 font-mono text-xs text-muted-foreground">{item.codes.join(', ')}</p>
+        <p className="truncate pl-4 font-mono text-xs text-muted-foreground">{line.codes.join(', ')}</p>
       </div>
-      <DirectContact parcel={group[0]} group={group} events={data.events} message={item.message} stops={0} compact />
+      <DirectContact parcel={group[0]} group={group} events={data.events} message={line.message} stops={0} compact />
     </li>
   );
 }

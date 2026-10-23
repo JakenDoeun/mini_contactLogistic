@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { carrierFromName, carrierOf, splitBySim } from './carriers.ts';
+import { carrierCounts, carrierFromName, carrierOf, splitBySim } from './carriers.ts';
 
 test('every TRC prefix maps to its carrier, in any number format', () => {
   const expected = {
@@ -34,4 +34,15 @@ test('customers split into automatic (their carrier has a confirmed SIM) and by 
   const { auto, byHand } = splitBySim([{ phone: '012 345 678' }, { phone: '010 345 678' }, { phone: '097 123 4567' }, { phone: '019 345 678' }], sims);
   assert.deepEqual(auto.map((i) => [i.phone, i.sim]), [['012 345 678', 1]]);
   assert.deepEqual(byHand.map((i) => i.carrier), ['smart', 'metfone', null], 'an unconfirmed SIM sends nothing');
+});
+
+test('customers are counted per carrier, most first and unknown last, each with its SIM or by hand', () => {
+  const sims = [{ simNumber: 2, carrierName: 'SMART', phoneNumber: null, suggested: 'smart' as const, carrier: 'smart' as const }];
+  const phones = ['019 111 111', '097 111 1111', '010 111 111', '088 111 1111', '012 111 111'].map((phone) => ({ phone }));
+  assert.deepEqual(carrierCounts(phones, sims), [
+    { carrier: 'metfone', count: 2, sim: null },
+    { carrier: 'smart', count: 1, sim: 2 },
+    { carrier: 'cellcard', count: 1, sim: null },
+    { carrier: null, count: 1, sim: null },
+  ]);
 });

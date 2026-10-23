@@ -13,7 +13,7 @@ import { ParcelDetail } from '@/components/parcels/parcel-detail';
 import { SmsBadge } from '@/components/parcels/parcel-status';
 import { batchLabel } from '@/components/parcels/phone-group';
 import { DateFilter } from '@/components/shared/date-filter';
-import { CARRIER_LABEL, carrierOf, splitBySim, type Carrier, type SimInfo } from '@/lib/carriers';
+import { CARRIER_LABEL, carrierCounts, splitBySim, type Carrier, type SimInfo } from '@/lib/carriers';
 import { planNotify, workList, type NotifyItem } from '@/lib/dashboard-logic';
 import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@/lib/date-range';
 import {
@@ -662,9 +662,12 @@ function Ready({
             {parcels} {parcels === 1 ? 'parcel' : 'parcels'} from today, one SMS per phone number
           </p>
           {split && plan.today.length > 0 && !noGateway && (
-            <p className="text-sm text-muted-foreground">
-              {split.auto.length} by SMS · {split.byHand.length} to contact by hand
-            </p>
+            <>
+              <p className="text-sm text-muted-foreground">
+                {split.auto.length} by SMS · {split.byHand.length} to contact by hand
+              </p>
+              <CarrierTable items={plan.today} sims={sims} className="mt-3" compact />
+            </>
           )}
           {byHand > 0 && (
             <button type="button" onClick={onByHand} className="mt-1 min-h-11 text-sm font-medium text-primary underline-offset-4 hover:underline sm:min-h-8">
@@ -752,6 +755,43 @@ function Ready({
         </>
       )}
     </aside>
+  );
+}
+
+/** Customers per carrier and how each group is told: by SMS from its SIM, or by hand (Phase 12). */
+function CarrierTable({ items, sims, className, compact }: { items: { phone: string }[]; sims: SimInfo[]; className?: string; compact?: boolean }) {
+  const rows = carrierCounts(items, sims);
+  if (!rows.length) return null;
+  return (
+    <table className={cn('w-full', compact ? 'text-xs' : 'text-sm', className)}>
+      <caption className="sr-only">Customers by carrier</caption>
+      <thead>
+        <tr className="border-b text-left text-xs text-muted-foreground">
+          <th scope="col" className="py-1.5 font-medium">
+            Carrier
+          </th>
+          <th scope="col" className="py-1.5 text-right font-medium">
+            Customers
+          </th>
+          <th scope="col" className={cn('py-1.5 font-medium', compact ? 'pl-3' : 'pl-4')}>
+            {compact ? 'How' : 'How they are told'}
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.carrier ?? 'unknown'} className="border-b last:border-0">
+            <th scope="row" className="py-1.5 text-left font-normal">
+              {r.carrier ? CARRIER_LABEL[r.carrier] : 'Unknown prefix'}
+            </th>
+            <td className="py-1.5 text-right font-mono">{r.count}</td>
+            <td className={cn('py-1.5', compact ? 'pl-3' : 'pl-4')}>
+              {r.sim ? `SMS from SIM ${r.sim}` : <span className="text-warning">{compact ? 'By hand' : 'Contact by hand'}</span>}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -863,9 +903,6 @@ function ConfirmNotify({
   const { auto, byHand } = splitBySim(items, fresh ?? data?.gateway.sims ?? []);
   const parcels = items.reduce((n, i) => n + i.codes.length, 0);
   const combined = auto.filter((i) => i.codes.length > 1).length;
-  const carriers = [...new Set(items.map((i) => carrierOf(i.phone)))]
-    .map((c) => ({ carrier: c, auto: auto.filter((i) => i.carrier === c), byHand: byHand.filter((i) => i.carrier === c) }))
-    .sort((a, b) => b.auto.length + b.byHand.length - (a.auto.length + a.byHand.length));
   const label = day ? batchLabel(day) : '';
   const close = () => {
     setRequestKey(crypto.randomUUID());
@@ -915,33 +952,7 @@ function ConfirmNotify({
                 notified are left out.
               </p>
               <p className="mt-1 text-sm text-muted-foreground">{auto.length > 0 ? sendingTime(auto.length) : 'Nothing goes by SMS.'}</p>
-              <table className="mt-4 w-full text-sm">
-                <caption className="sr-only">Customers by carrier</caption>
-                <thead>
-                  <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th scope="col" className="py-1.5 font-medium">
-                      Carrier
-                    </th>
-                    <th scope="col" className="py-1.5 text-right font-medium">
-                      Customers
-                    </th>
-                    <th scope="col" className="py-1.5 pl-4 font-medium">
-                      How they are told
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {carriers.map((c) => (
-                    <tr key={c.carrier ?? 'unknown'} className="border-b last:border-0">
-                      <th scope="row" className="py-1.5 text-left font-normal">
-                        {c.carrier ? CARRIER_LABEL[c.carrier] : 'Unknown prefix'}
-                      </th>
-                      <td className="py-1.5 text-right font-mono">{c.auto.length + c.byHand.length}</td>
-                      <td className="py-1.5 pl-4">{c.auto.length ? `SMS from SIM ${c.auto[0].sim}` : <span className="text-warning">Contact by hand</span>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <CarrierTable items={items} sims={fresh ?? data?.gateway.sims ?? []} className="mt-4" />
               {fresh === null && <p className="mt-1 text-xs text-muted-foreground">Checking the gateway phone&apos;s SIMs…</p>}
               {byHand.length > 0 && (
                 <p className="mt-3 rounded-md bg-warning-tint px-3 py-2 text-sm text-warning">

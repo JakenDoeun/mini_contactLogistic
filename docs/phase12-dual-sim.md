@@ -28,7 +28,8 @@ when a run ends, progress in the browser tab.
   press **Contact them by hand instead** (cancelled as `sim_missing`, never sent).
 - **Two failures in a row on one SIM** (a call on it, no credit, blocked) pause the run (setting `sms.sim_pause`) until
   someone presses Resume. Nothing is resent on its own.
-- **Counts:** the Ready panel ("5 by SMS · 3 to contact by hand"), the Notify panel (carrier table: customers and how
+- **Counts:** the Ready panel ("5 by SMS · 3 to contact by hand", then customers per carrier: Cellcard 3 · SMS from
+  SIM 1, Metfone 2 · by hand, …), the Notify panel (carrier table: customers and how
   they are told), the queue ("SIM 1: 9 of 15 · SIM 2: 6 of 10"), History ("SMS · SIM 2", filter "Other phone").
 - **Test SMS** (admin, as before): By carrier (says what it would do before sending, sends nothing for a carrier with no
   SIM), from SIM 1, from SIM 2, or from each SIM (sent one after the other). The text names the SIM: "Campus Branch

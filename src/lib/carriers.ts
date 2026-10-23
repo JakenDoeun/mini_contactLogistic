@@ -63,3 +63,16 @@ export function splitBySim<T extends { phone: string }>(items: T[], sims: SimInf
   }
   return { auto, byHand };
 }
+
+/** Customers per carrier, most first (unknown prefixes last), each with the SIM that texts them or null for by hand. */
+export function carrierCounts(items: { phone: string }[], sims: SimInfo[]) {
+  const slot = simByCarrier(sims);
+  const counts = new Map<Carrier | null, number>();
+  for (const i of items) {
+    const c = carrierOf(i.phone);
+    counts.set(c, (counts.get(c) ?? 0) + 1);
+  }
+  return [...counts]
+    .map(([carrier, count]) => ({ carrier, count, sim: carrier ? (slot.get(carrier) ?? null) : null }))
+    .sort((a, b) => (a.carrier === null ? 1 : 0) - (b.carrier === null ? 1 : 0) || b.count - a.count);
+}

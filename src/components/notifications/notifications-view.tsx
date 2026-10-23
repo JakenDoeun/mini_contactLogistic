@@ -54,9 +54,10 @@ const waiting = (e: ContactEvent) => e.smsStatus === 'queued' || e.smsStatus ===
 const PAGE = 10;
 const READY_SHOWN = 6;
 
-type Tab = 'today' | 'history';
+type Tab = 'today' | 'by-hand' | 'history';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'today', label: 'Today' },
+  { key: 'by-hand', label: 'Contact by hand' },
   { key: 'history', label: 'History' },
 ];
 
@@ -73,8 +74,8 @@ export function NotificationsView({ initialFilter, initialTab = 'today' }: { ini
     setTab(next);
     // Kept in the address, so a reload or the back button returns to the same tab.
     const url = new URL(window.location.href);
-    if (next === 'history') url.searchParams.set('tab', 'history');
-    else url.searchParams.delete('tab');
+    if (next === 'today') url.searchParams.delete('tab');
+    else url.searchParams.set('tab', next);
     window.history.replaceState(null, '', url);
   };
 
@@ -85,6 +86,7 @@ export function NotificationsView({ initialFilter, initialTab = 'today' }: { ini
   const contactParcel = data?.parcels.find((p) => p.code === contacting);
   const running = !!data?.batch && (data.batch.status === 'running' || data.batch.status === 'paused');
   const sims = data?.gateway.sims ?? [];
+  const byHand = byHandList(plan, data, sims);
 
   return (
     <>
@@ -103,7 +105,8 @@ export function NotificationsView({ initialFilter, initialTab = 'today' }: { ini
         className="mt-6 flex gap-1 border-b"
         onKeyDown={(e) => {
           if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-          const next = tab === 'today' ? 'history' : 'today';
+          const i = TABS.findIndex((t) => t.key === tab);
+          const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length].key;
           choose(next);
           document.getElementById(`tab-${next}`)?.focus();
         }}
@@ -124,6 +127,13 @@ export function NotificationsView({ initialFilter, initialTab = 'today' }: { ini
             )}
           >
             {t.label}
+            {t.key === 'by-hand' && byHand.length > 0 && (
+              <span className="ml-2 rounded-full bg-warning-tint px-2 py-0.5 font-mono text-xs font-medium text-warning">
+                <span className="sr-only">, </span>
+                {byHand.length}
+                <span className="sr-only"> waiting</span>
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -139,9 +149,21 @@ export function NotificationsView({ initialFilter, initialTab = 'today' }: { ini
         <div className="flex min-w-0 flex-col gap-8">
           <Attention work={work} events={events} nameOf={nameOf} onRetry={setRetrying} onOpen={setContacting} />
           <SendingQueue data={data} nameOf={nameOf} running={running} />
-          <ContactByHand plan={plan} data={data} sims={sims} />
         </div>
-        <Ready plan={plan} running={running} hold={!!data?.restoreHold} noGateway={data ? !data.gateway.setUp : false} sims={sims} onNotify={setConfirmDay} />
+        <Ready
+          plan={plan}
+          running={running}
+          hold={!!data?.restoreHold}
+          noGateway={data ? !data.gateway.setUp : false}
+          sims={sims}
+          byHand={byHand.length}
+          onNotify={setConfirmDay}
+          onByHand={() => choose('by-hand')}
+        />
+      </div>
+
+      <div id="panel-by-hand" role="tabpanel" aria-labelledby="tab-by-hand" hidden={tab !== 'by-hand'} className="mt-7">
+        <ContactByHand list={byHand} data={data} />
       </div>
 
       <div id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden={tab !== 'history'}>
@@ -607,14 +629,19 @@ function Ready({
   hold,
   noGateway,
   sims,
+  byHand,
   onNotify,
+  onByHand,
 }: {
   plan: ReturnType<typeof planNotify> | null;
   running: boolean;
   hold: boolean;
   noGateway: boolean;
   sims: SimInfo[];
+  /** Customers waiting on the Contact by hand tab. */
+  byHand: number;
   onNotify: (day: string) => void;
+  onByHand: () => void;
 }) {
   const parcels = plan?.today.reduce((n, i) => n + i.codes.length, 0) ?? 0;
   const split = plan ? splitBySim(plan.today, sims) : null;
@@ -638,6 +665,11 @@ function Ready({
             <p className="text-sm text-muted-foreground">
               {split.auto.length} by SMS · {split.byHand.length} to contact by hand
             </p>
+          )}
+          {byHand > 0 && (
+            <button type="button" onClick={onByHand} className="mt-1 min-h-11 text-sm font-medium text-primary underline-offset-4 hover:underline sm:min-h-8">
+              Open Contact by hand ({byHand})
+            </button>
           )}
           <Button className="mt-4 w-full" onClick={() => onNotify(arrivalDay(new Date().toISOString()))} disabled={running || hold || noGateway || plan.today.length === 0}>
             <Send aria-hidden />
@@ -914,7 +946,7 @@ function ConfirmNotify({
               {byHand.length > 0 && (
                 <p className="mt-3 rounded-md bg-warning-tint px-3 py-2 text-sm text-warning">
                   {byHand.length === 1 ? '1 customer is' : `${byHand.length} customers are`} on a carrier with no confirmed SIM in the gateway phone. They are listed
-                  under Contact by hand on this page.
+                  on the Contact by hand tab.
                 </p>
               )}
               {earlier && (
@@ -1283,16 +1315,19 @@ type ByHandItem = NotifyItem & { carrier: Carrier | null };
 
 /**
  * Customers the gateway phone cannot text, because their carrier has no confirmed SIM in it right now (Phase 12, owner
- * 2026-10-23: no fallback SIM). Staff call them, message them on Telegram or from another phone, and mark how; a line
- * told that way leaves the list.
+ * 2026-10-23: no fallback SIM). A line told by Telegram or an SMS from a staff phone leaves the list.
  */
-function ContactByHand({ plan, data, sims }: { plan: ReturnType<typeof planNotify> | null; data: ParcelData | null; sims: SimInfo[] }) {
-  const [all, setAll] = useState(false);
-  if (!plan || !data) return null;
+function byHandList(plan: ReturnType<typeof planNotify> | null, data: ParcelData | null, sims: SimInfo[]): ByHandItem[] {
+  if (!plan || !data) return [];
   const told = (codes: string[]) =>
     data.events.some((e) => (e.channel === 'telegram' || e.channel === 'other') && e.outcome === 'messaged' && e.parcelCodes.some((c) => codes.includes(c)));
-  const list = splitBySim([...plan.today, ...plan.older], sims).byHand.filter((i) => !told(i.codes));
-  if (!list.length) return null;
+  return splitBySim([...plan.today, ...plan.older], sims).byHand.filter((i) => !told(i.codes));
+}
+
+/** The Contact by hand tab: staff call them, message them on Telegram or send the SMS from their own phone. */
+function ContactByHand({ list, data }: { list: ByHandItem[]; data: ParcelData | null }) {
+  const [all, setAll] = useState(false);
+  if (!data) return <Skeleton className="h-40 w-full" />;
   const shown = all ? list : list.slice(0, BY_HAND_SHOWN);
   return (
     <section aria-labelledby="by-hand-heading" className="rounded-lg bg-card px-5 py-5 sm:px-7">
@@ -1302,11 +1337,18 @@ function ContactByHand({ plan, data, sims }: { plan: ReturnType<typeof planNotif
         count={list.length}
         hint="Their carrier has no SIM in the gateway phone, so no SMS goes to them. Call, use Telegram, or send the SMS from your own phone; the app then asks what happened."
       />
-      <ul className="mt-4 divide-y">
-        {shown.map((i) => (
-          <ByHandRow key={`${i.day}|${i.phone}`} item={i} data={data} />
-        ))}
-      </ul>
+      {list.length === 0 ? (
+        <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+          <CircleCheck className="size-4 text-success" aria-hidden />
+          Nobody to contact by hand. Every customer&apos;s carrier has a SIM in the gateway phone, or they were told already.
+        </p>
+      ) : (
+        <ul className="mt-2 divide-y">
+          {shown.map((i) => (
+            <ByHandRow key={`${i.day}|${i.phone}`} item={i} data={data} />
+          ))}
+        </ul>
+      )}
       {list.length > BY_HAND_SHOWN && (
         <Button variant="link" size="sm" className="mt-1 px-0" onClick={() => setAll(!all)}>
           {all ? 'Show fewer' : `Show all ${list.length}`}

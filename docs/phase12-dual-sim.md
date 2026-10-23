@@ -38,6 +38,9 @@ when a run ends, progress in the browser tab.
   times until someone clicks or types. Made by the browser (Web Audio), no files. **Settings › Sounds on this device**:
   on/off, volume, test buttons, kept in this browser only; on by default. The tab reads "(3/5) Sending", "Done" or
   "Needs attention".
+- **Notifications tabs** (owner, 2026-10-23): **Today** (attention, sending queue, Ready), **Contact by hand** with the
+  number waiting on the tab, and **History**. `?tab=by-hand` / `?tab=history` keep the tab through a reload; a history
+  filter link opens History.
 - Customer replies are ignored: the app never reads the phone's received messages (owner, 2026-10-23).
 
 ## Checks (2026-10-23)

@@ -1,7 +1,7 @@
 // The gateway phone's SIMs (Phase 12, owner 2026-10-23). The app scans the phone for its SIMs; a staff member confirms
 // once which carrier each SIM is. Each SMS then goes out from the SIM of its customer's carrier, and a customer whose
 // carrier has no confirmed SIM in the phone right now is contacted by hand. There is no fallback SIM.
-import { CARRIERS, carrierFromName, carrierOf, type Carrier } from '../../lib/carriers.ts';
+import { CARRIERS, carrierFromName, carrierOf, simByCarrier, type Carrier, type SimInfo } from '../../lib/carriers.ts';
 import { isValidPhone, normalizePhone } from '../../lib/parcel-logic.ts';
 import { writeAudit } from '../db/audit.ts';
 import type { Db } from '../db/connection.ts';
@@ -28,16 +28,6 @@ interface Confirmation {
   confirmedAt: string;
 }
 
-export interface SimInfo {
-  simNumber: number;
-  carrierName: string | null;
-  /** The SIM's own number, as the phone reports it or as staff typed it. */
-  phoneNumber: string | null;
-  /** The carrier the scan suggests, from the carrier name, else from the SIM's own number. */
-  suggested: Carrier | null;
-  /** The confirmed carrier, or null while this SIM waits for a confirmation. */
-  carrier: Carrier | null;
-}
 export interface SimState {
   scannedAt: string | null;
   sims: SimInfo[];
@@ -67,8 +57,7 @@ export function simState(db: Db): SimState {
 
 /** The SIM slot for a customer's number, or null when their carrier has no confirmed SIM in the phone (contact by hand). */
 export function routeFor(state: SimState) {
-  const slot = new Map<Carrier, number>();
-  for (const s of [...state.sims].sort((a, b) => a.simNumber - b.simNumber)) if (s.carrier && !slot.has(s.carrier)) slot.set(s.carrier, s.simNumber);
+  const slot = simByCarrier(state.sims);
   return (phone: string) => {
     const carrier = carrierOf(phone);
     return carrier ? (slot.get(carrier) ?? null) : null;

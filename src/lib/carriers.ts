@@ -27,3 +27,22 @@ export function carrierFromName(name: string | null | undefined): Carrier | null
 }
 
 export const carrierLabel = (c: Carrier | null) => (c ? CARRIER_LABEL[c] : 'Unknown');
+
+/** One SIM in the gateway phone, as the last scan found it (Phase 12). */
+export interface SimInfo {
+  simNumber: number;
+  carrierName: string | null;
+  /** The SIM's own number, as the phone reports it or as staff typed it. */
+  phoneNumber: string | null;
+  /** The carrier the scan suggests, from the carrier name, else from the SIM's own number. */
+  suggested: Carrier | null;
+  /** The confirmed carrier, or null while this SIM waits for a staff member to confirm it. */
+  carrier: Carrier | null;
+}
+
+/** The SIM slot for each carrier with a confirmed SIM in the phone; the first slot wins if two SIMs share a carrier. */
+export function simByCarrier(sims: SimInfo[]) {
+  const slot = new Map<Carrier, number>();
+  for (const s of [...sims].sort((a, b) => a.simNumber - b.simNumber)) if (s.carrier && !slot.has(s.carrier)) slot.set(s.carrier, s.simNumber);
+  return slot;
+}

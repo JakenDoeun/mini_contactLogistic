@@ -9,6 +9,7 @@ import { writeAudit } from '../db/audit.ts';
 import type { Db } from '../db/connection.ts';
 import { readSetting, writeSetting } from '../db/settings.ts';
 import { cambodiaDate, nowIso } from '../db/values.ts';
+import { simState } from '../gateway/sims.ts';
 import { readGatewayConfig } from '../gateway/smsgate.ts';
 
 export type AttemptState = 'queued' | 'submitting' | 'submitted' | 'sent' | 'delivered' | 'failed' | 'unconfirmed' | 'cancelled';
@@ -39,7 +40,10 @@ export type Route = (phone: string) => number | null;
 const noSim = (phone: string) =>
   refuse('no_sim', `No ${carrierLabel(carrierOf(phone))} SIM is set up in the gateway phone right now. Contact this customer by hand.`);
 
-/** Whether a gateway phone is set up, and since when it has not answered (null when it answers). */
+/**
+ * Whether a gateway phone is set up, since when it has not answered (null when it answers), its SIMs as last scanned,
+ * the SIMs waiting messages miss, and the SIM whose failures paused the run (Phase 12).
+ */
 export function gatewayState(db: Db, dataDir: string) {
   let setUp: boolean;
   try {
@@ -48,7 +52,9 @@ export function gatewayState(db: Db, dataDir: string) {
     setUp = false; // an incomplete gateway.json cannot be used either
   }
   const away = readSetting(db, PHONE_AWAY) as { since: string } | undefined;
-  return { setUp, awaySince: away?.since ?? null };
+  const missing = readSetting(db, SIM_MISSING) as { sims: number[] } | undefined;
+  const pause = readSetting(db, SIM_PAUSE) as { sim: number } | undefined;
+  return { setUp, awaySince: away?.since ?? null, sims: simState(db).sims, simMissing: missing?.sims ?? [], simPause: pause?.sim ?? null };
 }
 
 /** Called by npm run restore: holds every SMS until staff confirm they checked the phone. */

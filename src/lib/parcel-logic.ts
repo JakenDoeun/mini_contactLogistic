@@ -193,3 +193,6 @@ export function composeMessage(name: string, codes: string[], templates = DEFAUL
 
 // For "Open in Telegram": t.me resolves a number only if the customer allows it, so copying stays the fallback.
 export const telegramLink = (raw: string) => `https://t.me/+855${normalizePhone(raw).slice(1)}`;
+
+/** Opens the device's own messaging app with the message filled in; "?&" is read by both Android and iPhone. */
+export const smsLink = (raw: string, body: string) => `sms:+855${normalizePhone(raw).slice(1)}?&body=${encodeURIComponent(body)}`;

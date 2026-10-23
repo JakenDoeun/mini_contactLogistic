@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { CircleCheck, MessageSquare, Phone, PhoneMissed, Send } from 'lucide-react';
+import { useId, useState } from 'react';
+import { CircleCheck, MessageSquare, Phone, PhoneMissed, Send, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   composeMessage,
@@ -10,6 +10,7 @@ import {
   isValidPhone,
   normalizePhone,
   smsInFlight,
+  smsLink,
   smsStatusOf,
   telegramLink,
   type ContactEvent,
@@ -144,8 +145,9 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
   );
 }
 
-// 'pick' is a call or Telegram message made outside the app, from another phone: staff say which first.
-type Asked = 'call' | 'telegram' | 'pick';
+// 'pick' is a call or message made outside the app, from another phone: staff say which first. 'sms' is an SMS sent
+// from this device's own messaging app, outside the gateway phone (Phase 12).
+type Asked = 'call' | 'telegram' | 'sms' | 'pick';
 const ASK = {
   call: {
     question: 'Did the customer answer?',
@@ -160,7 +162,13 @@ const ASK = {
     options: [{ outcome: 'messaged', label: 'Yes, sent', Icon: CircleCheck, primary: true }],
     dismiss: 'Not sent',
   },
+  sms: {
+    question: 'Did you send the SMS from your phone?',
+    options: [{ outcome: 'messaged', label: 'Yes, sent', Icon: CircleCheck, primary: true }],
+    dismiss: 'Not sent',
+  },
 } as const;
+const CHANNEL_OF = { call: 'call', telegram: 'telegram', sms: 'other' } as const;
 const DONE: Record<Outcome, [string, typeof Phone, string]> = {
   answered: ['Reached by call', CircleCheck, 'text-success'],
   'no-answer': ['Called, no answer', PhoneMissed, 'text-warning'],
@@ -168,15 +176,17 @@ const DONE: Record<Outcome, [string, typeof Phone, string]> = {
 };
 
 /**
- * Call and Telegram happen outside the app, so the card asks what happened right after, one question at a time,
- * and shows the latest answer so staff see at a glance whether someone already called.
+ * Call, Telegram and an SMS from this device happen outside the app, so the card asks what happened right after, one
+ * question at a time, and shows the latest answer so staff see at a glance whether someone already called.
+ * Also used for each customer on Notifications › Contact by hand (Phase 12).
  */
-function DirectContact({
+export function DirectContact({
   parcel,
   group,
   events,
   message,
   stops,
+  compact = false,
 }: {
   parcel: Parcel;
   group: Parcel[];
@@ -184,11 +194,14 @@ function DirectContact({
   message: string;
   /** Parcels whose SMS a reached call would stop. */
   stops: number;
+  /** In a list of customers (Contact by hand): no top rule, the heading for screen readers only. */
+  compact?: boolean;
 }) {
   const [asked, setAsked] = useState<Asked | null>(null);
   const [copied, setCopied] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const id = useId(); // several cards can share one page (Contact by hand)
   const last = eventsFor(parcel.code, events).find((e) => e.channel !== 'sms' && e.outcome);
 
   function telegram() {
@@ -204,7 +217,7 @@ function DirectContact({
     setSaving(true);
     setSaveError('');
     try {
-      await recordOutcome(parcel.phone, group.map((p) => p.code), asked === 'telegram' ? 'telegram' : 'call', outcome);
+      await recordOutcome(parcel.phone, group.map((p) => p.code), CHANNEL_OF[asked as keyof typeof CHANNEL_OF], outcome);
       setAsked(null);
       setCopied('');
     } catch (e) {
@@ -214,14 +227,14 @@ function DirectContact({
     }
   }
 
-  const ask = asked === 'call' || asked === 'telegram' ? ASK[asked] : null;
-  const [doneLabel, DoneIcon, doneTone] = last ? DONE[last.outcome!] : [];
+  const ask = asked && asked !== 'pick' ? ASK[asked] : null;
+  const [doneLabel, DoneIcon, doneTone] = !last ? [] : last.channel === 'other' ? ['SMS sent from a phone', Smartphone, 'text-foreground'] : DONE[last.outcome!];
 
   return (
-    <section aria-labelledby="direct-heading" className="border-t pt-4">
+    <section aria-labelledby={`${id}-heading`} className={compact ? undefined : 'border-t pt-4'}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h3 id="direct-heading" className="text-sm font-medium">
-          Call or Telegram
+        <h3 id={`${id}-heading`} className={compact ? 'sr-only' : 'text-sm font-medium'}>
+          Call, Telegram or SMS from your phone
         </h3>
         <p aria-live="polite" className="text-sm">
           {last ? (
@@ -231,14 +244,14 @@ function DirectContact({
               <span className="font-mono text-xs text-muted-foreground">{formatTime(last.at)}</span>
             </span>
           ) : (
-            <span className="text-muted-foreground">Not called yet</span>
+            <span className="text-muted-foreground">Not contacted yet</span>
           )}
         </p>
       </div>
 
       {!asked && (
         <>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:flex">
+          <div className="mt-3 grid grid-cols-3 gap-2 sm:flex">
             <Button asChild variant="outline">
               <a href={`tel:${normalizePhone(parcel.phone)}`} onClick={() => setAsked('call')}>
                 <Phone aria-hidden />
@@ -251,6 +264,12 @@ function DirectContact({
                 Telegram
               </a>
             </Button>
+            <Button asChild variant="outline">
+              <a href={smsLink(parcel.phone, message)} onClick={() => setAsked('sms')}>
+                <Smartphone aria-hidden />
+                SMS
+              </a>
+            </Button>
           </div>
           <button type="button" onClick={() => setAsked('pick')} className="mt-1 min-h-11 text-sm font-medium text-primary sm:min-h-8">
             Called or messaged from another phone? Record it
@@ -259,11 +278,11 @@ function DirectContact({
       )}
 
       {asked === 'pick' && (
-        <div role="group" aria-labelledby="pick-question" className="mt-3 rounded-md bg-secondary px-3 py-3">
-          <p id="pick-question" className="font-medium">
+        <div role="group" aria-labelledby={`${id}-pick`} className="mt-3 rounded-md bg-secondary px-3 py-3">
+          <p id={`${id}-pick`} className="font-medium">
             What did you do?
           </p>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:flex">
+          <div className="mt-3 grid grid-cols-3 gap-2 sm:flex">
             <Button variant="outline" autoFocus onClick={() => setAsked('call')}>
               <Phone aria-hidden />
               Called
@@ -271,6 +290,10 @@ function DirectContact({
             <Button variant="outline" onClick={() => setAsked('telegram')}>
               <MessageSquare aria-hidden />
               Telegram
+            </Button>
+            <Button variant="outline" onClick={() => setAsked('sms')}>
+              <Smartphone aria-hidden />
+              SMS
             </Button>
           </div>
           <Button variant="ghost" size="sm" className="mt-1" onClick={() => setAsked(null)}>
@@ -280,8 +303,8 @@ function DirectContact({
       )}
 
       {ask && (
-        <div role="group" aria-labelledby="ask-question" className="mt-3 rounded-md border-l-4 border-primary bg-secondary px-3 py-3">
-          <p id="ask-question" className="font-medium">
+        <div role="group" aria-labelledby={`${id}-ask`} className="mt-3 rounded-md border-l-4 border-primary bg-secondary px-3 py-3">
+          <p id={`${id}-ask`} className="font-medium">
             {ask.question}
           </p>
           {asked === 'call' && stops > 0 && (

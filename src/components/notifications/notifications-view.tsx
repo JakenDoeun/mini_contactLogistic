@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Check, ChevronRight, CircleCheck, Copy, MessageSquare, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Smartphone, Square } from 'lucide-react';
+import { ArrowRight, ChevronRight, CircleCheck, MessageSquare, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Smartphone, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DirectContact } from '@/components/parcels/contact-panel';
 import { ParcelDetail } from '@/components/parcels/parcel-detail';
 import { SmsBadge } from '@/components/parcels/parcel-status';
 import { batchLabel } from '@/components/parcels/phone-group';
@@ -27,7 +28,7 @@ import {
   type Channel,
   type ContactEvent,
 } from '@/lib/parcel-logic';
-import { controlBatch, dismissBatch, queueBatch, queueSms, recordOutcome, reloadParcels, releaseRestoreHold, useParcelData, type ParcelData, type SmsBatch } from '@/lib/parcel-service';
+import { controlBatch, dismissBatch, queueBatch, queueSms, reloadParcels, releaseRestoreHold, useParcelData, type ParcelData, type SmsBatch } from '@/lib/parcel-service';
 import { currentGap, currentTemplates, useSettings } from '@/lib/settings-service';
 import { playAttention, playDone } from '@/lib/sounds';
 import { cn, formatDateTime, formatTime } from '@/lib/utils';
@@ -1245,11 +1246,11 @@ function ContactByHand({ plan, data, sims }: { plan: ReturnType<typeof planNotif
         id="by-hand-heading"
         title="Contact by hand"
         count={list.length}
-        hint="Their carrier has no SIM in the gateway phone, so no SMS goes to them. Call them, message them on Telegram or from another phone, then mark how."
+        hint="Their carrier has no SIM in the gateway phone, so no SMS goes to them. Call, use Telegram, or send the SMS from your own phone; the app then asks what happened."
       />
       <ul className="mt-4 divide-y">
         {shown.map((i) => (
-          <ByHandRow key={`${i.day}|${i.phone}`} item={i} events={data.events} />
+          <ByHandRow key={`${i.day}|${i.phone}`} item={i} data={data} />
         ))}
       </ul>
       {list.length > BY_HAND_SHOWN && (
@@ -1261,93 +1262,22 @@ function ContactByHand({ plan, data, sims }: { plan: ReturnType<typeof planNotif
   );
 }
 
-const MARKS = {
-  answered: ['call', 'answered', 'Called: answered'],
-  'no-answer': ['call', 'no-answer', 'Called: no answer'],
-  telegram: ['telegram', 'messaged', 'Sent on Telegram'],
-  other: ['other', 'messaged', 'SMS from another phone'],
-} as const;
-
-function ByHandRow({ item, events }: { item: ByHandItem; events: ContactEvent[] }) {
-  const [copied, setCopied] = useState<'number' | 'message' | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const noAnswer = events
-    .filter((e) => e.channel === 'call' && e.outcome === 'no-answer' && e.parcelCodes.some((c) => item.codes.includes(c)))
-    .sort((a, b) => b.at.localeCompare(a.at))[0];
+/** One customer to contact by hand, with the same Call, Telegram and SMS card as the parcel page. */
+function ByHandRow({ item, data }: { item: ByHandItem; data: ParcelData }) {
+  const group = data.parcels.filter((p) => item.codes.includes(p.code));
   const today = item.day === arrivalDay(new Date().toISOString());
-  const id = `by-hand-${item.day}-${normalizePhone(item.phone)}`;
-
-  function copy(kind: 'number' | 'message', text: string) {
-    navigator.clipboard.writeText(text).then(
-      () => {
-        setCopied(kind);
-        setTimeout(() => setCopied(null), 2000);
-      },
-      () => setError('Could not copy here. Select the text and copy it instead.'),
-    );
-  }
-
-  async function mark(value: keyof typeof MARKS) {
-    const [channel, outcome] = MARKS[value];
-    setSaving(true);
-    setError('');
-    try {
-      await recordOutcome(item.phone, item.codes, channel, outcome);
-    } catch (e) {
-      setError(`Not saved. ${(e as Error).message}`);
-    }
-    setSaving(false);
-  }
-
+  if (!group.length) return null;
   return (
-    <li className="flex flex-col gap-2 py-3">
-      <div className="min-w-0">
-        <p>
-          <span className="font-medium">{item.recipient}</span> <span className="font-mono text-sm text-muted-foreground">{formatPhone(item.phone)}</span>
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {item.carrier ? `${CARRIER_LABEL[item.carrier]}: no ${CARRIER_LABEL[item.carrier]} SIM in the gateway phone` : 'Prefix not on the carrier list'} ·{' '}
-          {item.codes.length === 1 ? '1 parcel' : `${item.codes.length} parcels`}
-          {!today && ` · arrived ${batchLabel(item.day)}`}
-        </p>
-        {noAnswer && <p className="text-xs text-warning">No answer at {formatTime(noAnswer.at)}</p>}
-        {error && (
-          <p role="alert" className="text-xs text-destructive">
-            {error}
-          </p>
-        )}
-      </div>
-      <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
-        <div className="-ml-3 flex flex-wrap items-center gap-1">
-          <ReachLinks phone={item.phone} />
-          <Button size="sm" variant="ghost" onClick={() => copy('number', formatPhone(item.phone))}>
-            {copied === 'number' ? <Check aria-hidden /> : <Copy aria-hidden />}
-            {copied === 'number' ? 'Copied' : 'Number'}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => copy('message', item.message)}>
-            {copied === 'message' ? <Check aria-hidden /> : <Copy aria-hidden />}
-            {copied === 'message' ? 'Copied' : 'Message'}
-          </Button>
-        </div>
-        <label htmlFor={id} className="sr-only">
-          Mark how {item.recipient} was contacted
-        </label>
-        <select
-          id={id}
-          value=""
-          disabled={saving}
-          onChange={(e) => e.target.value && mark(e.target.value as keyof typeof MARKS)}
-          className="h-11 rounded-md border border-input bg-card px-2 text-base sm:h-8 sm:text-sm"
-        >
-          <option value="">{saving ? 'Saving…' : 'Mark contacted…'}</option>
-          {Object.entries(MARKS).map(([value, [, , label]]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </div>
+    <li className="py-4">
+      <p>
+        <span className="font-medium">{item.recipient}</span> <span className="font-mono text-sm text-muted-foreground">{formatPhone(item.phone)}</span>
+      </p>
+      <p className="mb-2 text-xs text-muted-foreground">
+        {item.carrier ? `${CARRIER_LABEL[item.carrier]}: no ${CARRIER_LABEL[item.carrier]} SIM in the gateway phone` : 'Prefix not on the carrier list'} ·{' '}
+        {item.codes.length === 1 ? '1 parcel' : `${item.codes.length} parcels`} · <span className="font-mono">{item.codes.join(', ')}</span>
+        {!today && ` · arrived ${batchLabel(item.day)}`}
+      </p>
+      <DirectContact parcel={group[0]} group={group} events={data.events} message={item.message} stops={0} compact />
     </li>
   );
 }

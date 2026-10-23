@@ -17,8 +17,11 @@ when a run ends, progress in the browser tab.
   until confirmed. Kept in setting `sms.sim_carriers`.
 - **No fallback SIM** (owner, 2026-10-23). A customer whose carrier has a confirmed SIM in the phone now gets the SMS
   from that SIM (`sms_attempts.sim_number`, migration 0004). Everyone else is on **Contact by hand** (Notifications),
-  with Call, Telegram, copy number, copy message, and Mark contacted (called answered / no answer, Telegram, or the new
-  "SMS from another phone", contact channel `other`).
+  each with the same card as the parcel page: **Call** (asks "Did the customer answer?"), **Telegram** (copies the
+  message, asks if it was sent) and **SMS** (owner, 2026-10-23: opens the device's own messaging app with the number and
+  message filled in, `sms:` link, then asks "Did you send the SMS from your phone?"; saved as contact channel `other`).
+  A customer told by Telegram or SMS leaves the list; "no answer" stays with its time. The parcel page has the SMS
+  button too.
 - **Server enforces it.** `/api/sms/batch` and `/api/sms` route by a fresh scan (the last scan when the phone cannot
   be asked); a carrier with no SIM is refused `no_sim` or left out (`byHand` count).
 - **A SIM taken out during a run:** its SMS wait (setting `sms.sim_missing`), the others go on; staff can put it back or

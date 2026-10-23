@@ -7,6 +7,7 @@ import {
   eligibleForMessage,
   findByCode,
   matchesSearch,
+  smsLink,
   normalizePhone,
   phoneGroup,
   smsInFlight,
@@ -144,4 +145,8 @@ test('parcels search finds a code, a name or a phone whatever its format', () =>
     assert.equal(matchesSearch(p, q), true, q);
   for (const q of ['SPX 9', 'dara', '999 999'])
     assert.equal(matchesSearch(p, q), false, q);
+});
+
+test("the SMS link opens the phone's own messaging app with the number and the message filled in", () => {
+  assert.equal(smsLink('012 345 678', 'Hi Dara: 2 parcels & more'), 'sms:+85512345678?&body=Hi%20Dara%3A%202%20parcels%20%26%20more');
 });

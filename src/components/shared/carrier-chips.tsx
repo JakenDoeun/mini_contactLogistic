@@ -2,13 +2,15 @@ import { Hand, Send } from 'lucide-react';
 import { CARRIER_LABEL, carrierCounts, type Carrier, type SimInfo } from '@/lib/carriers';
 import { cn } from '@/lib/utils';
 
-// A coloured initial per carrier, not the carriers' own logos (their trademarks). Dark shades: white text stays readable.
-const BADGE: Record<Carrier | 'unknown', [string, string]> = {
-  cellcard: ['C', 'bg-orange-700'],
-  smart: ['S', 'bg-green-700'],
-  metfone: ['M', 'bg-red-700'],
-  seatel: ['Se', 'bg-sky-700'],
-  unknown: ['?', 'bg-zinc-500'],
+// Each carrier's brand colour (from its website, 2026-10-23: Cellcard #ff7900, Smart #009639, Metfone #db1a21; Seatel's
+// site did not answer, so a neutral blue) as the card's top bar, and the name in a darker shade of it on a light tint
+// (5:1 contrast or more). No logos: they are the carriers' trademarks.
+const COLOUR: Record<Carrier | 'unknown', { bar: string; text: string; tint: string }> = {
+  cellcard: { bar: '#ff7900', text: '#a84f00', tint: '#fff0e0' },
+  smart: { bar: '#009639', text: '#006b29', tint: '#e3f4e9' },
+  metfone: { bar: '#db1a21', text: '#b0151b', tint: '#fce8e9' },
+  seatel: { bar: '#0284c7', text: '#075985', tint: '#e0f2fe' },
+  unknown: { bar: '#a1a1aa', text: '#52525b', tint: '#f4f4f5' },
 };
 
 /** One card per carrier: who, how many customers, and whether the gateway phone texts them or staff contact them by hand. */
@@ -18,13 +20,14 @@ export function CarrierChips({ items, sims, className }: { items: { phone: strin
   return (
     <ul aria-label="Customers by carrier" className={cn('grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2', className)}>
       {rows.map((r) => {
-        const [initial, bg] = BADGE[r.carrier ?? 'unknown'];
+        const c = COLOUR[r.carrier ?? 'unknown'];
         return (
-          <li key={r.carrier ?? 'unknown'} className="flex flex-col gap-1.5 rounded-md border bg-card px-3 py-2.5">
-            <span className="flex items-center gap-2 text-sm">
-              <span aria-hidden className={cn('grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white', bg)}>
-                {initial}
-              </span>
+          <li
+            key={r.carrier ?? 'unknown'}
+            className="flex flex-col items-start gap-1.5 rounded-md border border-t-4 bg-card px-3 py-2.5"
+            style={{ borderTopColor: c.bar }}
+          >
+            <span className="rounded px-1.5 py-0.5 text-sm font-semibold" style={{ color: c.text, backgroundColor: c.tint }}>
               {r.carrier ? CARRIER_LABEL[r.carrier] : 'Unknown'}
               {!r.carrier && <span className="sr-only"> prefix</span>}
             </span>

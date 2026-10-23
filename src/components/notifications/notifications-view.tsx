@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ChevronRight, CircleCheck, MessageSquare, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Square } from 'lucide-react';
+import { ArrowRight, ChevronRight, CircleCheck, MessageSquare, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Smartphone, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
@@ -42,6 +42,7 @@ const CHANNEL: Record<Channel, { label: string; icon: typeof Send }> = {
   sms: { label: 'SMS', icon: Send },
   call: { label: 'Call', icon: Phone },
   telegram: { label: 'Telegram', icon: MessageSquare },
+  other: { label: 'SMS from another phone', icon: Smartphone },
 };
 const OUTCOME = { answered: 'Reached customer', 'no-answer': 'No answer', messaged: 'Sent on Telegram' };
 
@@ -906,7 +907,7 @@ function History({
 // Telegram outcomes already name their channel; a call needs it said.
 function channelText(e: ContactEvent) {
   if (e.channel === 'sms') return e.parcelCodes.length > 1 ? `Combined SMS · ${e.parcelCodes.length} parcels` : 'SMS';
-  if (!e.outcome) return CHANNEL[e.channel].label;
+  if (!e.outcome || e.channel === 'other') return CHANNEL[e.channel].label;
   return e.channel === 'call' ? `Call · ${OUTCOME[e.outcome]}` : OUTCOME[e.outcome];
 }
 

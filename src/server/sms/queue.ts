@@ -3,6 +3,7 @@
 // entries, and a call that reached the customer stops the SMS for those parcels (owner, 2026-10-20). Staff save here;
 // the worker (worker.ts) hands messages to the phone one at a time.
 import crypto from 'node:crypto';
+import { carrierLabel, carrierOf } from '../../lib/carriers.ts';
 import { isValidPhone, normalizePhone, type Channel, type ContactEvent, type Outcome, type SmsStatus } from '../../lib/parcel-logic.ts';
 import { writeAudit } from '../db/audit.ts';
 import type { Db } from '../db/connection.ts';
@@ -28,6 +29,15 @@ const held = () => refuse('restore_hold', 'Sending is on hold after a restore. C
 
 // Saved by the worker while a waiting message cannot reach the gateway phone, so the pages can say why nothing goes out.
 export const PHONE_AWAY = 'sms.phone_away';
+// Saved by the worker while a SIM that messages wait for is not in the phone (Phase 12).
+export const SIM_MISSING = 'sms.sim_missing';
+// Saved by the worker when one SIM failed twice in a row and it paused the run (Phase 12); cleared on Resume.
+export const SIM_PAUSE = 'sms.sim_pause';
+
+/** The SIM slot for a customer's number, or null when their carrier has no confirmed SIM in the phone (Phase 12). */
+export type Route = (phone: string) => number | null;
+const noSim = (phone: string) =>
+  refuse('no_sim', `No ${carrierLabel(carrierOf(phone))} SIM is set up in the gateway phone right now. Contact this customer by hand.`);
 
 /** Whether a gateway phone is set up, and since when it has not answered (null when it answers). */
 export function gatewayState(db: Db, dataDir: string) {
@@ -112,7 +122,7 @@ function lineParcels(db: Db, phone: string, parcelIds: number[]): { ok: true; ro
   return { ok: true, rows: found };
 }
 
-function insertMessage(db: Db, rows: ParcelRow[], text: string, reason: 'initial' | 'resend', batchId: number | null, userId: number | null, at: string) {
+function insertMessage(db: Db, rows: ParcelRow[], text: string, reason: 'initial' | 'resend', batchId: number | null, userId: number | null, at: string, sim: number | null = null) {
   const n = db
     .prepare(
       `INSERT INTO notifications (phone_normalized, arrival_date, message_text, reason, batch_id, created_by, created_at)
@@ -121,13 +131,19 @@ function insertMessage(db: Db, rows: ParcelRow[], text: string, reason: 'initial
     .get(rows[0].phone_normalized, rows[0].arrival_date, text, reason, batchId, userId, at) as { id: number };
   const link = db.prepare('INSERT INTO notification_parcels (notification_id, parcel_id) VALUES (?, ?)');
   for (const r of rows) link.run(n.id, r.id);
-  const attemptId = insertAttempt(db, n.id, 1, at);
+  const attemptId = insertAttempt(db, n.id, 1, at, sim);
   return { notificationId: n.id, attemptId };
 }
 
-function insertAttempt(db: Db, notificationId: number, attemptNo: number, at: string) {
+function insertAttempt(db: Db, notificationId: number, attemptNo: number, at: string, sim: number | null = null) {
   const id = crypto.randomUUID(); // also the message ID on the phone, so a repeated hand-over is refused there
-  db.prepare(`INSERT INTO sms_attempts (id, notification_id, attempt_no, state, queued_at) VALUES (?, ?, ?, 'queued', ?)`).run(id, notificationId, attemptNo, at);
+  db.prepare(`INSERT INTO sms_attempts (id, notification_id, attempt_no, state, queued_at, sim_number) VALUES (?, ?, ?, 'queued', ?, ?)`).run(
+    id,
+    notificationId,
+    attemptNo,
+    at,
+    sim,
+  );
   return id;
 }
 
@@ -147,10 +163,15 @@ export interface QueueInput {
   retryOf?: number;
 }
 
-/** Saves one SMS for a phone line, checked inside one BEGIN IMMEDIATE transaction against the database as it is now. */
-export function queueMessage(db: Db, input: QueueInput, userId: number | null, at = nowIso()) {
+/**
+ * Saves one SMS for a phone line, checked inside one BEGIN IMMEDIATE transaction against the database as it is now.
+ * With `route`, the SMS goes from its carrier's SIM, and a carrier with no SIM is refused (Phase 12).
+ */
+export function queueMessage(db: Db, input: QueueInput, userId: number | null, at = nowIso(), route?: Route) {
   const text = cleanText(input.text);
   if (typeof text !== 'string') return text;
+  const sim = route ? route(input.phone) : null;
+  if (route && sim === null && isValidPhone(input.phone)) return noSim(input.phone);
   return db
     .transaction(() => {
       if (restoreHold(db)) return held();
@@ -175,9 +196,9 @@ export function queueMessage(db: Db, input: QueueInput, userId: number | null, a
           .map((r) => r.parcel_id)
           .join(',');
         const same = prev.message_text === text && linked === line.rows.map((r) => r.id).sort((a, b) => a - b).join(',');
-        if (same) saved = { notificationId: prev.id, attemptId: insertAttempt(db, prev.id, last.attempt_no + 1, at) };
+        if (same) saved = { notificationId: prev.id, attemptId: insertAttempt(db, prev.id, last.attempt_no + 1, at, sim) };
       }
-      saved ??= insertMessage(db, line.rows, text, input.again || input.retryOf !== undefined ? 'resend' : 'initial', null, userId, at);
+      saved ??= insertMessage(db, line.rows, text, input.again || input.retryOf !== undefined ? 'resend' : 'initial', null, userId, at, sim);
       writeAudit(db, {
         action: 'notification.queued', entity: 'notification', entityIds: [saved.notificationId], outcome: 'ok', userId, at,
         detail: { count: line.rows.length, source: input.retryOf !== undefined ? 'retry' : input.again ? 'again' : 'single' },
@@ -197,13 +218,15 @@ export interface NotifyItem {
  * "Notify today's customers", or one earlier day's customers: one batch for one arrival day, never mixed. Each item is
  * one SMS for one phone line, re-checked here; a line whose parcels were messaged, reached or moved meanwhile is
  * skipped, never sent twice. An earlier day needs staff to confirm they checked those customers still need it (owner,
- * 2026-10-20). The same request key a second time (a double click, a retried request) creates nothing.
+ * 2026-10-20). The same request key a second time (a double click, a retried request) creates nothing. With `route`,
+ * each SMS goes from its carrier's SIM, and a line whose carrier has no SIM is left for staff to contact by hand.
  */
 export function notifyDay(
   db: Db,
   input: { requestKey: string; day: string; items: NotifyItem[]; checked?: boolean },
   userId: number | null,
   now = new Date(),
+  route?: Route,
 ) {
   const { requestKey, day, items } = input;
   if (!/^[0-9a-f-]{36}$/.test(requestKey)) return refuse('invalid_request', 'The request had no key. Reload the page.');
@@ -217,15 +240,21 @@ export function notifyDay(
   return db
     .transaction(() => {
       const existing = db.prepare('SELECT id FROM send_batches WHERE request_key = ?').get(requestKey) as { id: number } | undefined;
-      if (existing) return { ok: true as const, batchId: existing.id, queued: 0, skipped: 0, repeated: true };
+      if (existing) return { ok: true as const, batchId: existing.id, queued: 0, skipped: 0, byHand: 0, repeated: true };
       if (restoreHold(db)) return held();
       if (db.prepare(`SELECT 1 FROM send_batches WHERE status IN ('running', 'paused')`).get()) {
         return refuse('batch_running', 'Another batch is still sending or paused. Let it finish or stop it first.');
       }
 
-      const accepted: { rows: ParcelRow[]; text: string }[] = [];
+      const accepted: { rows: ParcelRow[]; text: string; sim: number | null }[] = [];
       let skipped = 0;
+      let byHand = 0;
       for (const item of items) {
+        const sim = route ? route(item.phone) : null;
+        if (route && sim === null) {
+          byHand++;
+          continue;
+        }
         const text = cleanText(item.text);
         const line = typeof text === 'string' ? lineParcels(db, item.phone, item.parcelIds) : text;
         const usable =
@@ -237,8 +266,11 @@ export function notifyDay(
             return !s.busy && !s.reached && !(s.latest && MESSAGED.includes(s.latest));
           }) &&
           !accepted.some((a) => a.rows[0].phone_normalized === line.rows[0].phone_normalized);
-        if (usable) accepted.push({ rows: line.rows, text });
+        if (usable) accepted.push({ rows: line.rows, text, sim });
         else skipped++;
+      }
+      if (accepted.length === 0 && byHand > 0 && skipped === 0) {
+        return refuse('no_sim', 'None of these customers has a carrier with a SIM set up in the gateway phone. Contact them by hand.');
       }
       if (accepted.length === 0) return refuse('nothing_to_send', 'Every customer on the list was messaged or reached already.');
 
@@ -249,12 +281,12 @@ export function notifyDay(
            VALUES (?, ?, ?, ?, 'running', ?, ?) RETURNING id`,
         )
         .get(requestKey, day, accepted.length, parcels, userId, at) as { id: number };
-      for (const a of accepted) insertMessage(db, a.rows, a.text, 'initial', batch.id, userId, at);
+      for (const a of accepted) insertMessage(db, a.rows, a.text, 'initial', batch.id, userId, at, a.sim);
       writeAudit(db, {
         action: 'send_batch.started', entity: 'send_batch', entityIds: [batch.id], outcome: 'ok', userId, at,
-        detail: { counts: { messages: accepted.length, parcels, skipped }, arrival_dates: [day] },
+        detail: { counts: { messages: accepted.length, parcels, skipped, by_hand: byHand }, arrival_dates: [day] },
       });
-      return { ok: true as const, batchId: batch.id, queued: accepted.length, skipped, repeated: false };
+      return { ok: true as const, batchId: batch.id, queued: accepted.length, skipped, byHand, repeated: false };
     })
     .immediate();
 }
@@ -268,6 +300,7 @@ export function controlBatch(db: Db, batchId: number, action: 'pause' | 'resume'
       if (batch.status === 'stopped' || batch.status === 'done') return refuse('finished', 'This batch has already finished.');
       const next = action === 'pause' ? 'paused' : action === 'resume' ? 'running' : 'stopped';
       db.prepare('UPDATE send_batches SET status = ? WHERE id = ?').run(next, batchId);
+      if (next !== 'paused') db.prepare('DELETE FROM settings WHERE key = ?').run(SIM_PAUSE); // staff checked the SIM
       if (next === 'stopped') {
         db.prepare(
           `UPDATE sms_attempts SET state = 'cancelled', error_code = 'stopped', failed_at = ?
@@ -283,9 +316,11 @@ export function controlBatch(db: Db, batchId: number, action: 'pause' | 'resume'
 const OUTCOME_IN: Record<Outcome, string> = { answered: 'reached', 'no-answer': 'no_answer', messaged: 'messaged' };
 const OUTCOME_OUT: Record<string, Outcome> = { reached: 'answered', no_answer: 'no-answer', messaged: 'messaged' };
 
-/** A call or Telegram message staff made outside the app, for every parcel on the line. */
+/** A call, Telegram message or SMS from another phone that staff made outside the app, for every parcel on the line. */
 export function recordContact(db: Db, input: { phone: string; parcelIds: number[]; channel: unknown; outcome: unknown }, userId: number | null, at = nowIso()) {
-  const valid = (input.channel === 'call' && (input.outcome === 'answered' || input.outcome === 'no-answer')) || (input.channel === 'telegram' && input.outcome === 'messaged');
+  const valid =
+    (input.channel === 'call' && (input.outcome === 'answered' || input.outcome === 'no-answer')) ||
+    ((input.channel === 'telegram' || input.channel === 'other') && input.outcome === 'messaged');
   if (!valid) return refuse('invalid_request', 'Choose what happened.');
   return db
     .transaction(() => {
@@ -348,12 +383,22 @@ export function listContactEvents(db: Db): ContactEvent[] {
   const codesOf = (sql: string, id: number) => (db.prepare(sql).all(id) as { code: string }[]).map((r) => r.code);
   const messages = db
     .prepare(
-      `SELECT n.id, n.phone_normalized AS phone, n.message_text, a.state, a.gateway_state, a.error_code, a.error_detail, a.queued_at
+      `SELECT n.id, n.phone_normalized AS phone, n.message_text, a.state, a.gateway_state, a.error_code, a.error_detail, a.queued_at, a.sim_number
        FROM notifications n
        JOIN sms_attempts a ON a.notification_id = n.id
         AND a.attempt_no = (SELECT max(attempt_no) FROM sms_attempts WHERE notification_id = n.id)`,
     )
-    .all() as { id: number; phone: string; message_text: string; state: AttemptState; gateway_state: string | null; error_code: string | null; error_detail: string | null; queued_at: string }[];
+    .all() as {
+    id: number;
+    phone: string;
+    message_text: string;
+    state: AttemptState;
+    gateway_state: string | null;
+    error_code: string | null;
+    error_detail: string | null;
+    queued_at: string;
+    sim_number: number | null;
+  }[];
   const contacts = db.prepare('SELECT id, channel, outcome, phone_normalized AS phone, created_at FROM contact_attempts WHERE outcome IN (?, ?, ?)').all('reached', 'no_answer', 'messaged') as {
     id: number;
     channel: Channel;
@@ -373,6 +418,7 @@ export function listContactEvents(db: Db): ContactEvent[] {
       smsStatus: STATUS[m.state],
       message: m.message_text,
       result: resultText(m),
+      sim: m.sim_number,
     })),
     ...contacts.map((c) => ({
       id: `contact-${c.id}`,

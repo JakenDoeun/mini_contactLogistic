@@ -29,6 +29,13 @@
       "when": 1792173366828,
       "tag": "0003_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792727175179,
+      "tag": "0004_dual_sim",
+      "breakpoints": true
     }
   ]
 }

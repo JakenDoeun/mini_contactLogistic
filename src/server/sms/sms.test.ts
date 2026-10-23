@@ -6,8 +6,22 @@ import type { Db } from '../db/connection.ts';
 import { insertNewParcels } from '../db/parcels.ts';
 import { createTestDb } from '../db/test-db.ts';
 import { cambodiaDate } from '../db/values.ts';
-import { GATEWAY_FILE, GatewayError, writeGatewayConfig, type MessageState, type SmsGate } from '../gateway/smsgate.ts';
-import { controlBatch, gatewayState, holdAfterRestore, listContactEvents, notifyDay, queueMessage, recordContact, releaseRestoreHold, restoreHold } from './queue.ts';
+import { readSetting } from '../db/settings.ts';
+import { confirmSim, routeFor, scanSims } from '../gateway/sims.ts';
+import { GATEWAY_FILE, GatewayError, writeGatewayConfig, type MessageState, type SimCard, type SmsGate } from '../gateway/smsgate.ts';
+import {
+  controlBatch,
+  gatewayState,
+  holdAfterRestore,
+  listContactEvents,
+  notifyDay,
+  queueMessage,
+  recordContact,
+  releaseRestoreHold,
+  restoreHold,
+  SIM_MISSING,
+  SIM_PAUSE,
+} from './queue.ts';
 import { randomGap, smsWorker } from './worker.ts';
 
 const TODAY = cambodiaDate();
@@ -41,18 +55,25 @@ function fakePhone() {
   const messages = new Map<string, MessageState>();
   const phone = {
     sends: [] as string[],
+    sendSims: [] as (number | null | undefined)[],
+    simCards: [] as SimCard[],
     sendWith: 'accept' as 'accept' | 'timeout' | 'timeout-lost' | 'unreachable' | 'auth',
     lookupFails: false,
     messages,
     gate: {
-      async send(m: { id: string }) {
+      async send(m: { id: string; simNumber?: number | null }) {
         phone.sends.push(m.id);
+        phone.sendSims.push(m.simNumber);
         if (phone.sendWith === 'unreachable') throw new GatewayError('unreachable', 'away');
         if (phone.sendWith === 'auth') throw new GatewayError('auth', 'bad password');
         const duplicate = messages.has(m.id);
         if (phone.sendWith !== 'timeout-lost' && !duplicate) messages.set(m.id, { id: m.id, state: 'Pending', states: {}, error: null });
         if (phone.sendWith !== 'accept') return { outcome: 'unknown' as const, reason: 'timeout' };
         return { outcome: 'accepted' as const, duplicate };
+      },
+      async sims() {
+        if (phone.lookupFails) throw new GatewayError('unreachable', 'away');
+        return phone.simCards;
       },
       async lookup(id: string) {
         if (phone.lookupFails) throw new GatewayError('unreachable', 'away');
@@ -361,4 +382,109 @@ test('a random gap between two SMS (25 to 80 seconds unless the admin changes it
   assert.ok(gaps.every((g) => g >= 25_000 && g <= 80_000));
   assert.ok(Math.max(...gaps) - Math.min(...gaps) > 30_000); // spread out, not one fixed pause
   assert.ok(Array.from({ length: 100 }, () => randomGap({ from: 15, to: 15 })).every((g) => g === 15_000));
+});
+
+// ---- Phase 12: one dual-SIM gateway phone, each SMS from its customer's carrier ----------------------------------
+
+const CELLCARD_SMART: SimCard[] = [
+  { simNumber: 1, carrierName: 'Cellcard', phoneNumber: null },
+  { simNumber: 2, carrierName: 'SMART', phoneNumber: null },
+];
+const simOf = (db: Db, id: string) => db.prepare('SELECT sim_number FROM sms_attempts WHERE id = ?').pluck().get(id);
+
+test("Phase 12: each SMS goes from its carrier's SIM; a carrier with no confirmed SIM is left to contact by hand", async (t) => {
+  const { db, dir, a1, a2, b1 } = await setup(t);
+  const phone = fakePhone();
+  phone.simCards = CELLCARD_SMART;
+  const make = () => phone.gate;
+  const scanned = await scanSims(db, dir, make);
+  assert.deepEqual(scanned.sims.map((s) => [s.simNumber, s.suggested, s.carrier]), [[1, 'cellcard', null], [2, 'smart', null]]);
+  assert.equal(routeFor(scanned)('012 345 678'), null, 'nothing is routed before a staff member confirms the SIM');
+
+  assert.ok(confirmSim(db, null, { simNumber: 1, carrier: 'cellcard' }).ok);
+  const route = routeFor((await scanSims(db, dir, make)));
+  assert.equal(route('012 345 678'), 1);
+  assert.equal(route('097 880 1123'), null, 'Metfone: no Metfone SIM in the phone');
+
+  const onlyByHand = notifyDay(db, { requestKey: crypto.randomUUID(), day: TODAY, items: [{ phone: '097 880 1123', parcelIds: [b1], text: 'Hi' }] }, null, new Date(), route);
+  assert.equal(onlyByHand.ok ? '' : onlyByHand.error, 'no_sim');
+  const r = notifyDay(db, { requestKey: crypto.randomUUID(), day: TODAY, items: [
+    { phone: '012 345 678', parcelIds: [a1, a2], text: 'Hi Dara' },
+    { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' },
+  ] }, null, new Date(), route);
+  assert.ok(r.ok);
+  assert.deepEqual([r.queued, r.byHand], [1, 1]);
+  assert.equal(listContactEvents(db).filter((e) => e.channel === 'sms').length, 1, 'the Metfone customer gets no SMS record');
+
+  const single = queueMessage(db, { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' }, null, undefined, route);
+  assert.equal(single.ok ? '' : single.error, 'no_sim');
+
+  await smsWorker(db, dir, silent, { gap: () => 0, make }).tick();
+  assert.deepEqual(phone.sendSims, [1]);
+  assert.equal(simOf(db, phone.sends[0]), 1);
+  assert.equal(listContactEvents(db).find((e) => e.channel === 'sms')?.sim, 1);
+});
+
+test('Phase 12: a SIM taken out or swapped makes its SMS wait; they go once the same SIM is back', async (t) => {
+  const { db, dir, a1, a2 } = await setup(t);
+  const phone = fakePhone();
+  phone.simCards = CELLCARD_SMART;
+  const make = () => phone.gate;
+  await scanSims(db, dir, make);
+  confirmSim(db, null, { simNumber: 1, carrier: 'cellcard' });
+  const route = routeFor(await scanSims(db, dir, make));
+  assert.ok(queueMessage(db, { phone: '012 345 678', parcelIds: [a1, a2], text: 'Hi Dara' }, null, undefined, route).ok);
+  const worker = smsWorker(db, dir, silent, { gap: () => 0, make });
+
+  phone.simCards = [CELLCARD_SMART[1]]; // SIM 1 taken out
+  await worker.tick();
+  assert.equal(phone.sends.length, 0);
+  assert.deepEqual((readSetting(db, SIM_MISSING) as { sims: number[] }).sims, [1]);
+
+  phone.simCards = [{ simNumber: 1, carrierName: 'Metfone', phoneNumber: null }, CELLCARD_SMART[1]]; // another carrier's SIM
+  await worker.tick();
+  assert.equal(phone.sends.length, 0, 'a swapped SIM is not used until someone confirms it');
+
+  phone.simCards = CELLCARD_SMART;
+  await worker.tick();
+  assert.deepEqual(phone.sendSims, [1]);
+  assert.equal(readSetting(db, SIM_MISSING), undefined);
+});
+
+test('Phase 12: two failures in a row on one SIM pause the run; Resume carries on and clears the note', async (t) => {
+  const { db, dir } = await setup(t);
+  const phone = fakePhone();
+  phone.simCards = CELLCARD_SMART;
+  const make = () => phone.gate;
+  await scanSims(db, dir, make);
+  confirmSim(db, null, { simNumber: 1, carrier: 'cellcard' });
+  const route = routeFor(await scanSims(db, dir, make));
+  const importId = db.prepare('SELECT id FROM imports').pluck().get() as number;
+  const { inserted } = insertNewParcels(db, importId, ['011 111 111', '011 222 222', '011 333 333'].map((p, i) => ({ trackingCode: `C${i}`, recipientName: 'X', phoneRaw: p, arrivalDate: TODAY })));
+  const r = notifyDay(db, { requestKey: crypto.randomUUID(), day: TODAY, items: inserted.map((id, i) => ({ phone: ['011 111 111', '011 222 222', '011 333 333'][i], parcelIds: [id], text: 'Hi' })) }, null, new Date(), route);
+  assert.ok(r.ok);
+  const worker = smsWorker(db, dir, silent, { gap: () => 0, make });
+
+  await worker.tick();
+  phone.set(phone.sends[0], 'Failed', 'RESULT_ERROR_GENERIC_FAILURE');
+  await worker.tick(); // the first failure is seen, the second SMS goes
+  assert.equal(phone.sends.length, 2);
+  phone.set(phone.sends[1], 'Failed', 'RESULT_ERROR_GENERIC_FAILURE');
+  await worker.tick(); // the second failure pauses the run before the third SMS
+  assert.equal(phone.sends.length, 2);
+  assert.equal(db.prepare('SELECT status FROM send_batches WHERE id = ?').pluck().get(r.ok && r.batchId), 'paused');
+  assert.equal((readSetting(db, SIM_PAUSE) as { sim: number }).sim, 1);
+
+  assert.ok(controlBatch(db, r.ok ? r.batchId : 0, 'resume', null).ok);
+  assert.equal(readSetting(db, SIM_PAUSE), undefined);
+  await worker.tick();
+  assert.equal(phone.sends.length, 3);
+});
+
+test('Phase 12: an SMS sent from another phone is recorded in the history', async (t) => {
+  const { db, b1 } = await setup(t);
+  assert.ok(recordContact(db, { phone: '097 880 1123', parcelIds: [b1], channel: 'other', outcome: 'messaged' }, null).ok);
+  assert.equal(recordContact(db, { phone: '097 880 1123', parcelIds: [b1], channel: 'other', outcome: 'answered' }, null).ok, false);
+  const e = listContactEvents(db).find((x) => x.channel === 'other');
+  assert.deepEqual([e?.outcome, e?.parcelCodes], ['messaged', ['B1']]);
 });

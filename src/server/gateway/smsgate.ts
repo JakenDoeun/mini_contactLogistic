@@ -64,6 +64,12 @@ export interface MessageState {
   error: string | null;
 }
 
+export interface SimCard {
+  simNumber: number;
+  carrierName: string | null;
+  phoneNumber: string | null;
+}
+
 export type Problem = 'unreachable' | 'timeout' | 'auth' | 'refused';
 export class GatewayError extends Error {
   readonly problem: Problem;
@@ -128,15 +134,29 @@ export function smsGate(config: GatewayConfig, fetchImpl: typeof fetch = fetch) 
       await expectOk(await call('/messages?limit=1'));
     },
 
-    /** Hands one SMS to the phone under our own ID. */
-    async send(message: { id: string; phone: string; text: string }): Promise<SendResult> {
+    /** The phone's active SIMs, as SMSGate reports them (carrier name and number need its Phone permission). */
+    async sims(): Promise<SimCard[]> {
+      const devices = (await (await expectOk(await call('/device'))).json()) as { simCards?: Partial<SimCard>[] }[];
+      return (devices[0]?.simCards ?? [])
+        .filter((c) => Number.isInteger(c.simNumber) && c.simNumber! >= 1 && c.simNumber! <= 8)
+        .map((c) => ({ simNumber: c.simNumber!, carrierName: c.carrierName?.trim() || null, phoneNumber: c.phoneNumber?.trim() || null }));
+    },
+
+    /** Hands one SMS to the phone under our own ID, from the given SIM slot (1-based) or the phone's default. */
+    async send(message: { id: string; phone: string; text: string; simNumber?: number | null }): Promise<SendResult> {
       const to = toInternational(message.phone);
       if (!to) throw new GatewayError('refused', 'Not a full Cambodian phone number.');
       let res: Response;
       try {
         res = await call('/messages', {
           method: 'POST',
-          body: JSON.stringify({ id: message.id, phoneNumbers: [to], textMessage: { text: message.text }, withDeliveryReport: true }),
+          body: JSON.stringify({
+            id: message.id,
+            phoneNumbers: [to],
+            textMessage: { text: message.text },
+            withDeliveryReport: true,
+            ...(message.simNumber ? { simNumber: message.simNumber } : {}),
+          }),
         });
       } catch (e) {
         if (e instanceof GatewayError && e.problem === 'timeout') return { outcome: 'unknown', reason: e.message };

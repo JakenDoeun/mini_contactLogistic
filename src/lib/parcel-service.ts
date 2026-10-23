@@ -70,7 +70,7 @@ export async function updatePhone(parcel: Parcel, phone: string) {
 const idsOf = (codes: string[]) => codes.map((c) => data?.parcels.find((p) => p.code === c)?.id ?? 0);
 
 /** Records a call or Telegram message made outside the app. Throws with a sentence staff can act on. */
-export async function recordOutcome(phone: string, codes: string[], channel: 'call' | 'telegram', outcome: Outcome) {
+export async function recordOutcome(phone: string, codes: string[], channel: 'call' | 'telegram' | 'other', outcome: Outcome) {
   await postContact({ phone, parcelIds: idsOf(codes), channel, outcome });
   await reloadParcels();
 }

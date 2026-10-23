@@ -119,6 +119,6 @@ export const postRestoreCheck = (seen: { phone: string; parcelIds: number[] }[])
   call<{ ok: true }>('/api/sms/restore-check', { method: 'POST', ...send({ seen }) });
 export const postBatchAction = (id: number, action: 'pause' | 'resume' | 'stop') =>
   call<{ status: SmsBatch['status'] }>(`/api/sms/batch/${id}`, { method: 'POST', ...send({ action }) });
-export const postContact = (body: { phone: string; parcelIds: number[]; channel: 'call' | 'telegram'; outcome: string }) =>
+export const postContact = (body: { phone: string; parcelIds: number[]; channel: 'call' | 'telegram' | 'other'; outcome: string }) =>
   call<{ id: number }>('/api/contacts', { method: 'POST', ...send(body) });
 export const saveParcelPhone = (id: number, phone: string) => call<{ ok: true }>(`/api/parcels/${id}/phone`, { method: 'PUT', ...send({ phone }) });

@@ -10,7 +10,9 @@ import type { Db } from '../db/connection.ts';
 import { GatewayError, readGatewayConfig, smsGate, type GatewayState, type MessageState, type SmsGate } from '../gateway/smsgate.ts';
 import { readSetting, writeSetting } from '../db/settings.ts';
 import { smsGap } from '../settings/app-settings.ts';
-import { PHONE_AWAY, restoreHold, type AttemptState } from './queue.ts';
+import { carrierOf } from '../../lib/carriers.ts';
+import { scanSims } from '../gateway/sims.ts';
+import { PHONE_AWAY, restoreHold, SIM_MISSING, SIM_PAUSE, type AttemptState } from './queue.ts';
 
 const LEASE_MS = 60_000;
 // A phone that says Processed this long without a result is not going to say more (plan, status mapping).
@@ -29,6 +31,7 @@ interface Attempt {
   submitted_at: string | null;
   sent_at: string | null;
   last_checked_at: string | null;
+  sim_number: number | null;
 }
 
 export function smsWorker(
@@ -86,6 +89,35 @@ export function smsWorker(
       Object.assign(fields, { state: 'unconfirmed', error_code: 'no_result' });
     }
     update(a.id, fields);
+    if (fields.state === 'failed') pauseOnFailStreak(a.sim_number);
+  }
+
+  /**
+   * Two failures in a row from one SIM (a call on the phone, no credit, a blocked SIM) pause the run until staff check
+   * the phone and press Resume (owner, 2026-10-23). Nothing is resent on its own.
+   */
+  function pauseOnFailStreak(sim: number | null) {
+    if (sim === null) return;
+    const last = db
+      .prepare(
+        `SELECT state FROM sms_attempts WHERE sim_number = ? AND state IN ('sent', 'delivered', 'failed')
+         ORDER BY coalesce(failed_at, sent_at, submitted_at) DESC LIMIT 2`,
+      )
+      .all(sim) as { state: AttemptState }[];
+    if (last.length < 2 || last.some((r) => r.state !== 'failed')) return;
+    const paused = db.prepare(`UPDATE send_batches SET status = 'paused' WHERE status = 'running'`).run();
+    if (paused.changes) {
+      writeSetting(db, SIM_PAUSE, { sim, at: iso() }, null, iso());
+      log(`SMS: SIM ${sim} failed twice in a row; the run is paused until staff resume it`);
+    }
+  }
+
+  /** Waiting messages whose SIM is missing, saved so the pages can say which SIM; written only on a change. */
+  function simMissing(sims: number[]) {
+    const now_ = readSetting(db, SIM_MISSING) as { sims: number[] } | undefined;
+    if (JSON.stringify(now_?.sims ?? []) === JSON.stringify(sims)) return;
+    if (sims.length) writeSetting(db, SIM_MISSING, { sims, since: iso() }, null, iso());
+    else db.prepare('DELETE FROM settings WHERE key = ?').run(SIM_MISSING);
   }
 
   function finishBatches() {
@@ -145,17 +177,38 @@ export function smsWorker(
     else db.prepare('DELETE FROM settings WHERE key = ?').run(PHONE_AWAY);
   }
 
+  /**
+   * The oldest waiting message whose SIM is in the phone now, still confirmed for its customer's carrier (Phase 12).
+   * Messages for a missing SIM wait; the others go on. Messages from before Phase 12 have no SIM and go as before.
+   */
+  async function nextMessage() {
+    const waiting = db
+      .prepare(
+        `SELECT a.*, n.phone_normalized AS phone FROM sms_attempts a JOIN notifications n ON n.id = a.notification_id
+         LEFT JOIN send_batches b ON b.id = n.batch_id
+         WHERE a.state = 'queued' AND (b.id IS NULL OR b.status = 'running')
+         ORDER BY a.queued_at, a.attempt_no`,
+      )
+      .all() as (Attempt & { phone: string })[];
+    if (!waiting.some((a) => a.sim_number !== null)) return waiting[0];
+    const scan = await scanSims(db, dataDir, make);
+    if (scan.problem) {
+      // The phone cannot say which SIMs it has, so nothing is handed over yet.
+      if (scan.problemKind === 'unreachable' || scan.problemKind === 'timeout') phoneAway(true);
+      else log(`SMS: the gateway phone's SIMs could not be read: ${scan.problem}`);
+      return undefined;
+    }
+    const ready = (a: Attempt & { phone: string }) =>
+      a.sim_number === null || scan.sims.some((s) => s.simNumber === a.sim_number && s.carrier !== null && s.carrier === carrierOf(a.phone));
+    simMissing([...new Set(waiting.filter((a) => !ready(a)).map((a) => a.sim_number!))].sort());
+    return waiting.find(ready);
+  }
+
   /** Hands the oldest waiting message to the phone, unless one is already being handed over. */
   async function sendNext(gate: SmsGate) {
     if (open(['submitting']).length || restoreHold(db)) return; // after a restore, nothing goes until staff check the phone
-    const next = db
-      .prepare(
-        `SELECT a.* FROM sms_attempts a JOIN notifications n ON n.id = a.notification_id
-         LEFT JOIN send_batches b ON b.id = n.batch_id
-         WHERE a.state = 'queued' AND (b.id IS NULL OR b.status = 'running')
-         ORDER BY a.queued_at, a.attempt_no LIMIT 1`,
-      )
-      .get() as Attempt | undefined;
+    if (nextSendAt !== null && now() < nextSendAt) return; // no need to ask the phone for its SIMs before the gap ends
+    const next = await nextMessage();
     if (!next) return;
     if (nextSendAt === null) {
       // After a restart the gap still counts from the last hand-over.
@@ -183,7 +236,7 @@ export function smsWorker(
     update(next.id, { state: 'submitting', submitted_at: null }); // saved before the phone hears of it
     let result: Awaited<ReturnType<SmsGate['send']>>;
     try {
-      result = await gate.send({ id: next.id, phone: n.phone_normalized, text: n.message_text });
+      result = await gate.send({ id: next.id, phone: n.phone_normalized, text: n.message_text, simNumber: next.sim_number });
       nextSendAt = now() + gap();
       phoneAway(false);
     } catch (e) {
@@ -198,6 +251,7 @@ export function smsWorker(
         log('SMS: the gateway refused its password; batches paused');
       } else {
         update(next.id, { state: 'failed', error_code: 'refused', error_detail: e.message.slice(0, 200), failed_at: iso() });
+        pauseOnFailStreak(next.sim_number);
       }
       return;
     }

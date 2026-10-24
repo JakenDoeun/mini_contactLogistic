@@ -1,11 +1,12 @@
 import { json, readJson, refuseCrossSite, withSession } from '@/server/auth/guard';
 import { backupStatus, saveBackup } from '@/server/db/backup';
 import { resolveDataDir } from '@/server/db/paths';
-import { retentionDays } from '@/server/db/retention';
+import { nextDeletion, retentionDays } from '@/server/db/retention';
 
-// Settings "Backups and data" (plan Revision 4): the last backup, whether backups are failing, the retention period.
+// Settings "Backups and data" (plan Revision 4): the last backup, whether backups are failing, the retention period, and
+// what the next deletion takes.
 export const GET = withSession((_req, user, db) =>
-  json({ ...backupStatus(resolveDataDir()), retentionDays: retentionDays(db), isAdmin: user.isAdmin }),
+  json({ ...backupStatus(resolveDataDir()), retentionDays: retentionDays(db), nextDeletion: nextDeletion(db), isAdmin: user.isAdmin }),
 );
 
 // The Save backup button: any signed-in staff member. No new file when nothing changed since the last backup.

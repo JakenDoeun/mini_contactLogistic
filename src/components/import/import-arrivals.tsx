@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import type { DaySummary as Summary } from '@/lib/import-logic';
 import { listImports, type ImportListItem } from '@/lib/import-api';
 import { cn } from '@/lib/utils';
+import { CarrierChips } from '@/components/shared/carrier-chips';
+import { arrivalDay, phoneKey } from '@/lib/parcel-logic';
+import { useParcelData } from '@/lib/parcel-service';
 import { DaySummary } from './day-summary';
 import { FolderMonitor } from './folder-monitor';
 import { ImportFlow, type FlowRequest } from './import-flow';
@@ -48,6 +51,7 @@ export function ImportArrivals() {
           {!historyError && (
             <>
               <DaySummary summary={history ? summarize(history) : null} />
+              <TodayByCarrier />
               {/* undefined while loading, null when there is nothing yet; the list is newest first. */}
               <LatestImport record={history ? (history[0] ?? null) : undefined} onView={view} />
             </>
@@ -73,6 +77,23 @@ export function ImportArrivals() {
         onChanged={loadHistory}
       />
     </>
+  );
+}
+
+/** Today's arrivals as customers per carrier, and how the gateway phone's SIMs tell each group (Phase 12). */
+function TodayByCarrier() {
+  const data = useParcelData();
+  if (!data) return null;
+  const today = arrivalDay(new Date().toISOString());
+  const phones = [...new Set(data.parcels.filter((p) => p.arrivalDate === today).map((p) => phoneKey(p.phone)).filter((k): k is string => k !== null))];
+  if (!phones.length) return null;
+  return (
+    <section aria-labelledby="carriers-heading">
+      <h2 id="carriers-heading" className="mb-2 text-base font-semibold">
+        Today&apos;s customers by carrier
+      </h2>
+      <CarrierChips items={phones.map((phone) => ({ phone }))} sims={data.gateway.sims} />
+    </section>
   );
 }
 

@@ -6,12 +6,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { createUser } from '../auth/accounts.ts';
 import { createTestDb } from '../db/test-db.ts';
-import { GATEWAY_FILE, gatewayConfigErrors, readGatewayConfig, smsGate, toInternational, writeGatewayConfig } from './smsgate.ts';
+import { GATEWAY_FILE, gatewayConfigErrors, readGatewayConfig, smsGate, toInternational, writeGatewayConfig, type SimCard } from './smsgate.ts';
+import { confirmSim, scanSims } from './sims.ts';
 import { gatewayStatus, lastTestSms, refreshTestSms, sendTestSms } from './status.ts';
 
 // A stand-in for SMSGate's Local Server with the behaviour recorded on the emulator (docs/smsgate-verification.md).
-function fakeGateway(opts: { clockAheadMs?: number; healthy?: boolean; hangSend?: boolean } = {}) {
-  const messages = new Map<string, { id: string; state: string; states: Record<string, string>; recipients: { phoneNumber: string }[] }>();
+function fakeGateway(opts: { clockAheadMs?: number; healthy?: boolean; hangSend?: boolean; simCards?: SimCard[] } = {}) {
+  const messages = new Map<string, { id: string; state: string; states: Record<string, string>; recipients: { phoneNumber: string }[]; simNumber?: number; text?: string }>();
   const settings = { messages: { log_lifetime_days: undefined as number | undefined } };
   const server = http.createServer(async (req, res) => {
     let body = '';
@@ -30,7 +31,7 @@ function fakeGateway(opts: { clockAheadMs?: number; healthy?: boolean; hangSend?
       const m = JSON.parse(body);
       if (messages.has(m.id)) return send(409, { message: 'Message with the same ID already exists' });
       const at = new Date().toISOString();
-      messages.set(m.id, { id: m.id, state: 'Delivered', states: { Pending: at, Sent: at, Delivered: at }, recipients: m.phoneNumbers.map((p: string) => ({ phoneNumber: p })) });
+      messages.set(m.id, { id: m.id, state: 'Delivered', states: { Pending: at, Sent: at, Delivered: at }, recipients: m.phoneNumbers.map((p: string) => ({ phoneNumber: p })), simNumber: m.simNumber, text: m.textMessage?.text });
       if (opts.hangSend) return; // the phone took it but never answered
       return send(202, messages.get(m.id));
     }
@@ -39,6 +40,7 @@ function fakeGateway(opts: { clockAheadMs?: number; healthy?: boolean; hangSend?
       const m = messages.get(decodeURIComponent(url.pathname.slice(10)));
       return m ? send(200, m) : send(404);
     }
+    if (url.pathname === '/device' && opts.simCards) return send(200, [{ id: 'd1', name: 'Pixel', simCards: opts.simCards.map((c) => ({ ...c, slotIndex: c.simNumber - 1, iccid: null })) }]);
     if (url.pathname === '/settings' && req.method === 'GET') return send(200, settings);
     if (url.pathname === '/settings' && req.method === 'PATCH') {
       settings.messages.log_lifetime_days = JSON.parse(body).messages.log_lifetime_days;
@@ -144,12 +146,44 @@ test('a test SMS keeps only the last digits, is audited without the number, and 
     assert.equal((await sendTestSms(db, dir, userId, '123')).ok, false, 'not a full number');
     const sent = await sendTestSms(db, dir, userId, '012 345 678');
     assert.ok(sent.ok);
-    assert.equal(sent.test.toEnding, '678');
+    assert.equal(sent.tests[0].toEnding, '678');
+    assert.equal(sent.tests[0].sim, null, 'a phone that lists no SIMs chooses the SIM itself');
     assert.doesNotMatch(JSON.stringify(lastTestSms(db)), /345/);
     const audit = db.prepare("SELECT outcome, detail FROM audit_log WHERE action = 'gateway.test_sent'").all() as { outcome: string; detail: string }[];
     assert.equal(audit.length, 1);
     assert.doesNotMatch(audit[0].detail, /345/);
-    assert.equal((await refreshTestSms(db, dir))!.state, 'Delivered');
+    assert.equal((await refreshTestSms(db, dir))[0].state, 'Delivered');
+  } finally {
+    gw.close();
+    cleanup();
+  }
+});
+
+test('Phase 12: a test SMS goes by carrier, from a chosen SIM, or one from each SIM, and names its SIM', async () => {
+  const { db, cleanup } = await createTestDb();
+  const dir = tempDir();
+  const gw = await fakeGateway({ simCards: [{ simNumber: 1, carrierName: 'Cellcard', phoneNumber: null }, { simNumber: 2, carrierName: 'SMART', phoneNumber: null }] });
+  const created = await createUser(db, 'admin.one', 'correct horse battery staple', 'cli');
+  assert.ok(created.ok);
+  try {
+    writeGatewayConfig(dir, { url: gw.url, username: 'sms', password: 'secret' });
+    const byCarrier = await sendTestSms(db, dir, created.userId, '012 345 678', 'auto');
+    assert.equal(byCarrier.ok ? '' : byCarrier.error, 'no_sim', 'nothing is confirmed yet');
+    await scanSims(db, dir);
+    confirmSim(db, created.userId, { simNumber: 2, carrier: 'smart' });
+    assert.equal((await sendTestSms(db, dir, created.userId, '012 345 678', 'auto')).ok, false, 'Cellcard has no confirmed SIM');
+    const smart = await sendTestSms(db, dir, created.userId, '010 345 678', 'auto');
+    assert.ok(smart.ok);
+    assert.deepEqual(smart.tests.map((x) => x.sim), [2]);
+    assert.equal(gw.messages.get(smart.tests[0].id)?.text, 'Campus Branch test from SIM 2 (Smart). No reply needed.');
+
+    const both = await sendTestSms(db, dir, created.userId, '012 345 678', 'both');
+    assert.ok(both.ok);
+    assert.deepEqual(both.tests.map((x) => gw.messages.get(x.id)?.simNumber), [1, 2]);
+    assert.equal(gw.messages.get(both.tests[0].id)?.text, 'Campus Branch test from SIM 1 (Cellcard). No reply needed.');
+    assert.deepEqual((await refreshTestSms(db, dir)).map((x) => x.state), ['Delivered', 'Delivered']);
+    const missing = await sendTestSms(db, dir, created.userId, '012 345 678', 3);
+    assert.equal(missing.ok ? '' : missing.error, 'sim_missing');
   } finally {
     gw.close();
     cleanup();

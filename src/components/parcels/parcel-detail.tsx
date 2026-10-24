@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Boxes, MessageSquare, Pencil, Phone, Plus, Send } from 'lucide-react';
+import { Boxes, MessageSquare, Pencil, Phone, Plus, Send, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -218,9 +218,9 @@ function PhoneField({ parcel }: { parcel: Parcel }) {
   );
 }
 
-const CHANNEL = { sms: Send, call: Phone, telegram: MessageSquare };
+const CHANNEL = { sms: Send, call: Phone, telegram: MessageSquare, other: Smartphone };
 const OUTCOME_LABEL = { answered: 'Reached customer', 'no-answer': 'No answer', messaged: 'Sent on Telegram' };
-const CHANNEL_LABEL = { call: 'Call: ', telegram: 'Telegram: ' };
+const CHANNEL_LABEL = { call: 'Call: ', telegram: 'Telegram: ', other: '' };
 
 function History({ events }: { events: ContactEvent[] }) {
   return (
@@ -242,7 +242,9 @@ function History({ events }: { events: ContactEvent[] }) {
                     <span className="font-medium">
                       {e.channel === 'sms'
                         ? smsScope(e.parcelCodes.length)
-                        : `${CHANNEL_LABEL[e.channel]}${OUTCOME_LABEL[e.outcome!]}`}
+                        : e.channel === 'other'
+                          ? 'SMS from another phone'
+                          : `${CHANNEL_LABEL[e.channel]}${OUTCOME_LABEL[e.outcome!]}`}
                     </span>
                     {e.smsStatus && <SmsBadge status={e.smsStatus} bare />}
                   </p>

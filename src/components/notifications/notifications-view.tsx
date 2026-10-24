@@ -1,18 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ChevronRight, CircleCheck, MessageSquare, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Square } from 'lucide-react';
+import { ArrowRight, Camera, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, MessageSquare, ScanBarcode, X, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Smartphone, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { CameraScanner } from '@/components/parcels/camera-scanner';
+import { DirectContact } from '@/components/parcels/contact-panel';
 import { ParcelDetail } from '@/components/parcels/parcel-detail';
 import { SmsBadge } from '@/components/parcels/parcel-status';
 import { batchLabel } from '@/components/parcels/phone-group';
+import { CARRIER_DOT } from '@/components/shared/carrier-chips';
+import { CarrierTable } from '@/components/shared/carrier-table';
 import { DateFilter } from '@/components/shared/date-filter';
-import { planNotify, workList, type NotifyItem } from '@/lib/dashboard-logic';
+import { CARRIER_LABEL, splitBySim, type Carrier, type SimInfo } from '@/lib/carriers';
+import { byHandGroups, planNotify, verifyForLine, workList, type ByHandGroup, type ByHandLine, type LineCheck, type NotifyItem } from '@/lib/dashboard-logic';
 import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@/lib/date-range';
 import {
   arrivalDay,
@@ -26,22 +31,25 @@ import {
   type Channel,
   type ContactEvent,
 } from '@/lib/parcel-logic';
-import { controlBatch, dismissBatch, queueBatch, queueSms, releaseRestoreHold, useParcelData, type ParcelData, type SmsBatch } from '@/lib/parcel-service';
+import { controlBatch, dismissBatch, queueBatch, queueSms, reloadParcels, releaseRestoreHold, useParcelData, type ParcelData, type SmsBatch } from '@/lib/parcel-service';
 import { currentGap, currentTemplates, useSettings } from '@/lib/settings-service';
+import { playAttention, playDone } from '@/lib/sounds';
 import { cn, formatDateTime, formatTime } from '@/lib/utils';
 
-type ChannelFilter = 'all' | 'sms' | 'call' | 'telegram';
+type ChannelFilter = 'all' | 'sms' | 'call' | 'telegram' | 'other';
 const CHANNEL_FILTERS: { key: ChannelFilter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'sms', label: 'SMS' },
   { key: 'call', label: 'Calls' },
   { key: 'telegram', label: 'Telegram' },
+  { key: 'other', label: 'Other phone' },
 ];
 
 const CHANNEL: Record<Channel, { label: string; icon: typeof Send }> = {
   sms: { label: 'SMS', icon: Send },
   call: { label: 'Call', icon: Phone },
   telegram: { label: 'Telegram', icon: MessageSquare },
+  other: { label: 'SMS from another phone', icon: Smartphone },
 };
 const OUTCOME = { answered: 'Reached customer', 'no-answer': 'No answer', messaged: 'Sent on Telegram' };
 
@@ -49,7 +57,14 @@ const waiting = (e: ContactEvent) => e.smsStatus === 'queued' || e.smsStatus ===
 const PAGE = 10;
 const READY_SHOWN = 6;
 
-export function NotificationsView({ initialFilter }: { initialFilter?: string }) {
+type Tab = 'today' | 'by-hand' | 'history';
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'by-hand', label: 'Contact by hand' },
+  { key: 'history', label: 'History' },
+];
+
+export function NotificationsView({ initialFilter, initialTab = 'today' }: { initialFilter?: string; initialTab?: Tab }) {
   const data = useParcelData();
   const templates = useSettings()?.templates;
   const [retrying, setRetrying] = useState<ContactEvent | null>(null);
@@ -57,6 +72,15 @@ export function NotificationsView({ initialFilter }: { initialFilter?: string })
   const [contacting, setContacting] = useState<string | null>(null);
   /** The arrival day whose batch is being confirmed: today, or one earlier day under review. */
   const [confirmDay, setConfirmDay] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>(initialTab);
+  const choose = (next: Tab) => {
+    setTab(next);
+    // Kept in the address, so a reload or the back button returns to the same tab.
+    const url = new URL(window.location.href);
+    if (next === 'today') url.searchParams.delete('tab');
+    else url.searchParams.set('tab', next);
+    window.history.replaceState(null, '', url);
+  };
 
   const events = data ? [...data.events].sort((a, b) => b.at.localeCompare(a.at)) : null;
   const work = data ? workList(data.parcels, data.events) : null;
@@ -64,6 +88,9 @@ export function NotificationsView({ initialFilter }: { initialFilter?: string })
   const nameOf = (code: string) => data?.parcels.find((p) => p.code === code)?.recipient ?? '';
   const contactParcel = data?.parcels.find((p) => p.code === contacting);
   const running = !!data?.batch && (data.batch.status === 'running' || data.batch.status === 'paused');
+  const sims = data?.gateway.sims ?? [];
+  const byHandByNetwork = plan && data ? byHandGroups(plan, data.parcels, data.events, sims) : [];
+  const byHand = byHandByNetwork.reduce((n, g) => n + g.lines.length, 0);
 
   return (
     <>
@@ -76,17 +103,78 @@ export function NotificationsView({ initialFilter }: { initialFilter?: string })
 
       {data?.restoreHold && <RestoreCheck data={data} copyAt={data.restoreHold.copyAt} />}
 
+      <div
+        role="tablist"
+        aria-label="Notifications"
+        className="mt-6 flex gap-1 border-b"
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+          const i = TABS.findIndex((t) => t.key === tab);
+          const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length].key;
+          choose(next);
+          document.getElementById(`tab-${next}`)?.focus();
+        }}
+      >
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            id={`tab-${t.key}`}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            aria-controls={`panel-${t.key}`}
+            tabIndex={tab === t.key ? 0 : -1}
+            onClick={() => choose(t.key)}
+            className={cn(
+              '-mb-px min-h-11 border-b-2 px-4 text-sm font-medium transition-colors motion-reduce:transition-none',
+              tab === t.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {t.label}
+            {t.key === 'by-hand' && byHand > 0 && (
+              <span className="ml-2 rounded-full bg-warning-tint px-2 py-0.5 font-mono text-xs font-medium text-warning">
+                <span className="sr-only">, </span>
+                {byHand}
+                <span className="sr-only"> waiting</span>
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
       {/* Urgency sets the size: attention leads, the live queue follows, ready-to-send supports from the side. */}
-      <div className="mt-7 grid items-start gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_19rem]">
+      <div
+        id="panel-today"
+        role="tabpanel"
+        aria-labelledby="tab-today"
+        hidden={tab !== 'today'}
+        className={tab === 'today' ? 'mt-7 grid items-start gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_19rem]' : 'hidden'}
+      >
         <div className="flex min-w-0 flex-col gap-8">
           <Attention work={work} events={events} nameOf={nameOf} onRetry={setRetrying} onOpen={setContacting} />
           <SendingQueue data={data} nameOf={nameOf} running={running} />
         </div>
-        <Ready plan={plan} running={running} hold={!!data?.restoreHold} noGateway={data ? !data.gateway.setUp : false} onNotify={setConfirmDay} />
+        <Ready
+          plan={plan}
+          running={running}
+          hold={!!data?.restoreHold}
+          noGateway={data ? !data.gateway.setUp : false}
+          sims={sims}
+          byHand={byHand}
+          onNotify={setConfirmDay}
+          onByHand={() => choose('by-hand')}
+        />
       </div>
 
-      <History events={events} data={data} nameOf={nameOf} initialChannel={initialFilter} />
+      <div id="panel-by-hand" role="tabpanel" aria-labelledby="tab-by-hand" hidden={tab !== 'by-hand'} className="mt-7">
+        <ContactByHand groups={byHandByNetwork} data={data} />
+      </div>
 
+      <div id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden={tab !== 'history'}>
+        <History events={events} data={data} nameOf={nameOf} initialChannel={initialFilter} />
+      </div>
+
+      <RunAlerts data={data} />
       <RetrySheet event={retrying} data={data} onClose={() => setRetrying(null)} />
       <ConfirmNotify day={confirmDay} data={data} templates={templates} onClose={() => setConfirmDay(null)} />
 
@@ -286,6 +374,12 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
   const done = batch.length - batch.filter(waiting).length;
   // Queued messages only go out through the phone; say so when it is missing or not answering.
   const stuck = inFlight.some((e) => e.smsStatus === 'queued') && (!data.gateway.setUp || !!data.gateway.awaySince);
+  // Phase 12: SMS waiting for a SIM that is not in the phone, and the SIM whose failures paused the run.
+  const missing = data.gateway.simMissing.map((sim) => ({ sim, count: inFlight.filter((e) => e.smsStatus === 'queued' && e.sim === sim).length })).filter((m) => m.count);
+  const perSim = [...new Set(batch.map((e) => e.sim).filter((n): n is number => !!n))].sort().map((sim) => {
+    const mine = batch.filter((e) => e.sim === sim);
+    return { sim, done: mine.length - mine.filter(waiting).length, total: mine.length };
+  });
 
   if (!inFlight.length && !batch.length) {
     return (
@@ -301,7 +395,7 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
         <Heading
           id="queue-heading"
           title="Sending queue"
-          hint={`Handed to the gateway phone one at a time, ${currentGap().from}–${currentGap().to} seconds apart so the SIM is not flagged. Accepted messages move to History; failed or unconfirmed ones move to Needs your attention.`}
+          hint={`Handed to the gateway phone one at a time, ${gapSeconds()} apart so the SIM is not flagged. Accepted messages move to History; failed or unconfirmed ones move to Needs your attention.`}
         />
         {running && data.batch && <BatchControls batch={data.batch} />}
         {batch.length > 0 && !running && (
@@ -341,8 +435,21 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
           >
             <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${(done / batch.length) * 100}%` }} />
           </div>
+          {perSim.length > 0 && (
+            <p className="mt-1.5 text-xs text-muted-foreground">{perSim.map((p) => `SIM ${p.sim}: ${p.done} of ${p.total}`).join(' · ')}</p>
+          )}
         </div>
       )}
+
+      {data.gateway.simPause !== null && data.batch?.status === 'paused' && (
+        <p role="status" className="mt-4 rounded-md bg-warning-tint px-3 py-2 text-sm text-warning">
+          Paused: SIM {data.gateway.simPause} failed twice in a row. Check the gateway phone (a call on that SIM, no credit or no signal), then press Resume.
+          The failed SMS are under Needs your attention.
+        </p>
+      )}
+      {missing.map((m) => (
+        <MissingSim key={m.sim} sim={m.sim} count={m.count} />
+      ))}
 
       {stuck && (
         <p role="status" className="mt-4 rounded-md bg-warning-tint px-3 py-2 text-sm text-warning">
@@ -368,6 +475,36 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
         </ul>
       )}
     </section>
+  );
+}
+
+/** SMS waiting for a SIM that is not in the gateway phone: put it back, or contact those customers by hand instead. */
+function MissingSim({ sim, count }: { sim: number; count: number }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function release() {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch('/api/gateway/sims', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ release: sim }) });
+      if (!res.ok) throw new Error(`Not changed (${res.status}).`);
+      await reloadParcels();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    setBusy(false);
+  }
+  return (
+    <div role="status" className="mt-4 rounded-md bg-warning-tint px-3 py-2 text-sm text-warning">
+      <p>
+        SIM {sim} is not in the gateway phone, so {count === 1 ? '1 SMS for it is' : `${count} SMS for it are`} waiting. Put the SIM back, or contact
+        {count === 1 ? ' this customer' : ' these customers'} by hand instead.
+      </p>
+      <Button size="sm" variant="outline" className="mt-2 bg-card" disabled={busy} onClick={release}>
+        {busy ? 'Moving…' : 'Contact them by hand instead'}
+      </Button>
+      {error && <p className="mt-1 text-destructive">{error}</p>}
+    </div>
   );
 }
 
@@ -495,15 +632,24 @@ function Ready({
   running,
   hold,
   noGateway,
+  sims,
+  byHand,
   onNotify,
+  onByHand,
 }: {
   plan: ReturnType<typeof planNotify> | null;
   running: boolean;
   hold: boolean;
   noGateway: boolean;
+  sims: SimInfo[];
+  /** Customers waiting on the Contact by hand tab. */
+  byHand: number;
   onNotify: (day: string) => void;
+  onByHand: () => void;
 }) {
   const parcels = plan?.today.reduce((n, i) => n + i.codes.length, 0) ?? 0;
+  const split = plan ? splitBySim(plan.today, sims) : null;
+  const noSim = !noGateway && !sims.some((s) => s.carrier);
   return (
     <aside aria-labelledby="ready-heading" className="rounded-lg bg-secondary/70 px-5 py-5">
       <h2 id="ready-heading" className="font-semibold">
@@ -519,12 +665,34 @@ function Ready({
           <p className="text-sm text-muted-foreground">
             {parcels} {parcels === 1 ? 'parcel' : 'parcels'} from today, one SMS per phone number
           </p>
+          {split && plan.today.length > 0 && !noGateway && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                {split.auto.length} by SMS · {split.byHand.length} to contact by hand
+              </p>
+              <CarrierTable items={plan.today} sims={sims} className="mt-3" compact />
+            </>
+          )}
+          {byHand > 0 && (
+            <button type="button" onClick={onByHand} className="mt-1 min-h-11 text-sm font-medium text-primary underline-offset-4 hover:underline sm:min-h-8">
+              Open Contact by hand ({byHand})
+            </button>
+          )}
           <Button className="mt-4 w-full" onClick={() => onNotify(arrivalDay(new Date().toISOString()))} disabled={running || hold || noGateway || plan.today.length === 0}>
             <Send aria-hidden />
             Notify today&apos;s customers
           </Button>
           {running && <p className="mt-2 text-xs text-muted-foreground">A run is in progress. Start the next one when it finishes.</p>}
           {hold && <p className="mt-2 text-xs text-warning">Sending is on hold after a restore. Check the gateway phone first.</p>}
+          {noSim && (
+            <p className="mt-2 text-xs text-warning">
+              No SIM in the gateway phone is confirmed yet, so every customer is to be contacted by hand. Confirm the SIMs in{' '}
+              <Link href="/settings" className="font-medium underline underline-offset-4">
+                SMS gateway in Settings
+              </Link>
+              .
+            </p>
+          )}
           {noGateway && (
             <p className="mt-2 text-xs text-warning">
               No gateway phone is set up yet, so nothing can be sent. The administrator sets it up on the branch computer; see{' '}
@@ -597,14 +765,20 @@ function Ready({
 /** How long this many gaps between messages take; the gap is random, so it is a range. */
 function gapMinutes(gaps: number) {
   const { from: lo, to: hi } = currentGap();
-  return `${Math.max(1, Math.round((gaps * lo) / 60))}–${Math.ceil((gaps * hi) / 60)} minutes`;
+  const [a, b] = [Math.max(1, Math.round((gaps * lo) / 60)), Math.max(1, Math.ceil((gaps * hi) / 60))];
+  return a === b ? `${a} ${a === 1 ? 'minute' : 'minutes'}` : `${a}–${b} minutes`;
+}
+
+/** The gap between two SMS as staff read it: "25–80 seconds", or "15 seconds" when the admin set one fixed gap. */
+function gapSeconds() {
+  const { from, to } = currentGap();
+  return from === to ? `${from} seconds` : `${from}–${to} seconds`;
 }
 
 /** How long a run takes with the random gap between messages. */
 function sendingTime(count: number) {
-  const { from: lo, to: hi } = currentGap();
   if (count <= 1) return 'One SMS.';
-  return `Takes about ${gapMinutes(count - 1)}: the phone waits ${lo}–${hi} seconds between messages, at random, so the branch SIM is not flagged.`;
+  return `Takes about ${gapMinutes(count - 1)}: the phone waits ${gapSeconds()} between messages, at random, so the branch SIM is not flagged.`;
 }
 
 /** Messages grouped by arrival day, newest day first. */
@@ -617,7 +791,7 @@ function byDay(items: NotifyItem[]) {
 const DAY_SHOWN = 5;
 
 /** The run's one arrival day, open so staff read through it, showing its first few until asked for all. */
-function DayMessages({ day, items }: { day: string; items: NotifyItem[] }) {
+function DayMessages({ day, items }: { day: string; items: (NotifyItem & { sim?: number })[] }) {
   const [all, setAll] = useState(false);
   const label = batchLabel(day);
   const parcels = items.reduce((n, i) => n + i.codes.length, 0);
@@ -638,7 +812,10 @@ function DayMessages({ day, items }: { day: string; items: NotifyItem[] }) {
               <span className="font-medium">
                 {i.recipient} <span className="font-mono text-xs font-normal text-muted-foreground">{formatPhone(i.phone)}</span>
               </span>
-              <span className="text-xs text-muted-foreground">{smsScope(i.codes.length)}</span>
+              <span className="text-xs text-muted-foreground">
+                {smsScope(i.codes.length)}
+                {i.sim ? ` · SIM ${i.sim}` : ''}
+              </span>
             </span>
             <span className="block truncate font-mono text-xs text-muted-foreground">{i.codes.join(', ')}</span>
           </li>
@@ -676,8 +853,23 @@ function ConfirmNotify({
   const plan = data ? planNotify(data.parcels, data.events, new Date(), templates) : null;
   const earlier = !!day && day !== arrivalDay(new Date().toISOString());
   const items: NotifyItem[] = !plan || !day ? [] : earlier ? plan.older.filter((i) => i.day === day) : plan.today;
+  // The SIMs in the phone right now decide who is texted (Phase 12); the last scan stands in until this one answers.
+  const [fresh, setFresh] = useState<SimInfo[] | null>(null);
+  useEffect(() => {
+    if (!day) return;
+    let live = true;
+    setFresh(null);
+    fetch('/api/gateway/sims', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b) => live && b && setFresh(b.sims))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [day]);
+  const { auto, byHand } = splitBySim(items, fresh ?? data?.gateway.sims ?? []);
   const parcels = items.reduce((n, i) => n + i.codes.length, 0);
-  const combined = items.filter((i) => i.codes.length > 1).length;
+  const combined = auto.filter((i) => i.codes.length > 1).length;
   const label = day ? batchLabel(day) : '';
   const close = () => {
     setRequestKey(crypto.randomUUID());
@@ -689,7 +881,7 @@ function ConfirmNotify({
     setStarting(true);
     setError('');
     try {
-      await queueBatch(requestKey, day!, checked, items);
+      await queueBatch(requestKey, day!, checked, auto);
       close();
     } catch (e) {
       setError(`Not started. ${(e as Error).message}`);
@@ -705,15 +897,15 @@ function ConfirmNotify({
           <>
             <header className="border-b px-6 pt-5 pb-4 pr-14">
               <SheetTitle>{earlier ? `Notify customers whose parcels arrived ${label}?` : "Notify today's customers?"}</SheetTitle>
-              <SheetDescription>The gateway phone sends them one at a time, from the branch SIM.</SheetDescription>
+              <SheetDescription>The gateway phone sends them one at a time, each from the SIM of its customer&apos;s carrier.</SheetDescription>
             </header>
             <div className="flex-1 overflow-y-auto px-6 py-5">
               <dl className="grid grid-cols-3 gap-3">
                 {(
                   [
                     ['Customers', items.length],
-                    ['Parcels', parcels],
-                    ['SMS', items.length],
+                    ['SMS', auto.length],
+                    ['By hand', byHand.length],
                   ] as const
                 ).map(([label, n]) => (
                   <div key={label}>
@@ -723,9 +915,18 @@ function ConfirmNotify({
                 ))}
               </dl>
               <p className="mt-2 text-sm text-muted-foreground">
-                {combined} combined, {items.length - combined} individual. One SMS per phone number. Parcels already notified are left out.
+                {parcels} {parcels === 1 ? 'parcel' : 'parcels'}. {combined} combined, {auto.length - combined} individual SMS. One SMS per phone number. Parcels already
+                notified are left out.
               </p>
-              <p className="mt-1 text-sm text-muted-foreground">{sendingTime(items.length)}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{auto.length > 0 ? sendingTime(auto.length) : 'Nothing goes by SMS.'}</p>
+              <CarrierTable items={items} sims={fresh ?? data?.gateway.sims ?? []} className="mt-4" />
+              {fresh === null && <p className="mt-1 text-xs text-muted-foreground">Checking the gateway phone&apos;s SIMs…</p>}
+              {byHand.length > 0 && (
+                <p className="mt-3 rounded-md bg-warning-tint px-3 py-2 text-sm text-warning">
+                  {byHand.length === 1 ? '1 customer is' : `${byHand.length} customers are`} on a carrier with no confirmed SIM in the gateway phone. They are listed
+                  on the Contact by hand tab.
+                </p>
+              )}
               {earlier && (
                 <div className="mt-4 rounded-md bg-warning-tint p-3 text-sm text-warning">
                   <p className="font-medium">These parcels arrived {label}, not today.</p>
@@ -746,10 +947,10 @@ function ConfirmNotify({
                 </p>
               )}
               <h3 className="mt-5 text-sm font-medium">
-                {items.length === 1 ? '1 message' : `${items.length} messages`} to send
+                {auto.length === 1 ? '1 message' : `${auto.length} messages`} to send
               </h3>
               <div className="mt-2 divide-y rounded-md border">
-                {byDay(items).map(([day, list]) => (
+                {byDay(auto).map(([day, list]) => (
                   <DayMessages key={day} day={day} items={list} />
                 ))}
               </div>
@@ -757,9 +958,9 @@ function ConfirmNotify({
             {/* Outside the scrolling list, so Start queue stays in view however many customers there are. */}
             <footer className="flex flex-wrap items-center gap-2 border-t px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
               {/* Until the shared wording has loaded, the messages would carry the default wording. */}
-              <Button disabled={!templates || items.length === 0 || starting || (earlier && !checked)} onClick={start}>
+              <Button disabled={!templates || auto.length === 0 || starting || (earlier && !checked)} onClick={start}>
                 <Send aria-hidden />
-                {starting ? 'Starting…' : earlier ? `Send ${items.length} SMS for ${label}` : `Start queue (${items.length} SMS)`}
+                {starting ? 'Starting…' : earlier ? `Send ${auto.length} SMS for ${label}` : `Start queue (${auto.length} SMS)`}
               </Button>
               <Button variant="outline" onClick={close}>
                 Cancel
@@ -812,9 +1013,9 @@ function History({
   const narrowed = !!text || !isAnyDate(dates) || channel !== 'all';
 
   return (
-    <section aria-labelledby="log-heading" className="mt-12">
+    <section aria-labelledby="log-heading" className="mt-7">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <Heading id="log-heading" title="History" hint="Every SMS, call and Telegram message. A combined SMS is one entry." />
+        <Heading id="log-heading" title="History" hint="Every SMS, call, Telegram message and SMS sent from a staff phone. A combined SMS is one entry." />
         {events && (
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -905,8 +1106,8 @@ function History({
 
 // Telegram outcomes already name their channel; a call needs it said.
 function channelText(e: ContactEvent) {
-  if (e.channel === 'sms') return e.parcelCodes.length > 1 ? `Combined SMS · ${e.parcelCodes.length} parcels` : 'SMS';
-  if (!e.outcome) return CHANNEL[e.channel].label;
+  if (e.channel === 'sms') return `${e.parcelCodes.length > 1 ? `Combined SMS · ${e.parcelCodes.length} parcels` : 'SMS'}${e.sim ? ` · SIM ${e.sim}` : ''}`;
+  if (!e.outcome || e.channel === 'other') return CHANNEL[e.channel].label;
   return e.channel === 'call' ? `Call · ${OUTCOME[e.outcome]}` : OUTCOME[e.outcome];
 }
 
@@ -1085,4 +1286,395 @@ function RetrySheet({ event, data, onClose }: { event: ContactEvent | null; data
       </SheetContent>
     </Sheet>
   );
+}
+
+const BY_HAND_SHOWN = 8;
+const NETWORK_KEY = 'cb.byHandNetwork';
+const networkKey = (c: Carrier | null) => c ?? 'unknown';
+const networkName = (c: Carrier | null) => (c ? CARRIER_LABEL[c] : 'Unknown carrier');
+
+/**
+ * The Contact by hand tab (Phase 12): today's customers whose network has no SIM in the gateway phone. Staff pick their
+ * own phone's network (remembered on this device) and work down the list: never tried first, then no answer. Each
+ * network shows how many are not contacted yet and how many are done today.
+ */
+function ContactByHand({ groups, data }: { groups: ByHandGroup[]; data: ParcelData | null }) {
+  const [pick, setPick] = useState('all');
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    try {
+      setPick(localStorage.getItem(NETWORK_KEY) ?? 'all');
+    } catch {
+      // private window or blocked storage: start from All
+    }
+  }, []);
+  const choose = (next: string) => {
+    setPick(next);
+    setAll(false);
+    try {
+      localStorage.setItem(NETWORK_KEY, next);
+    } catch {
+      // not kept on this device; it applies until the page closes
+    }
+  };
+
+  if (!data) return <Skeleton className="h-40 w-full" />;
+  // A remembered network with nobody on it today falls back to All.
+  const active = groups.some((g) => networkKey(g.carrier) === pick) ? pick : 'all';
+  const inView = active === 'all' ? groups : groups.filter((g) => networkKey(g.carrier) === active);
+  const left = inView.reduce((n, g) => n + g.lines.length, 0);
+  const done = inView.reduce((n, g) => n + g.done, 0);
+  const totalLeft = groups.reduce((n, g) => n + g.lines.length, 0);
+  // The first lines in working order, then regrouped, so "Show all" never splits a network's order.
+  let budget = all ? Infinity : BY_HAND_SHOWN;
+  const shown = inView
+    .filter((g) => g.lines.length)
+    .map((g) => {
+      const lines = g.lines.slice(0, Math.max(0, budget));
+      budget -= lines.length;
+      return { ...g, lines };
+    })
+    .filter((g) => g.lines.length);
+
+  return (
+    <section aria-labelledby="by-hand-heading" className="rounded-lg bg-card px-5 py-5 sm:px-7">
+      <Heading
+        id="by-hand-heading"
+        title="Contact by hand"
+        count={totalLeft}
+        hint="Today's customers on a network with no SIM in the gateway phone. Pick your phone's network: calling or texting on the same network is usually cheaper. The app asks what happened after each call or message."
+      />
+
+      {groups.length === 0 ? (
+        <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+          <CircleCheck className="size-4 text-success" aria-hidden />
+          Nobody to contact by hand today. Every customer&apos;s network has a SIM in the gateway phone.
+        </p>
+      ) : (
+        <>
+          <div role="group" aria-label="Show customers on network" className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+            <NetworkButton label="All" left={totalLeft} noAnswer={groups.reduce((n, g) => n + g.noAnswer, 0)} pressed={active === 'all'} onClick={() => choose('all')} />
+            {groups.map((g) => (
+              <NetworkButton
+                key={networkKey(g.carrier)}
+                label={g.carrier ? CARRIER_LABEL[g.carrier] : 'Unknown'}
+                dot={CARRIER_DOT[networkKey(g.carrier)]}
+                left={g.lines.length}
+                noAnswer={g.noAnswer}
+                pressed={active === networkKey(g.carrier)}
+                onClick={() => choose(networkKey(g.carrier))}
+              />
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <p className="flex flex-wrap items-baseline justify-between gap-x-4 text-sm">
+              <span className="font-medium">
+                {active === 'all' ? 'All networks' : networkName(inView[0].carrier)}: {done} of {done + left} done today
+              </span>
+              <span className="text-muted-foreground">
+                {left === 0 ? 'Nobody left' : `${left} left`}
+              </span>
+            </p>
+            <div
+              role="progressbar"
+              aria-label="Contacted by hand today"
+              aria-valuemin={0}
+              aria-valuemax={done + left}
+              aria-valuenow={done}
+              className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-secondary"
+            >
+              <div className="h-full rounded-full bg-success transition-[width] motion-reduce:transition-none" style={{ width: `${done + left ? (done / (done + left)) * 100 : 0}%` }} />
+            </div>
+          </div>
+
+          {left === 0 ? (
+            <p className="mt-5 flex items-center gap-2 text-sm text-muted-foreground">
+              <CircleCheck className="size-4 text-success" aria-hidden />
+              {active === 'all' ? 'Everyone is done for today.' : `Every ${networkName(inView[0].carrier)} customer is done for today.`}
+            </p>
+          ) : (
+            shown.map((g) => {
+              const id = `by-hand-${networkKey(g.carrier)}`;
+              return (
+                <section key={id} aria-labelledby={id} className="mt-3 border-t pt-5 first-of-type:mt-6 first-of-type:border-t-0 first-of-type:pt-0">
+                  {/* With one network picked, its button already says this; the heading stays for screen readers. */}
+                  <h3 id={id} className={active === 'all' ? 'flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold' : 'sr-only'}>
+                    <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: CARRIER_DOT[networkKey(g.carrier)] }} />
+                    {networkName(g.carrier)}
+                    <span className="text-sm font-normal text-muted-foreground">
+                      {g.notContacted} not contacted{g.noAnswer ? ` · ${g.noAnswer} no answer` : ''}
+                    </span>
+                  </h3>
+                  <p className={cn('text-sm text-muted-foreground', active === 'all' && 'mt-0.5')}>
+                    {g.carrier ? `Use a ${networkName(g.carrier)} phone if you have one.` : 'The first three digits are not on the carrier list. Use any phone.'}
+                  </p>
+                  <ul className="mt-1 divide-y">
+                    {g.lines.map((line) => (
+                      <ByHandRow key={`${line.day}|${line.phone}`} line={line} data={data} />
+                    ))}
+                  </ul>
+                </section>
+              );
+            })
+          )}
+          {left > BY_HAND_SHOWN && (
+            <Button variant="link" size="sm" className="mt-2 px-0" onClick={() => setAll(!all)}>
+              {all ? 'Show fewer' : `Show all ${left}`}
+            </Button>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+/** One network in the selector: how many are still to contact, and how many of those did not answer. */
+function NetworkButton({ label, dot, left, noAnswer, pressed, onClick }: { label: string; dot?: string; left: number; noAnswer: number; pressed: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onClick}
+      className={cn(
+        'flex min-h-11 flex-col items-start rounded-md border px-3 py-1.5 text-left text-sm transition-colors motion-reduce:transition-none',
+        pressed ? 'border-primary bg-accent text-foreground' : 'bg-card text-muted-foreground hover:text-foreground',
+      )}
+    >
+      <span className="flex items-center gap-1.5 font-medium">
+        {dot && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: dot }} />}
+        {label}
+        <span className={cn('font-mono', left ? 'text-foreground' : 'text-success')}>{left || <Check className="size-3.5" aria-label="done" />}</span>
+      </span>
+      <span className="text-xs">{left === 0 ? 'All done' : noAnswer ? `${left - noAnswer} not contacted · ${noAnswer} no answer` : `${left} not contacted`}</span>
+    </button>
+  );
+}
+
+/**
+ * One customer: the number to dial first and largest, the name under it, then Call, Telegram, SMS and Verify. Verify is
+ * optional (owner, 2026-10-23): scan or type the parcel in hand to make sure it is this number's before contacting.
+ */
+function ByHandRow({ line, data }: { line: ByHandLine; data: ParcelData }) {
+  const [open, setOpen] = useState(false); // phones: the row opens to show Call, Telegram, SMS and Verify
+  const [verifying, setVerifying] = useState(false);
+  const [result, setResult] = useState<LineCheck | null>(null);
+  const [checked, setChecked] = useState<string[]>([]);
+  const group = data.parcels.filter((p) => line.codes.includes(p.code));
+  if (!group.length) return null;
+  return (
+    // A light highlight on the row under the mouse or being worked on; green once Verify confirmed the parcel.
+    <li
+      className={cn(
+        'relative -mx-3 grid grid-cols-[minmax(0,1fr)] gap-x-6 rounded-md px-3 py-3 transition-colors motion-reduce:transition-none sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-y-2',
+        open && 'gap-y-2',
+        result?.kind === 'match' ? 'bg-success-tint' : 'hover:bg-secondary/60 focus-within:bg-secondary/60',
+      )}
+    >
+      {/* Phones: tapping the row opens it; the chevron says so and is the keyboard and screen-reader way in. */}
+      <div className="min-w-0 max-sm:cursor-pointer max-sm:pr-10" onClick={() => setOpen(!open)}>
+        <p className="flex items-center gap-2">
+          <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: CARRIER_DOT[networkKey(line.carrier)] }} />
+          <span className="font-mono text-lg font-semibold tracking-tight tabular-nums">{formatPhone(line.phone)}</span>
+          <span className="sr-only">, {networkName(line.carrier)}</span>
+        </p>
+        <p className="pl-4 text-sm">
+          {line.recipient}
+          <span className="text-muted-foreground"> · {line.codes.length === 1 ? '1 parcel' : `${line.codes.length} parcels`}</span>
+        </p>
+        <p className="truncate pl-4 font-mono text-xs text-muted-foreground">{line.codes.join(', ')}</p>
+        {line.lastTry && (
+          <p className="mt-0.5 flex items-center gap-1 pl-4 text-xs font-medium text-warning">
+            <PhoneOff className="size-3.5" aria-hidden />
+            No answer · {formatTime(line.lastTry)}
+            {line.tries > 1 && ` · tried ${line.tries} times`}
+          </p>
+        )}
+      </div>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={`Contact or verify ${formatPhone(line.phone)}`}
+        onClick={() => setOpen(!open)}
+        className="absolute top-2 right-1 grid size-11 place-items-center rounded-md text-muted-foreground sm:hidden"
+      >
+        <ChevronDown className={cn('size-5 transition-transform motion-reduce:transition-none', open && 'rotate-180')} aria-hidden />
+      </button>
+      <div className="sm:justify-self-end">
+        <DirectContact
+          actionsOpen={open}
+          parcel={group[0]}
+          group={group}
+          events={data.events}
+          message={line.message}
+          stops={0}
+          compact
+          verifying={verifying}
+          onVerify={() => {
+            setVerifying(!verifying);
+            setResult(null);
+          }}
+        />
+      </div>
+      {verifying && (
+        <VerifyParcel
+          line={line}
+          parcels={data.parcels}
+          checked={checked}
+          result={result}
+          onResult={(r) => {
+            setResult(r);
+            if (r.kind === 'match') setChecked((c) => [...new Set([...c, r.code])]);
+          }}
+          onClose={() => {
+            setVerifying(false);
+            setResult(null);
+          }}
+        />
+      )}
+    </li>
+  );
+}
+
+/**
+ * The row's check, camera only (owner, 2026-10-23): it opens straight into the camera, and after a scan shows whether
+ * the parcel is this number's. Closing the camera before any scan closes the check.
+ */
+function VerifyParcel({
+  line,
+  parcels,
+  checked,
+  result,
+  onResult,
+  onClose,
+}: {
+  line: ByHandLine;
+  parcels: ParcelData['parcels'];
+  checked: string[];
+  result: LineCheck | null;
+  onResult: (r: LineCheck) => void;
+  onClose: () => void;
+}) {
+  const [camera, setCamera] = useState(true);
+  const again = useRef<HTMLButtonElement>(null);
+  return (
+    <div className="sm:col-span-2">
+      <div aria-live="polite" className="empty:hidden">
+        {result?.kind === 'match' && (
+          <p className="flex items-start gap-2 text-sm font-medium text-success">
+            <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>
+              Right parcel: <span className="font-mono">{result.code}</span> is for {formatPhone(line.phone)} · {line.recipient}
+              {line.codes.length > 1 && ` · ${result.checked} of ${line.codes.length} checked`}
+            </span>
+          </p>
+        )}
+        {result?.kind === 'other' && (
+          <p role="alert" className="flex items-start gap-2 rounded-md bg-destructive-tint px-3 py-2 text-sm text-destructive">
+            <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>
+              <span className="font-semibold">Not this customer&apos;s parcel.</span> <span className="font-mono">{result.code}</span> is for{' '}
+              {result.phone ? <span className="font-mono">{formatPhone(result.phone)}</span> : 'a customer with no number'} · {result.recipient}.
+            </span>
+          </p>
+        )}
+        {result?.kind === 'not-found' && (
+          <p role="alert" className="flex items-start gap-2 rounded-md bg-destructive-tint px-3 py-2 text-sm text-destructive">
+            <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>
+              No parcel with code <span className="font-mono">{result.code}</span>. Scan the label again.
+            </span>
+          </p>
+        )}
+      </div>
+      {result && (
+        <div className="mt-2 flex items-center gap-2">
+          <Button ref={again} type="button" variant="outline" size="sm" className="bg-card" onClick={() => setCamera(true)}>
+            <Camera aria-hidden />
+            Scan again
+          </Button>
+          <Button type="button" variant="ghost" size="icon" aria-label="Close the parcel check" onClick={onClose}>
+            <X aria-hidden />
+          </Button>
+        </div>
+      )}
+      <CameraScanner
+        open={camera}
+        onClose={() => {
+          setCamera(false);
+          if (!result) onClose(); // closed before any scan: nothing to show
+        }}
+        onDetected={(text) => {
+          setCamera(false);
+          onResult(verifyForLine(text, parcels, line, checked));
+        }}
+        returnFocus={again}
+        typeInstead={false}
+      />
+    </div>
+  );
+}
+
+/**
+ * While a run goes (Phase 12, owner 2026-10-23): the browser tab says how far it is, a chime plays when it finishes,
+ * and three beeps play when it needs someone, again every 30 seconds (at most 5 times) until someone clicks or types.
+ * Sounds play only on a change seen with this page open, never on its first load.
+ */
+function RunAlerts({ data }: { data: ParcelData | null }) {
+  const base = useRef('');
+  const last = useRef<{ batchId: number | null; status?: string; failed: number; needs: boolean } | null>(null);
+  const repeat = useRef<number | null>(null);
+
+  const batch = data?.batch ? data.events.filter((e) => data.batch!.eventIds.includes(e.id)) : [];
+  const done = batch.length - batch.filter(waiting).length;
+  const failed = batch.filter((e) => e.smsStatus === 'failed' || e.smsStatus === 'unconfirmed').length;
+  const status = data?.batch?.status;
+  const queued = !!data?.events.some((e) => e.smsStatus === 'queued');
+  const awayLong = !!data?.gateway.awaySince && Date.now() - Date.parse(data.gateway.awaySince) > 5 * 60_000;
+  const needs = !!data && ((status === 'paused' && data.gateway.simPause !== null) || (queued && (awayLong || data.gateway.simMissing.length > 0)));
+
+  const stop = () => {
+    if (repeat.current !== null) window.clearInterval(repeat.current);
+    repeat.current = null;
+  };
+  useEffect(() => {
+    base.current = document.title;
+    window.addEventListener('pointerdown', stop);
+    window.addEventListener('keydown', stop);
+    return () => {
+      document.title = base.current;
+      stop();
+      window.removeEventListener('pointerdown', stop);
+      window.removeEventListener('keydown', stop);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!base.current) return;
+    document.title =
+      !data?.batch || status === 'stopped'
+        ? base.current
+        : needs
+          ? `Needs attention · ${base.current}`
+          : status === 'done'
+            ? `Done · ${base.current}`
+            : `(${done}/${batch.length}) ${status === 'paused' ? 'Paused' : 'Sending'} · ${base.current}`;
+  });
+
+  useEffect(() => {
+    if (!data) return;
+    const now = { batchId: data.batch?.id ?? null, status, failed, needs };
+    const before = last.current;
+    last.current = now;
+    if (!needs) stop();
+    if (!before) return;
+    if (before.batchId === now.batchId && before.status === 'running' && status === 'done') playDone();
+    if ((needs && !before.needs) || (before.batchId === now.batchId && failed > before.failed)) {
+      stop();
+      playAttention();
+      let times = 1;
+      repeat.current = window.setInterval(() => (++times > 5 ? stop() : playAttention()), 30_000);
+    }
+  });
+  return null;
 }

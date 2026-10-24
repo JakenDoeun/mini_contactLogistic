@@ -1,11 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Check, Save } from 'lucide-react';
+import { Check, Save, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
-type Status = { lastBackupAt: string | null; failing: boolean; retentionDays: number; isAdmin: boolean };
+type Status = {
+  lastBackupAt: string | null;
+  failing: boolean;
+  retentionDays: number;
+  /** What the hourly deletion takes once the date moves on at midnight. */
+  nextDeletion: { arrivedOn: string; parcels: number; customers: number };
+  isAdmin: boolean;
+};
+
+/** 2026-10-17 → 17 Oct */
+const dayLabel = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const DAY_CHOICES = Array.from({ length: 14 }, (_, i) => i + 1);
 
 /** Cambodia time, the branch's clock whatever the viewing device is set to (plan Revision 4). */
@@ -148,6 +159,18 @@ export function BackupCard() {
               Parcels, phone numbers and messages older than this are removed for good, and disappear from backups within 3 more days.
               Accounts and settings are kept.
             </p>
+            {s.nextDeletion.parcels > 0 ? (
+              <p className="flex items-start gap-2 rounded-md bg-warning-tint px-3 py-2 text-sm text-warning">
+                <Trash2 className="mt-0.5 size-4 shrink-0" aria-hidden />
+                <span>
+                  <span className="font-semibold">After midnight:</span> {plural(s.nextDeletion.parcels, 'parcel')} for{' '}
+                  {plural(s.nextDeletion.customers, 'customer')} that arrived on {dayLabel(s.nextDeletion.arrivedOn)} or earlier{' '}
+                  {s.nextDeletion.parcels === 1 ? 'is' : 'are'} deleted, with their phone numbers and messages.
+                </span>
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Nothing is due for deletion after midnight.</p>
+            )}
           </form>
         )}
       </div>

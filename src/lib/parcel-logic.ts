@@ -2,8 +2,9 @@
 // Statuses are derived from the append-only event log, so history is never overwritten.
 
 export type SmsStatus = 'not-sent' | 'queued' | 'sending' | 'sent' | 'delivered' | 'failed' | 'unconfirmed';
-// Calls and Telegram are history entries only: SMS is the one status a parcel has (owner, 2026-10-20).
-export type Channel = 'sms' | 'call' | 'telegram';
+// Calls, Telegram and SMS from another phone ("other", Phase 12) are history entries only: SMS is the one status a
+// parcel has (owner, 2026-10-20).
+export type Channel = 'sms' | 'call' | 'telegram' | 'other';
 export type Outcome = 'answered' | 'no-answer' | 'messaged';
 
 export interface Parcel {
@@ -26,7 +27,8 @@ export interface ContactEvent {
   smsStatus?: SmsStatus; // sms only
   message?: string; // sms only
   result?: string; // gateway or staff note
-  outcome?: Outcome; // call and telegram only
+  outcome?: Outcome; // call, telegram and other only
+  sim?: number | null; // sms only: the gateway phone's SIM slot that sent it (Phase 12)
 }
 
 // A random gap between two SMS from the gateway SIM, so its traffic looks like a person's and is less likely to be
@@ -191,3 +193,6 @@ export function composeMessage(name: string, codes: string[], templates = DEFAUL
 
 // For "Open in Telegram": t.me resolves a number only if the customer allows it, so copying stays the fallback.
 export const telegramLink = (raw: string) => `https://t.me/+855${normalizePhone(raw).slice(1)}`;
+
+/** Opens the device's own messaging app with the message filled in; "?&" is read by both Android and iPhone. */
+export const smsLink = (raw: string, body: string) => `sms:+855${normalizePhone(raw).slice(1)}?&body=${encodeURIComponent(body)}`;

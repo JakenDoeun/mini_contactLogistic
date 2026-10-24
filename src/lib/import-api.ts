@@ -1,6 +1,7 @@
 // Browser side of /api/imports (Phase 4). The server reads the file and decides every count; this only carries
 // requests and turns error codes into sentences staff can act on.
 import type { BrowseResult, DetectedFile, folderState, ScanResult } from '@/server/folder/folder';
+import type { SimInfo } from '@/lib/carriers';
 import type { ImportListItem, Review } from '@/server/importer/store';
 import type { ContactEvent, Parcel } from '@/lib/parcel-logic';
 import type { Settings } from '@/lib/settings-logic';
@@ -107,7 +108,7 @@ export const listParcels = () =>
     events: ContactEvent[];
     batch: SmsBatch | null;
     restoreHold: { copyAt: string } | null;
-    gateway: { setUp: boolean; awaySince: string | null };
+    gateway: { setUp: boolean; awaySince: string | null; sims: SimInfo[]; simMissing: number[]; simPause: number | null };
   }>('/api/parcels');
 
 /** One SMS for a phone line. `retryOf` is the message a retry belongs to; `again` sends to parcels messaged before. */
@@ -119,6 +120,6 @@ export const postRestoreCheck = (seen: { phone: string; parcelIds: number[] }[])
   call<{ ok: true }>('/api/sms/restore-check', { method: 'POST', ...send({ seen }) });
 export const postBatchAction = (id: number, action: 'pause' | 'resume' | 'stop') =>
   call<{ status: SmsBatch['status'] }>(`/api/sms/batch/${id}`, { method: 'POST', ...send({ action }) });
-export const postContact = (body: { phone: string; parcelIds: number[]; channel: 'call' | 'telegram'; outcome: string }) =>
+export const postContact = (body: { phone: string; parcelIds: number[]; channel: 'call' | 'telegram' | 'other'; outcome: string }) =>
   call<{ id: number }>('/api/contacts', { method: 'POST', ...send(body) });
 export const saveParcelPhone = (id: number, phone: string) => call<{ ok: true }>(`/api/parcels/${id}/phone`, { method: 'PUT', ...send({ phone }) });

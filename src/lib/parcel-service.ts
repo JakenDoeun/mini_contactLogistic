@@ -1,6 +1,7 @@
 // Parcels and their contact log (SMS, calls, Telegram) from the branch database (Phases 6 and 9). The server queues and
 // sends; this only carries staff requests and keeps every open page showing the same list.
 import { useSyncExternalStore } from 'react';
+import type { SimInfo } from '@/lib/carriers';
 import { listParcels, postBatch, postBatchAction, postContact, postRestoreCheck, postSms, saveParcelPhone, type SmsBatch } from '@/lib/import-api';
 import type { ContactEvent, Outcome, Parcel } from '@/lib/parcel-logic';
 
@@ -14,7 +15,7 @@ export interface ParcelData {
   /** Set after a restore: nothing is sent until staff check the gateway phone. `copyAt` is when the copy was taken. */
   restoreHold: { copyAt: string } | null;
   /** Whether a gateway phone is set up, and since when it has not answered; queued messages wait for it. */
-  gateway: { setUp: boolean; awaySince: string | null };
+  gateway: { setUp: boolean; awaySince: string | null; sims: SimInfo[]; simMissing: number[]; simPause: number | null };
 }
 
 let data: ParcelData | null = null;
@@ -70,7 +71,7 @@ export async function updatePhone(parcel: Parcel, phone: string) {
 const idsOf = (codes: string[]) => codes.map((c) => data?.parcels.find((p) => p.code === c)?.id ?? 0);
 
 /** Records a call or Telegram message made outside the app. Throws with a sentence staff can act on. */
-export async function recordOutcome(phone: string, codes: string[], channel: 'call' | 'telegram', outcome: Outcome) {
+export async function recordOutcome(phone: string, codes: string[], channel: 'call' | 'telegram' | 'other', outcome: Outcome) {
   await postContact({ phone, parcelIds: idsOf(codes), channel, outcome });
   await reloadParcels();
 }

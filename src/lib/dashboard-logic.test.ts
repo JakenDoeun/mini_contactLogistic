@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dayProgress, planNotify, workList } from './dashboard-logic.ts';
+import { byHandGroups, dayProgress, planNotify, verifyForLine, workList } from './dashboard-logic.ts';
 import { arrivalDay, smsStatusOf, type ContactEvent, type Parcel } from './parcel-logic.ts';
 
 let n = 0;
@@ -127,4 +127,41 @@ test("day progress: each of the day's parcels counted once, the most settled sta
     event(['D4'], { smsStatus: 'unconfirmed' }),
   ];
   assert.deepEqual(dayProgress(parcels, events, day), { done: 2, sending: 1, retry: 1, noPhone: 1, notYet: 1 });
+});
+
+test('contact by hand: grouped by network, never-tried first, no answer after, told lines counted as done', () => {
+  const sims = [{ simNumber: 1, carrierName: 'Cellcard', phoneNumber: null, suggested: 'cellcard' as const, carrier: 'cellcard' as const }];
+  const parcels = [
+    parcel('C1', 'Dara', '012 000 111'), // Cellcard: texted by the gateway, not by hand
+    parcel('M1', 'Sokha', '097 000 1111'),
+    parcel('M2', 'Nita', '088 000 2222'),
+    parcel('M3', 'Mony', '060 000 333'),
+    parcel('M4', 'Lina', '066 000 444'),
+    parcel('U1', 'Piseth', '019 000 555'),
+  ];
+  const now = new Date(parcels[0].importedAt);
+  const events = [
+    event(['M2'], { channel: 'call', outcome: 'no-answer', phone: '0880002222' }),
+    event(['M3'], { channel: 'call', outcome: 'answered', phone: '060000333' }), // reached: done
+    event(['M4'], { channel: 'other', outcome: 'messaged', phone: '066000444' }), // SMS from a staff phone: done
+  ];
+  const groups = byHandGroups(planNotify(parcels, events, now), parcels, events, sims, now);
+  assert.deepEqual(
+    groups.map((g) => [g.carrier, g.lines.map((l) => l.codes[0]), g.notContacted, g.noAnswer, g.done]),
+    [
+      ['metfone', ['M1', 'M2'], 1, 1, 2],
+      [null, ['U1'], 1, 0, 0],
+    ],
+  );
+  assert.equal(groups[0].lines[1].tries, 1);
+});
+
+test('verify on a contact-by-hand row: the parcel in hand is for this number or not, any capitals or spaces', () => {
+  const parcels = [parcel('M1', 'Sokha', '097 000 1111'), parcel('M2', 'Sokha', '097 000 1111'), parcel('C1', 'Dara', '012 000 111')];
+  const line = { codes: ['M1', 'M2'] };
+  assert.deepEqual(verifyForLine(' m1 ', parcels, line), { kind: 'match', code: 'M1', checked: 1 });
+  assert.deepEqual(verifyForLine('M2', parcels, line, ['M1']), { kind: 'match', code: 'M2', checked: 2 });
+  assert.deepEqual(verifyForLine('M1', parcels, line, ['M1']), { kind: 'match', code: 'M1', checked: 1 }, 'the same parcel twice counts once');
+  assert.deepEqual(verifyForLine('c1', parcels, line), { kind: 'other', code: 'C1', phone: '012 000 111', recipient: 'Dara' });
+  assert.deepEqual(verifyForLine('ZZZ 1', parcels, line), { kind: 'not-found', code: 'ZZZ1' });
 });

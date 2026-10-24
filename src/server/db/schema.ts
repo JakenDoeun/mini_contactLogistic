@@ -310,6 +310,8 @@ export const smsAttempts = sqliteTable(
     failedAt: text('failed_at'),
     lastCheckedAt: text('last_checked_at'),
     resolvedBy: integer('resolved_by').references(() => users.id, restrict),
+    /** The gateway phone's SIM slot (1-based) chosen for the customer's carrier; null before Phase 12. */
+    simNumber: integer('sim_number'),
   },
   (t) => [
     uniqueIndex('sms_attempts_notification_attempt_unique').on(t.notificationId, t.attemptNo),
@@ -319,6 +321,7 @@ export const smsAttempts = sqliteTable(
       oneOf(t.state, ['queued', 'submitting', 'submitted', 'sent', 'delivered', 'failed', 'unconfirmed', 'cancelled']),
     ),
     check('sms_attempts_attempt_no', sql`${t.attemptNo} >= 1`),
+    check('sms_attempts_sim_number', sql`${t.simNumber} IS NULL OR ${t.simNumber} BETWEEN 1 AND 8`),
   ],
 );
 

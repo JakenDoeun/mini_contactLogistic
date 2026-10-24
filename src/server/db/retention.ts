@@ -47,6 +47,23 @@ export function cutoffDate(days: number, now = new Date()): string {
   return new Date(today.getTime() - days * 24 * 3600_000).toISOString().slice(0, 10);
 }
 
+/**
+ * What the next deletion takes (owner, 2026-10-23): the job runs every hour and the cutoff moves on at Cambodia
+ * midnight, so next go the parcels that arrived on the day after today's cutoff. Customers = distinct phone numbers,
+ * plus each parcel without one.
+ */
+export function nextDeletion(db: Db, now = new Date()) {
+  const arrivedOn = cutoffDate(retentionDays(db), new Date(now.getTime() + 24 * 3600_000));
+  const r = db
+    .prepare(
+      `SELECT count(*) AS parcels,
+         count(DISTINCT phone_normalized) + sum(CASE WHEN phone_normalized IS NULL THEN 1 ELSE 0 END) AS customers
+       FROM parcels WHERE arrival_date <= ?`,
+    )
+    .get(arrivedOn) as { parcels: number; customers: number | null };
+  return { arrivedOn, parcels: r.parcels, customers: r.customers ?? 0 };
+}
+
 export type PurgeCounts = Record<string, number>;
 const OLD = (column: string) => `date(${column}, '+7 hours') <= @cutoff`; // a UTC timestamp's Cambodia date
 

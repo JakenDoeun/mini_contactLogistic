@@ -14,10 +14,10 @@ import {
 } from '@/lib/parcel-logic';
 import { cn } from '@/lib/utils';
 import { SmsBadge } from './parcel-status';
-import { batchLabel, GroupList } from './phone-group';
+import { batchLabel, daysAgo, GroupList } from './phone-group';
+import { useT } from '@/lib/i18n-react';
 
 const newestFirst = (a: Parcel, b: Parcel) => b.importedAt.localeCompare(a.importedAt);
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /**
  * The Parcels page's default view: one row per valid phone number per arrival batch, its parcels on expand.
@@ -39,6 +39,7 @@ export function PhoneGroups({
   expandAll: boolean;
   onOpen: (code: string) => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [missingOpen, setMissingOpen] = useState(false);
   const toggle = (phone: string) =>
@@ -67,7 +68,7 @@ export function PhoneGroups({
         {groups.map((g) => {
           const id = `${g.day}|${g.phone}`;
           const expanded = expandAll || open.has(id);
-          const day = batchLabel(g.day);
+          const day = batchLabel(g.day, t);
           const names = [...new Set(g.members.map((p) => p.recipient))];
           const sms = groupSmsStatus(g.members.map((p) => p.code), events);
           const panel = `group-${g.day}-${g.phone}`;
@@ -89,7 +90,7 @@ export function PhoneGroups({
                   <span className="min-w-0">
                     <span className="block font-mono text-[15px] font-semibold">
                       {formatPhone(g.phone)}
-                      {manyDays && <span className="ml-2 font-sans text-xs font-normal text-muted-foreground">arrived {day}</span>}
+                      {manyDays && <span className="ml-2 font-sans text-xs font-normal text-muted-foreground">{t('groups.arrived', { day })}</span>}
                     </span>
                     <span className="block truncate text-sm text-muted-foreground" title={names.join(', ')}>
                       {names.slice(0, 2).join(' · ')}
@@ -99,13 +100,12 @@ export function PhoneGroups({
                 </button>
                 <span className="col-span-2 row-start-2 flex flex-wrap items-center gap-2 pl-7 text-sm xl:contents">
                   <span className="whitespace-nowrap text-muted-foreground">
-                    {plural(g.members.length, 'parcel')}
-                    {day === 'today' && ' today'}
+                    {t(daysAgo(g.day) === 0 ? 'groups.parcelsToday' : 'groups.parcels', { count: g.members.length })}
                   </span>
                   <span>
                     {g.eligible.length > 0 && (
                       <span className="rounded-sm bg-accent px-2 py-0.5 text-xs font-medium whitespace-nowrap text-primary">
-                        {g.eligible.length === g.members.length ? 'Ready to notify' : `${g.eligible.length} ready to notify`}
+                        {g.eligible.length === g.members.length ? t('groups.readyAll') : t('groups.readySome', { count: g.eligible.length })}
                       </span>
                     )}
                   </span>
@@ -114,7 +114,7 @@ export function PhoneGroups({
                 </span>
                 <span className="col-start-2 row-start-1 justify-self-end xl:col-start-auto xl:row-start-auto">
                   <Button size="sm" variant="outline" onClick={() => onOpen((g.eligible[0] ?? g.members[0]).code)}>
-                    {g.eligible.length > 1 ? 'Prepare combined SMS' : g.eligible.length === 1 ? 'Prepare SMS' : 'Open'}
+                    {t(g.eligible.length > 1 ? 'groups.prepareCombined' : g.eligible.length === 1 ? 'groups.prepare' : 'common.open')}
                   </Button>
                 </span>
               </div>
@@ -123,7 +123,7 @@ export function PhoneGroups({
                   <GroupList parcels={g.members} events={events} onSelect={onOpen} />
                   {g.shown < g.members.length && (
                     <p className="mt-1.5 text-xs text-muted-foreground">
-                      {g.shown} of {g.members.length} match the current filters; the whole line is listed.
+                      {t('groups.filtered', { shown: g.shown, count: g.members.length })}
                     </p>
                   )}
                 </div>
@@ -145,6 +145,7 @@ export function PhoneGroups({
  * Collapsed under the groups, since the groups are the day's main work; it opens by itself when it is all there is to show.
  */
 function MissingPhones({ parcels, open, onToggle, onOpen }: { parcels: Parcel[]; open: boolean; onToggle: () => void; onOpen: (code: string) => void }) {
+  const t = useT();
   return (
     <section aria-labelledby="missing-phones-heading" className="border-t">
       <h3 id="missing-phones-heading">
@@ -157,9 +158,9 @@ function MissingPhones({ parcels, open, onToggle, onOpen }: { parcels: Parcel[];
         >
           <ChevronRight className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} aria-hidden />
           <PhoneOff className="size-4 shrink-0 text-warning" aria-hidden />
-          <span className="font-medium">Missing phone numbers</span>
+          <span className="font-medium">{t('groups.missing')}</span>
           <span className="rounded-full bg-warning-tint px-2 py-0.5 font-mono text-xs font-medium text-warning">{parcels.length}</span>
-          <span className="hidden text-muted-foreground sm:inline">Left out of SMS until a number is added</span>
+          <span className="hidden text-muted-foreground sm:inline">{t('groups.missingLead')}</span>
         </button>
       </h3>
       {open && (
@@ -171,7 +172,7 @@ function MissingPhones({ parcels, open, onToggle, onOpen }: { parcels: Parcel[];
                 <span className="text-muted-foreground"> · {p.recipient}</span>
               </span>
               <Button size="sm" variant="outline" onClick={() => onOpen(p.code)}>
-                Add phone
+                {t('groups.addPhone')}
               </Button>
             </li>
           ))}

@@ -1,6 +1,7 @@
 // Sounds on the Notifications page (Phase 12, owner 2026-10-23): made by the browser's own tone maker, so there is no
-// audio file to load or license. A soft rising chime when a run finishes; three short, lower beeps when it needs
-// someone. Each device chooses whether it plays them; browsers allow sound only after the page was clicked once.
+// audio file to load or license. A soft rising chime when a run finishes; three rounds of short, lower beeps when it
+// needs someone. Each lasts about 3 seconds (owner asked for up to 4, 2026-10-24) so it is heard across the counter.
+// Each device chooses whether it plays them; browsers allow sound only after the page was clicked once.
 const KEY = 'cb.sounds';
 
 export interface SoundPrefs {
@@ -51,10 +52,11 @@ function play(kind: 'done' | 'attention', force = false) {
   if (ctx.state === 'suspended') void ctx.resume();
   const v = 0.25 * p.volume; // a sine at full scale is harsh; a quarter of it is a phone-notification level
   if (kind === 'done') {
-    note(659.25, 0, 0.35, v, 'sine'); // E5
-    note(880, 0.16, 0.5, v, 'sine'); // A5: rising, "all good"
+    // C5 E5 G5 C6, rising, "all good"; each rings on like a bell. Notes overlap, so each is quieter. Ends at 3 s.
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => note(f, i * 0.18, 1.6 + i * 0.3, v * 0.7, 'sine'));
   } else {
-    for (const at of [0, 0.22, 0.44]) note(440, at, 0.14, v * 1.2, 'triangle'); // A4, three short beeps
+    // A4, three short beeps, three times over 3 s.
+    for (const round of [0, 1.2, 2.4]) for (const at of [0, 0.22, 0.44]) note(440, round + at, 0.14, v * 1.2, 'triangle');
   }
 }
 

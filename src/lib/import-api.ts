@@ -5,22 +5,23 @@ import type { SimInfo } from '@/lib/carriers';
 import type { ImportListItem, Review } from '@/server/importer/store';
 import type { ContactEvent, Parcel } from '@/lib/parcel-logic';
 import type { Settings } from '@/lib/settings-logic';
+import { clientT, type MessageKey } from '@/lib/messages';
 
 export type { DetectedFile, ImportListItem, Review, ScanResult };
 export type FolderState = ReturnType<typeof folderState> & { isAdmin: boolean };
 export type ReviewItem = Review['items'][number];
 export type DateChoice = { kind: 'single_scan_date' } | { kind: 'all_on_batch_date' } | { kind: 'only_scan_date'; date: string };
 
-const MESSAGES: Record<string, string> = {
-  unauthorized: 'Your session has ended. Sign in again, then retry.',
-  too_large: 'The file is larger than 10 MB. Export a shorter date range.',
-  no_file: 'The file was empty when it arrived. Choose it again.',
-  cross_site: 'This request came from another site and was refused. Open the branch address directly.',
-  not_found: 'This import or parcel no longer exists. Reload the page.',
-  not_checked: 'This import was already confirmed or discarded.',
-  not_waiting: 'This file was already reviewed or taken off the list.',
-  frozen: 'This import was already confirmed or discarded, so its decisions can no longer change.',
-  database_unavailable: 'The branch database is not available right now. Try again in a minute.',
+const MESSAGES: Record<string, MessageKey> = {
+  unauthorized: 'api.unauthorized',
+  too_large: 'api.tooLarge',
+  no_file: 'api.noFile',
+  cross_site: 'api.crossSite',
+  not_found: 'api.notFound',
+  not_checked: 'api.notChecked',
+  not_waiting: 'api.notWaiting',
+  frozen: 'api.frozen',
+  database_unavailable: 'api.databaseUnavailable',
 };
 
 async function call<T>(url: string, init?: RequestInit, accept: number[] = []): Promise<T> {
@@ -28,16 +29,16 @@ async function call<T>(url: string, init?: RequestInit, accept: number[] = []): 
   try {
     res = await fetch(url, { cache: 'no-store', ...init });
   } catch {
-    throw new Error('The branch app could not be reached. Check the connection, then try again.');
+    throw new Error(clientT('api.unreachable'));
   }
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (res.ok || accept.includes(res.status)) return body as T;
   const code = res.status === 401 ? 'unauthorized' : String(body.error ?? '');
   throw new Error(
-    MESSAGES[code] ||
+    (MESSAGES[code] && clientT(MESSAGES[code])) ||
       (typeof body.message === 'string' && body.message) ||
       (Array.isArray(body.messages) && body.messages.join(' ')) ||
-      `The request failed (${res.status}). Try again.`,
+      clientT('api.failed', { status: res.status }),
   );
 }
 

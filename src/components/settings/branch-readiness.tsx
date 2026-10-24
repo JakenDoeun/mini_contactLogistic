@@ -5,12 +5,14 @@ import { RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { BranchOrigin, Check, CheckState, TailscaleStatus } from '@/lib/tailscale';
+import { useT, type MessageKey } from '@/lib/i18n-react';
 
 type Status = { tailscale: TailscaleStatus; origin: BranchOrigin; checks: Check[] };
 type Tone = 'success' | 'warning' | 'destructive' | 'neutral';
 
 /** Whether phones can reach the console securely right now, over Tailscale HTTPS (docs/deploy-tailscale.md). */
 export function BranchReadiness() {
+  const t = useT();
   const [status, setStatus] = useState<Status | 'checking' | 'failed'>('checking');
 
   const check = useCallback(async () => {
@@ -34,21 +36,21 @@ export function BranchReadiness() {
 
   return (
     <div className="mt-4 rounded-md border">
-      <div className="flex items-center justify-between gap-3 border-b px-4 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2.5">
         <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold">
-          Ready for phones?
+          {t('ready.title')}
           {s && !loading && (
-            <Badge variant={ready ? 'success' : 'warning'}>{ready ? 'Yes, over Tailscale HTTPS' : `${problems} to fix`}</Badge>
+            <Badge variant={ready ? 'success' : 'warning'}>{ready ? t('ready.yes') : t('ready.toFix', { count: problems })}</Badge>
           )}
         </h3>
         <Button size="sm" variant="outline" onClick={check} disabled={status === 'checking'}>
           <RefreshCw aria-hidden className={status === 'checking' ? 'animate-spin' : undefined} />
-          Check again
+          {t('ready.checkAgain')}
         </Button>
       </div>
       <ul aria-live="polite" className="divide-y text-sm">
         {loading && !s ? (
-          <Row label="Checking Tailscale" badge={null} loading>
+          <Row label={t('ready.checking')} badge={null} loading>
             {null}
           </Row>
         ) : (
@@ -60,16 +62,16 @@ export function BranchReadiness() {
           ))
         )}
       </ul>
-      {status === 'failed' && <p className="border-t px-4 py-2.5 text-sm text-destructive">Could not check. Reload the page and try again.</p>}
+      {status === 'failed' && <p className="border-t px-4 py-2.5 text-sm text-destructive">{t('ready.failed')}</p>}
     </div>
   );
 }
 
-const CHECK_BADGE: Record<CheckState, [string, Tone]> = {
-  ok: ['OK', 'success'],
-  warn: ['Check', 'warning'],
-  fail: ['Needs fixing', 'destructive'],
-  skip: ['Waiting', 'neutral'],
+const CHECK_BADGE: Record<CheckState, [MessageKey, Tone]> = {
+  ok: ['ready.ok', 'success'],
+  warn: ['ready.warn', 'warning'],
+  fail: ['ready.fail', 'destructive'],
+  skip: ['ready.skip', 'neutral'],
 };
 
 function Row({
@@ -79,15 +81,16 @@ function Row({
   children,
 }: {
   label: string;
-  badge: [string, Tone] | null;
+  badge: [MessageKey, Tone] | null;
   loading: boolean;
   children: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <li className="px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{label}</span>
-        {loading ? <Badge>Checking…</Badge> : badge && <Badge variant={badge[1]}>{badge[0]}</Badge>}
+        {loading ? <Badge>{t('common.checking')}</Badge> : badge && <Badge variant={badge[1]}>{t(badge[0])}</Badge>}
       </div>
       {!loading && <div className="mt-1 text-muted-foreground [&_b]:font-medium [&_b]:text-foreground">{children}</div>}
     </li>

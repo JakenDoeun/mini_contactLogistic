@@ -6,25 +6,18 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { cameraProblem, cameraSupport, listCameras, startBarcodeScan, type CameraProblem, type ScanSession } from '@/lib/scanner/camera-barcode';
 import { SecureConnectionHelp } from './secure-connection-help';
+import { useT, type MessageKey } from '@/lib/i18n-react';
 
 type Problem = CameraProblem | 'insecure' | 'unsupported' | 'paused';
 type State = { status: 'starting' } | { status: 'scanning'; slow: boolean } | { status: 'error'; problem: Problem };
 
-const PROBLEM: Record<Exclude<Problem, 'insecure'>, { title: string; help: string; retry: boolean }> = {
-  unsupported: {
-    title: 'This browser cannot use the camera',
-    help: 'Try the latest Chrome or Safari, or type the tracking code instead.',
-    retry: false,
-  },
-  denied: {
-    title: 'Camera access is blocked',
-    help: 'Allow the camera for this site in the browser’s site settings (on iPhone: Settings › Safari › Camera), then try again. You can also type the code.',
-    retry: true,
-  },
-  'no-camera': { title: 'No camera found', help: 'This device has no camera the browser can use. Type the tracking code instead.', retry: true },
-  busy: { title: 'The camera is busy', help: 'Another app or tab is using it. Close that, then try again.', retry: true },
-  paused: { title: 'Camera paused', help: 'The camera stops while the page is in the background.', retry: true },
-  failed: { title: 'The camera could not start', help: 'Try again, or type the tracking code instead.', retry: true },
+const PROBLEM: Record<Exclude<Problem, 'insecure'>, { title: MessageKey; help: MessageKey; retry: boolean }> = {
+  unsupported: { title: 'camera.unsupported.title', help: 'camera.unsupported.help', retry: false },
+  denied: { title: 'camera.denied.title', help: 'camera.denied.help', retry: true },
+  'no-camera': { title: 'camera.noCamera.title', help: 'camera.noCamera.help', retry: true },
+  busy: { title: 'camera.busy.title', help: 'camera.busy.help', retry: true },
+  paused: { title: 'camera.paused.title', help: 'camera.paused.help', retry: true },
+  failed: { title: 'camera.failed.title', help: 'camera.failed.help', retry: true },
 };
 
 const SLOW_MS = 12_000;
@@ -65,8 +58,11 @@ function Scanner({ onClose, onDetected, typeInstead }: { onClose: () => void; on
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string | undefined>();
   const [attempt, setAttempt] = useState(0);
+  const t = useT();
   const detected = useRef(onDetected);
   detected.current = onDetected;
+  const previewLabel = useRef('');
+  previewLabel.current = t('camera.preview');
 
   useEffect(() => {
     const support = cameraSupport();
@@ -79,7 +75,7 @@ function Scanner({ onClose, onDetected, typeInstead }: { onClose: () => void; on
     el.muted = true;
     el.playsInline = true; // iOS Safari shows no live preview without these two
     el.setAttribute('playsinline', '');
-    el.setAttribute('aria-label', 'Camera preview');
+    el.setAttribute('aria-label', previewLabel.current);
     frame.current!.prepend(el);
 
     let session: ScanSession | undefined;
@@ -138,8 +134,8 @@ function Scanner({ onClose, onDetected, typeInstead }: { onClose: () => void; on
   return (
     <>
       <header className="border-b px-5 pt-5 pb-4 pr-14">
-        <SheetTitle>Scan with camera</SheetTitle>
-        <SheetDescription>Point the camera at the barcode on the parcel label.</SheetDescription>
+        <SheetTitle>{t('camera.title')}</SheetTitle>
+        <SheetDescription>{t('camera.lead')}</SheetDescription>
       </header>
 
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-5">
@@ -152,11 +148,11 @@ function Scanner({ onClose, onDetected, typeInstead }: { onClose: () => void; on
             />
           )}
           {state.status === 'starting' && (
-            <p className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-white">Starting camera…</p>
+            <p className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-white">{t('camera.starting')}</p>
           )}
           {(problem || insecure) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-6 text-center text-white">
-              <p className="font-medium">{problem?.title ?? 'Camera unavailable on this address'}</p>
+              <p className="font-medium">{problem ? t(problem.title) : t('camera.insecure')}</p>
             </div>
           )}
         </div>
@@ -165,16 +161,15 @@ function Scanner({ onClose, onDetected, typeInstead }: { onClose: () => void; on
           {state.status === 'scanning' &&
             (state.slow ? (
               <p className="rounded-md bg-warning-tint px-3 py-2 text-warning">
-                Still can&apos;t read a barcode. Hold the label flat and steady about 10–20 cm away, in good light, with the whole barcode inside
-                the box. If the label is damaged, close this and type the code.
+                {t('camera.slow')}
               </p>
             ) : (
-              <p className="text-muted-foreground">Looking for a barcode. It is read automatically, no button needed.</p>
+              <p className="text-muted-foreground">{t('camera.looking')}</p>
             ))}
           {insecure && <SecureConnectionHelp />}
           {problem && (
             <p role="alert" className="rounded-md bg-destructive-tint px-3 py-2 text-destructive">
-              <span className="font-medium">{problem.title}.</span> {problem.help}
+              {t.rich('camera.problem', { title: <span className="font-medium">{t(problem.title)}</span>, help: t(problem.help) })}
             </p>
           )}
         </div>
@@ -183,17 +178,17 @@ function Scanner({ onClose, onDetected, typeInstead }: { onClose: () => void; on
           {problem?.retry && (
             <Button onClick={() => setAttempt((n) => n + 1)}>
               <RefreshCw aria-hidden />
-              Try again
+              {t('common.tryAgain')}
             </Button>
           )}
           {state.status === 'scanning' && cameras.length > 1 && (
             <Button variant="outline" onClick={switchCamera}>
               <SwitchCamera aria-hidden />
-              Switch camera
+              {t('camera.switch')}
             </Button>
           )}
           <Button variant={problem || insecure ? 'outline' : 'ghost'} onClick={onClose}>
-            {typeInstead ? 'Type the code instead' : 'Cancel'}
+            {typeInstead ? t('camera.typeInstead') : t('common.cancel')}
           </Button>
         </div>
       </div>

@@ -1,5 +1,6 @@
 // Pure parcel and contact rules. No React, no I/O, so it runs under `node --test`.
 // Statuses are derived from the append-only event log, so history is never overwritten.
+import type { Message } from '@/lib/messages';
 
 export type SmsStatus = 'not-sent' | 'queued' | 'sending' | 'sent' | 'delivered' | 'failed' | 'unconfirmed';
 // Calls, Telegram and SMS from another phone ("other", Phase 12) are history entries only: SMS is the one status a
@@ -56,9 +57,10 @@ export function arrivalDay(iso: string) {
 /** The grouping key: the normalized number, or null when it is missing or invalid. Null is never grouped. */
 export const phoneKey = (raw: string) => (isValidPhone(raw) ? normalizePhone(raw) : null);
 
+// Joined with no-break spaces: a number never splits across two lines. Display only; normalizePhone reads it back.
 export function formatPhone(raw: string) {
   const d = normalizePhone(raw);
-  return d.length >= 9 ? `${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}` : raw;
+  return d.length >= 9 ? `${d.slice(0, 3)}\u00a0${d.slice(3, 6)}\u00a0${d.slice(6)}` : raw;
 }
 
 export const normalizeCode = (raw: string) => raw.trim().toUpperCase().replace(/\s+/g, '');
@@ -146,15 +148,12 @@ export function addNewParcels(existing: Parcel[], incoming: Parcel[]) {
 }
 
 /** What the card's buttons would do, in one line: "Not messaged yet · one SMS covers all 3 parcels on this number today". */
-export function contactLine(toMessage: number, size: number, day: string) {
-  const all = `${size} parcels on this number ${day}`;
-  if (toMessage === size) return size === 1 ? 'Not messaged yet' : `Not messaged yet · one SMS covers all ${all}`;
-  if (toMessage === 0) return size === 1 ? 'Messaged or reached already' : `Messaged or reached already · all ${all}`;
-  return `${toMessage} of ${all} not messaged yet`;
+export function contactLine(toMessage: number, size: number, day: string): Message {
+  const vars = { count: size, day, toMessage };
+  if (toMessage === size) return { key: size === 1 ? 'parcel.contactLine.allNotMessaged' : 'parcel.contactLine.allNotMessagedMany', vars };
+  if (toMessage === 0) return { key: size === 1 ? 'parcel.contactLine.allDone' : 'parcel.contactLine.allDoneMany', vars };
+  return { key: 'parcel.contactLine.some', vars };
 }
-
-/** One label for what a message covers, used wherever an SMS is shown. */
-export const smsScope = (count: number) => (count === 1 ? 'Individual SMS · 1 parcel' : `Combined SMS · ${count} parcels`);
 
 /** Parcels a new message should cover: a valid phone, never messaged, and not already reached by other means. */
 export function eligibleForMessage(group: Parcel[], events: ContactEvent[]) {
@@ -183,11 +182,14 @@ export const DEFAULT_TEMPLATES = {
 };
 
 // Scope follows the number of parcels: no manual individual/grouped switch.
-export function composeMessage(name: string, codes: string[], templates = DEFAULT_TEMPLATES) {
+// `day` is the parcels' arrival batch (YYYY-MM-DD); {date} shows it as dd-mm-yyyy. {newline} is a line break, like Enter.
+export function composeMessage(name: string, codes: string[], day: string, templates = DEFAULT_TEMPLATES) {
   const first = name.trim().split(/\s+/)[0] || 'there';
   return (codes.length === 1 ? templates.single : templates.combined)
     .replaceAll('{name}', first)
     .replaceAll('{count}', String(codes.length))
+    .replaceAll('{date}', day.split('-').reverse().join('-'))
+    .replaceAll('{newline}', '\n')
     .replaceAll('{codes}', codes.join(', '));
 }
 

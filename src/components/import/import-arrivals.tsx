@@ -13,6 +13,7 @@ import { ImportFlow, type FlowRequest } from './import-flow';
 import { ImportHistory } from './import-history';
 import { LatestImport } from './latest-import';
 import { UploadPanel } from './upload-panel';
+import { useT } from '@/lib/i18n-react';
 
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
 
@@ -83,6 +84,7 @@ export function ImportArrivals() {
 /** Today's arrivals as customers per carrier, and how the gateway phone's SIMs tell each group (Phase 12). */
 function TodayByCarrier() {
   const data = useParcelData();
+  const t = useT();
   if (!data) return null;
   const today = arrivalDay(new Date().toISOString());
   const phones = [...new Set(data.parcels.filter((p) => p.arrivalDate === today).map((p) => phoneKey(p.phone)).filter((k): k is string => k !== null))];
@@ -90,7 +92,7 @@ function TodayByCarrier() {
   return (
     <section aria-labelledby="carriers-heading">
       <h2 id="carriers-heading" className="mb-2 text-base font-semibold">
-        Today&apos;s customers by carrier
+        {t('import.carriersToday')}
       </h2>
       <CarrierChips items={phones.map((phone) => ({ phone }))} sims={data.gateway.sims} />
     </section>
@@ -98,6 +100,7 @@ function TodayByCarrier() {
 }
 
 function PageHeading({ history }: { history: ImportListItem[] | null }) {
+  const t = useT();
   const newest = history?.[0];
   const waiting = history?.filter((r) => r.status === 'checked').length ?? 0;
   const today = history?.filter((r) => r.status === 'imported' && isToday(r.confirmedAt)) ?? [];
@@ -105,24 +108,22 @@ function PageHeading({ history }: { history: ImportListItem[] | null }) {
   const health = !history
     ? null
     : newest?.status === 'failed'
-      ? { tone: 'bg-destructive-tint text-destructive', text: 'Last file did not import' }
+      ? { tone: 'bg-destructive-tint text-destructive', text: t('import.health.failed') }
       : waiting
-        ? { tone: 'bg-info-tint text-info', text: `${waiting} file${waiting === 1 ? '' : 's'} waiting for review` }
+        ? { tone: 'bg-info-tint text-info', text: t('import.health.waiting', { count: waiting }) }
         : today.length
-          ? { tone: 'bg-success-tint text-success', text: 'All clear today' }
-          : { tone: 'bg-secondary text-muted-foreground', text: 'Nothing imported yet today' };
+          ? { tone: 'bg-success-tint text-success', text: t('import.health.clear') }
+          : { tone: 'bg-secondary text-muted-foreground', text: t('import.health.nothing') };
 
   return (
     <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
       <div>
-        <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight">Import Arrivals</h1>
-        <p className="mt-1 text-muted-foreground">
-          Bring parcel arrivals into the branch records. Every file is reviewed and confirmed before it is imported.
-        </p>
+        <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight">{t('import.title')}</h1>
+        <p className="mt-1 text-muted-foreground">{t('import.lead')}</p>
       </div>
       {health && (
         <p className={cn('flex items-center gap-2 self-start rounded-sm px-2.5 py-1 text-sm font-medium md:self-auto', health.tone)}>
-          <span className="sr-only">Import status: </span>
+          <span className="sr-only">{t('import.statusLabel')}</span>
           <span className="size-2 rounded-full bg-current" aria-hidden />
           {health.text}
         </p>

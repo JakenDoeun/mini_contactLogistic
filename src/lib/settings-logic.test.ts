@@ -4,19 +4,21 @@ import { folderError, gatewayUrlError, templateError } from './settings-logic.ts
 
 test('folder path must be absolute', () => {
   for (const ok of ['D:\\Logistics\\Exports', '\\\\server\\exports', '/srv/exports']) assert.equal(folderError(ok), null);
-  assert.match(folderError('')!, /Enter/);
-  assert.match(folderError('Exports\\Arrivals')!, /full path/);
+  assert.equal(folderError('')?.key, 'settingsError.folderEmpty');
+  assert.equal(folderError('Exports\\Arrivals')?.key, 'settingsError.folderPath');
 });
 
 test('templates need {codes} and only known placeholders', () => {
   assert.equal(templateError('Hi {name}, {count} parcels: {codes}.'), null);
-  assert.match(templateError('Hi {name}, your parcel arrived.')!, /\{codes\}/);
-  assert.match(templateError('Hi {nmae}: {codes}')!, /\{nmae\} is not a placeholder/);
+  assert.equal(templateError('Hi {name}, arrived {date}: {codes}.'), null);
+  assert.equal(templateError('Hi {name},{newline}{codes}'), null);
+  assert.equal(templateError('Hi {name}, your parcel arrived.')?.key, 'settingsError.templateCodes');
+  assert.deepEqual(templateError('Hi {nmae}: {codes}'), { key: 'settingsError.templateUnknown', vars: { token: '{nmae}' } });
 });
 
 test('gateway address is optional but must be http(s)', () => {
   assert.equal(gatewayUrlError(''), null);
   assert.equal(gatewayUrlError('http://192.168.1.20:8080'), null);
-  assert.match(gatewayUrlError('ftp://x')!, /http/);
-  assert.match(gatewayUrlError('192.168.1.20')!, /full address/);
+  assert.equal(gatewayUrlError('ftp://x')?.key, 'settingsError.urlScheme');
+  assert.equal(gatewayUrlError('192.168.1.20')?.key, 'settingsError.urlFull');
 });

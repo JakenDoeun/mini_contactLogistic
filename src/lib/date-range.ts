@@ -1,5 +1,7 @@
 // Date filter shared by the Parcels, Notifications and Import history lists.
 // Pure: no React, no I/O, so it runs under `node --test`. Days follow the office computer's local time.
+import { formatDate, type Locale } from './i18n.ts';
+import type { MessageKey } from '@/lib/messages';
 
 export type DatePreset = 'any' | 'today' | 'yesterday' | '7d' | '30d' | 'custom';
 
@@ -12,13 +14,13 @@ export interface DateRange {
 
 export const ANY_DATE: DateRange = { preset: 'any' };
 
-export const DATE_PRESETS: { key: DatePreset; label: string }[] = [
-  { key: 'any', label: 'Any date' },
-  { key: 'today', label: 'Today' },
-  { key: 'yesterday', label: 'Yesterday' },
-  { key: '7d', label: 'Last 7 days' },
-  { key: '30d', label: 'Last 30 days' },
-  { key: 'custom', label: 'Custom range' },
+export const DATE_PRESETS: { key: DatePreset; label: MessageKey }[] = [
+  { key: 'any', label: 'range.preset.any' },
+  { key: 'today', label: 'range.preset.today' },
+  { key: 'yesterday', label: 'range.preset.yesterday' },
+  { key: '7d', label: 'range.preset.last7' },
+  { key: '30d', label: 'range.preset.last30' },
+  { key: 'custom', label: 'range.preset.custom' },
 ];
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -55,20 +57,28 @@ export function inDateRange(iso: string, range: DateRange, now = new Date()) {
 
 export const isAnyDate = (range: DateRange) => range.preset === 'any' || (range.preset === 'custom' && !parseDay(range.from) && !parseDay(range.to));
 
-/** Fits after a verb in result lines: "imported in the last 7 days", "sent between 10 Oct and 12 Oct". */
-export function rangePhrase(range: DateRange) {
-  const fmt = (s?: string) => parseDay(s)?.toLocaleDateString([], { day: 'numeric', month: 'short' });
+/** Fills {range} in result lines: "imported in the last 7 days", "sent between 10 Oct and 12 Oct". */
+export function rangePhrase(range: DateRange, t: ((key: MessageKey, vars?: Record<string, string>) => string) & { locale: Locale }) {
+  const fmt = (s?: string) => { const d = parseDay(s); return d && formatDate(d, t.locale, { day: 'numeric', month: 'short' }); };
   const [from, to] = [fmt(range.from), fmt(range.to)];
   switch (range.preset) {
     case 'today':
-      return 'today';
+      return t('range.today');
     case 'yesterday':
-      return 'yesterday';
+      return t('range.yesterday');
     case '7d':
-      return 'in the last 7 days';
+      return t('range.last7');
     case '30d':
-      return 'in the last 30 days';
+      return t('range.last30');
     default:
-      return from && to ? (from === to ? `on ${from}` : `between ${from} and ${to}`) : from ? `since ${from}` : to ? `until ${to}` : 'at any time';
+      return from && to
+        ? from === to
+          ? t('range.on', { date: from })
+          : t('range.between', { from, to })
+        : from
+          ? t('range.since', { date: from })
+          : to
+            ? t('range.until', { date: to })
+            : t('range.any');
   }
 }

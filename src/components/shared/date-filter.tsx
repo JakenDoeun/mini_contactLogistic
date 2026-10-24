@@ -5,6 +5,7 @@ import { CalendarDays } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { DATE_PRESETS, isAnyDate, type DatePreset, type DateRange } from '@/lib/date-range';
 import { cn } from '@/lib/utils';
+import { useT } from '@/lib/i18n-react';
 
 /** A date preset picker; "Custom range" adds From and To fields. `label` names what the dates are. `compact` matches sm:h-8 chips. */
 export function DateFilter({
@@ -19,6 +20,7 @@ export function DateFilter({
   compact?: boolean;
 }) {
   const id = useId();
+  const t = useT();
   const height = compact ? 'sm:h-8' : 'sm:h-9';
   const active = !isAnyDate(value);
   return (
@@ -43,7 +45,7 @@ export function DateFilter({
         >
           {DATE_PRESETS.map((p) => (
             <option key={p.key} value={p.key}>
-              {p.label}
+              {t(p.label)}
             </option>
           ))}
         </select>
@@ -51,11 +53,11 @@ export function DateFilter({
       {value.preset === 'custom' && (
         <>
           <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            From
+            {t('dateFilter.from')}
             <Input type="date" value={value.from ?? ''} onChange={(e) => onChange({ ...value, from: e.target.value })} className={cn('w-auto', height)} />
           </label>
           <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            To
+            {t('dateFilter.to')}
             <Input type="date" value={value.to ?? ''} onChange={(e) => onChange({ ...value, to: e.target.value })} className={cn('w-auto', height)} />
           </label>
         </>

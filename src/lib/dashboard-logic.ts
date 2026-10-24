@@ -82,7 +82,7 @@ export function planNotify(parcels: Parcel[], events: ContactEvent[], now: Date,
     day: g.day,
     recipient: g.recipient,
     codes: g.codes,
-    message: composeMessage(g.recipient, g.codes, templates),
+    message: composeMessage(g.recipient, g.codes, g.day, templates),
   }));
   return {
     today: items.filter((i) => i.day === today),

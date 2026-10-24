@@ -5,9 +5,11 @@ import { AlertCircle, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ACCEPTED_EXTENSIONS, validateFile } from '@/lib/import-logic';
 import { cn } from '@/lib/utils';
+import { useT } from '@/lib/i18n-react';
 
 /** Picks one export file and hands it to the review flow, which uploads it. Only name, type and size are checked here. */
 export function UploadPanel({ disabled, onPick }: { disabled: boolean; onPick: (file: File) => void }) {
+  const t = useT();
   const input = useRef<HTMLInputElement>(null);
   const [rejection, setRejection] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -15,18 +17,18 @@ export function UploadPanel({ disabled, onPick }: { disabled: boolean; onPick: (
   function pick(files: FileList | null) {
     setRejection(null);
     if (!files?.length) return;
-    if (files.length > 1) return setRejection('One file at a time, please. Drop a single export file.');
+    if (files.length > 1) return setRejection(t('import.upload.oneFile'));
     const error = validateFile(files[0]);
-    if (error) return setRejection(error);
+    if (error) return setRejection(t(error.key, error.vars));
     onPick(files[0]);
   }
 
   return (
     <section aria-labelledby="upload-heading" className="@container rounded-md border bg-card p-5 sm:p-6">
       <h2 id="upload-heading" className="text-base font-semibold">
-        Upload an export
+        {t('import.upload.title')}
       </h2>
-      <p className="mt-0.5 text-muted-foreground">You see what the file contains and confirm before anything is imported.</p>
+      <p className="mt-0.5 text-muted-foreground">{t('import.upload.lead')}</p>
 
       <input
         ref={input}
@@ -63,11 +65,11 @@ export function UploadPanel({ disabled, onPick }: { disabled: boolean; onPick: (
           <Upload className="size-5" strokeWidth={2} />
         </span>
         <div className="flex-1">
-          <p className="text-base font-medium">{dragging ? 'Let go to add the file' : 'Drop the Excel or CSV export here'}</p>
-          <p className="mt-0.5 text-sm text-muted-foreground">.xlsx, .xls or .csv, up to 10 MB</p>
+          <p className="text-base font-medium">{dragging ? t('import.upload.letGo') : t('import.upload.drop')}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{t('import.upload.formats')}</p>
         </div>
         <Button onClick={() => input.current?.click()} disabled={disabled}>
-          Choose file
+          {t('import.upload.choose')}
         </Button>
       </div>
 

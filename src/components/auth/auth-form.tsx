@@ -7,19 +7,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { safeNextPath } from '@/lib/safe-next';
+import { useT, type MessageKey } from '@/lib/i18n-react';
 
 type Field = 'code' | 'username' | 'password' | 'confirm';
 type Mode = 'login' | 'first_run' | 'recover';
 
-const MESSAGES: Record<string, { text: string; field?: Field }> = {
-  invalid_credentials: { text: 'Wrong username or password.', field: 'password' },
-  bad_code: { text: 'That code is not right. Check it and try again.', field: 'code' },
-  bad_recovery: { text: 'That username and recovery code do not match an active code.', field: 'code' },
-  account_exists: { text: 'An account already exists. Reload the page to sign in.' },
-  invalid_username: { text: 'Username: 3 to 32 characters, letters, digits, dot, dash or underscore.', field: 'username' },
-  invalid_password: { text: 'Password: at least 12 characters.', field: 'password' },
-  database_unavailable: { text: 'The branch database is not ready. Ask the office to start the app again.' },
-  cross_site: { text: 'This page must be opened from the branch address.' },
+const MESSAGES: Record<string, { key: MessageKey; field?: Field }> = {
+  invalid_credentials: { key: 'auth.error.invalidCredentials', field: 'password' },
+  bad_code: { key: 'auth.error.badCode', field: 'code' },
+  bad_recovery: { key: 'auth.error.badRecovery', field: 'code' },
+  account_exists: { key: 'auth.error.accountExists' },
+  invalid_username: { key: 'auth.error.invalidUsername', field: 'username' },
+  invalid_password: { key: 'auth.error.invalidPassword', field: 'password' },
+  database_unavailable: { key: 'auth.error.databaseUnavailable' },
+  cross_site: { key: 'auth.error.crossSite' },
 };
 
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -29,6 +30,7 @@ const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)'
  * "Forgot password?" switches to the recovery form (new password with the recovery code from the office computer).
  */
 export function AuthForm({ mode: initialMode, next }: { mode: 'login' | 'first_run'; next?: string }) {
+  const t = useT();
   const formRef = useRef<HTMLFormElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const switched = useRef(false);
@@ -68,7 +70,7 @@ export function AuthForm({ mode: initialMode, next }: { mode: 'login' | 'first_r
 
   async function submit(form: HTMLFormElement) {
     const data = Object.fromEntries(new FormData(form)) as Record<string, string>;
-    if (newPassword && data.password !== data.confirm) return fail({ text: 'The two passwords do not match.', field: 'confirm' });
+    if (newPassword && data.password !== data.confirm) return fail({ text: t('auth.error.passwordsDiffer'), field: 'confirm' });
     setStatus('busy');
     setError(null);
     setNotice(null);
@@ -83,7 +85,7 @@ export function AuthForm({ mode: initialMode, next }: { mode: 'login' | 'first_r
         setStatus('idle');
         switched.current = true;
         setMode('login');
-        setNotice('Password changed. Every device was signed out. Sign in with the new password.');
+        setNotice(t('auth.passwordChanged'));
         return;
       }
       if (res.ok) {
@@ -92,10 +94,11 @@ export function AuthForm({ mode: initialMode, next }: { mode: 'login' | 'first_r
         return;
       }
       const body = (await res.json().catch(() => ({}))) as { error?: string; retryAfter?: number };
-      if (body.error === 'paused') return fail({ text: `Too many wrong attempts. Try again in ${body.retryAfter ?? 60} seconds.` });
-      fail(MESSAGES[body.error ?? ''] ?? { text: 'Could not sign in. Try again.' });
+      if (body.error === 'paused') return fail({ text: t('auth.error.paused', { seconds: body.retryAfter ?? 60 }) });
+      const known = MESSAGES[body.error ?? ''];
+      fail(known ? { text: t(known.key), field: known.field } : { text: t('auth.error.generic') });
     } catch {
-      fail({ text: 'The branch computer did not answer. Check the connection and try again.' });
+      fail({ text: t('auth.error.offline') });
     }
   }
 
@@ -106,10 +109,10 @@ export function AuthForm({ mode: initialMode, next }: { mode: 'login' | 'first_r
       {!first && (
         <>
           <h1 ref={headingRef} tabIndex={-1} className="text-[1.375rem] leading-tight font-semibold tracking-tight outline-none">
-            {recover ? 'Reset your password' : 'Sign in'}
+            {recover ? t('auth.title.reset') : t('auth.title.signIn')}
           </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            {recover ? 'Use the recovery code from the office computer to set a new password.' : 'Use your staff account.'}
+            {recover ? t('auth.lead.reset') : t('auth.lead.signIn')}
           </p>
         </>
       )}
@@ -123,35 +126,35 @@ export function AuthForm({ mode: initialMode, next }: { mode: 'login' | 'first_r
       >
         {recover && (
           <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
-            <p>On the office computer, in the project folder:</p>
+            <p>{t('auth.recover.where')}</p>
             <ol className="space-y-2">
               <li>
-                1. Create a code, if none exists yet or the last one was used:
+                {t('auth.recover.step1')}
                 <CommandLine command="npm run recovery-code -- rotate" />
               </li>
               <li>
-                2. Show it, then type it below. It works once.
+                {t('auth.recover.step2')}
                 <CommandLine command="npm run recovery-code -- show" />
               </li>
             </ol>
           </div>
         )}
         {first && (
-          <FormField label="One-time code" name="code" autoComplete="one-time-code" placeholder="XXXX-XXXX-XXXX-XXXX" autoCapitalize="characters" className="font-mono tracking-wider" {...invalid('code')} />
+          <FormField label={t('auth.field.oneTimeCode')} name="code" autoComplete="one-time-code" placeholder="XXXX-XXXX-XXXX-XXXX" autoCapitalize="characters" className="font-mono tracking-wider" {...invalid('code')} />
         )}
-        <FormField label="Username" name="username" autoComplete="username" autoCapitalize="none" {...invalid('username')} />
+        <FormField label={t('auth.field.username')} name="username" autoComplete="username" autoCapitalize="none" {...invalid('username')} />
         {recover && (
-          <FormField label="Recovery code" name="code" autoComplete="off" placeholder="XXXX-XXXX-…" autoCapitalize="characters" className="font-mono tracking-wider" {...invalid('code')} />
+          <FormField label={t('auth.field.recoveryCode')} name="code" autoComplete="off" placeholder="XXXX-XXXX-…" autoCapitalize="characters" className="font-mono tracking-wider" {...invalid('code')} />
         )}
         <FormField
-          label={recover ? 'New password' : 'Password'}
+          label={recover ? t('auth.field.newPassword') : t('auth.field.password')}
           name="password"
           type="password"
           autoComplete={newPassword ? 'new-password' : 'current-password'}
           minLength={newPassword ? 12 : undefined}
           {...invalid('password')}
         />
-        {newPassword && <FormField label="Repeat password" name="confirm" type="password" autoComplete="new-password" {...invalid('confirm')} />}
+        {newPassword && <FormField label={t('auth.field.repeatPassword')} name="confirm" type="password" autoComplete="new-password" {...invalid('confirm')} />}
         {/* Fixed-height slot: a one-line message appears without moving the button. */}
         <p id="auth-error" role={error ? 'alert' : 'status'} className={cn('min-h-5 text-sm leading-5', error ? 'text-destructive' : 'text-success')}>
           {error?.text ?? notice}
@@ -165,19 +168,19 @@ export function AuthForm({ mode: initialMode, next }: { mode: 'login' | 'first_r
           {status === 'busy' ? (
             <>
               <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none" aria-hidden />
-              {first ? 'Creating account…' : recover ? 'Changing password…' : 'Signing in…'}
+              {first ? t('auth.busy.creating') : recover ? t('auth.busy.changing') : t('auth.busy.signingIn')}
             </>
           ) : status === 'success' ? (
             <>
               <Check aria-hidden />
-              Signed in
+              {t('auth.done')}
             </>
           ) : first ? (
-            'Create account and sign in'
+            t('auth.submit.create')
           ) : recover ? (
-            'Change password'
+            t('auth.submit.change')
           ) : (
-            'Sign in'
+            t('auth.submit.signIn')
           )}
         </Button>
         {!first && (
@@ -186,7 +189,7 @@ export function AuthForm({ mode: initialMode, next }: { mode: 'login' | 'first_r
             className="w-full text-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
             onClick={() => switchMode(recover ? 'login' : 'recover')}
           >
-            {recover ? 'Back to sign in' : 'Forgot password?'}
+            {recover ? t('auth.backToSignIn') : t('auth.forgot')}
           </button>
         )}
       </form>
@@ -213,6 +216,7 @@ function FormField({ label, name, className, ...props }: { label: string; name: 
 }
 
 function CommandLine({ command }: { command: string }) {
+  const t = useT();
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   return (
     <div className="mt-1 flex items-center gap-1 rounded-lg bg-secondary py-1 pr-1 pl-3">
@@ -233,7 +237,7 @@ function CommandLine({ command }: { command: string }) {
         }
       >
         {state === 'copied' ? <Check aria-hidden /> : <Copy aria-hidden />}
-        <span aria-live="polite">{state === 'copied' ? 'Copied' : state === 'failed' ? 'Select the text' : 'Copy'}</span>
+        <span aria-live="polite">{state === 'copied' ? t('common.copied') : state === 'failed' ? t('common.selectText') : t('common.copy')}</span>
       </Button>
     </div>
   );

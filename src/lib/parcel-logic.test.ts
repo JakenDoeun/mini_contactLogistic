@@ -62,8 +62,10 @@ test('a new arrival is messaged alone; earlier notified parcels are left out', (
   const events = [ev('1', '1', { parcelCodes: ['A', 'B'], smsStatus: 'sent' })];
   const eligible = eligibleForMessage(group, events).map((x) => x.code);
   assert.deepEqual(eligible, ['C']);
-  assert.match(composeMessage('Sokha Chan', eligible), /^Hi Sokha, your parcel C has arrived/);
-  assert.match(composeMessage('Sokha Chan', ['A', 'B']), /2 new parcels .*: A, B\./);
+  assert.match(composeMessage('Sokha Chan', eligible, '2026-10-23'), /^Hi Sokha, your parcel C has arrived/);
+  assert.match(composeMessage('Sokha Chan', ['A', 'B'], '2026-10-23'), /2 new parcels .*: A, B\./);
+  assert.equal(composeMessage('Sokha', ['A'], '2026-10-03', { single: '{codes} came on {date}', combined: '' }), 'A came on 03-10-2026');
+  assert.equal(composeMessage('Sokha', ['A'], '2026-10-03', { single: 'Hi {name}{newline}{codes}', combined: '' }), 'Hi Sokha\nA');
 });
 
 test('an SMS waiting at the gateway blocks a duplicate', () => {
@@ -126,10 +128,10 @@ test("a phone line's summary shows its most urgent SMS status", () => {
 });
 
 test('the contact line says what one SMS would cover, without repeating the count', () => {
-  assert.equal(contactLine(1, 1, 'today'), 'Not messaged yet');
-  assert.equal(contactLine(3, 3, 'today'), 'Not messaged yet · one SMS covers all 3 parcels on this number today');
-  assert.equal(contactLine(1, 3, 'yesterday'), '1 of 3 parcels on this number yesterday not messaged yet');
-  assert.equal(contactLine(0, 2, 'today'), 'Messaged or reached already · all 2 parcels on this number today');
+  assert.equal(contactLine(1, 1, 'today').key, 'parcel.contactLine.allNotMessaged');
+  assert.deepEqual(contactLine(3, 3, 'today'), { key: 'parcel.contactLine.allNotMessagedMany', vars: { count: 3, day: 'today', toMessage: 3 } });
+  assert.equal(contactLine(1, 3, 'yesterday').key, 'parcel.contactLine.some');
+  assert.equal(contactLine(0, 2, 'today').key, 'parcel.contactLine.allDoneMany');
 });
 
 test('scan lookup finds a stored code whatever its case or spaces', () => {

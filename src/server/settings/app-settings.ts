@@ -2,11 +2,15 @@
 // duplicate-file rule, the SMS wording and the gap between two SMS. Until Phase 10 these lived in each browser, so the importer never saw them
 // and two staff could send different wording. Admin only to change; audited by key, never by value.
 import { DEFAULT_SMS_GAP, DEFAULT_TEMPLATES } from '../../lib/parcel-logic.ts';
+import { translate, type Message } from '../../lib/messages.ts';
 import { columnError, gapError, templateError, type Settings } from '../../lib/settings-logic.ts';
 import { writeAudit } from '../db/audit.ts';
 import type { Db } from '../db/connection.ts';
 import { isAdmin, readSetting, writeSetting } from '../db/settings.ts';
 import { COLUMNS_KEY, DUPLICATE_FILE_KEY, duplicateRule, importColumns } from '../importer/store.ts';
+
+// shortcut: server replies stay in English until the server-messages pass of Phase 13 reads the language cookie.
+const english = (m: Message) => translate('en', m.key, m.vars);
 
 export const TEMPLATES_KEY = 'sms.templates';
 export const GAP_KEY = 'sms.gap';
@@ -45,7 +49,7 @@ export function saveAppSettings(db: Db, userId: number, input: Record<string, un
       if (value === undefined) continue;
       if (typeof value !== 'string' || value.length > 100) return invalid('The column heading could not be read.');
       const error = columnError(value);
-      if (error) return invalid(error);
+      if (error) return invalid(english(error));
       columns[field] = value.trim();
     }
     writes.push([COLUMNS_KEY, columns]);
@@ -60,14 +64,14 @@ export function saveAppSettings(db: Db, userId: number, input: Record<string, un
       return invalid('Keep each message under 600 characters.');
     }
     const error = templateError(t.single) ?? templateError(t.combined);
-    if (error) return invalid(error);
+    if (error) return invalid(english(error));
     writes.push([TEMPLATES_KEY, { single: t.single.trim(), combined: t.combined.trim() }]);
   }
   if (gap !== undefined) {
     const g = gap as Partial<Record<'from' | 'to', unknown>>;
     if (typeof g?.from !== 'number' || typeof g.to !== 'number') return invalid('Enter the gap in seconds.');
     const error = gapError({ from: g.from, to: g.to });
-    if (error) return invalid(error);
+    if (error) return invalid(english(error));
     writes.push([GAP_KEY, { from: g.from, to: g.to }]);
   }
   if (!writes.length) return invalid('Nothing to save.');

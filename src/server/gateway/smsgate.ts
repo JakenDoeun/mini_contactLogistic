@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { isValidPhone, normalizePhone } from '../../lib/parcel-logic.ts';
+import { translate } from '../../lib/messages.ts';
 import { gatewayUrlError } from '../../lib/settings-logic.ts';
 
 // The address and password live in this file in the data folder (0600), never in the database or Settings
@@ -37,8 +38,9 @@ export function readGatewayConfig(dataDir: string): GatewayConfig | null {
 /** Problems with the values, as sentences; empty when they can be saved. */
 export function gatewayConfigErrors(c: GatewayConfig): string[] {
   const errors: string[] = [];
-  const urlError = c.url.trim() ? gatewayUrlError(c.url) : 'Enter the address shown in the gateway app.';
-  if (urlError) errors.push(urlError);
+  const urlError = c.url.trim() ? gatewayUrlError(c.url) : null;
+  if (!c.url.trim()) errors.push('Enter the address shown in the gateway app.');
+  if (urlError) errors.push(translate('en', urlError.key, urlError.vars));
   if (!c.username.trim()) errors.push('Enter the username shown in the gateway app.');
   if (!c.password) errors.push('Enter the password shown in the gateway app.');
   return errors;

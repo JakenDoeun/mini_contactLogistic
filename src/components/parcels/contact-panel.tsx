@@ -21,11 +21,11 @@ import { queueSms, recordOutcome } from '@/lib/parcel-service';
 import { useSettings } from '@/lib/settings-service';
 import { cn, formatTime } from '@/lib/utils';
 import { SmsBadge } from './parcel-status';
-
-const parcels = (n: number) => `${n} parcel${n === 1 ? '' : 's'}`;
+import { useT, type MessageKey } from '@/lib/i18n-react';
 
 /** The contact actions for everyone on one phone line: one SMS button, then Call and Telegram in their own part. */
 export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group: Parcel[]; events: ContactEvent[] }) {
+  const t = useT();
   const templates = useSettings()?.templates;
   const [again, setAgain] = useState(false); // staff chose to message parcels that were messaged before
   const [editing, setEditing] = useState(false);
@@ -40,13 +40,13 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
   const queued = events.find((e) => e.id === queuedId);
 
   const draftKey = `${parcel.recipient}|${codes.join(',')}|${templates?.single}|${templates?.combined}`;
-  const [draft, setDraft] = useState({ key: draftKey, text: composeMessage(parcel.recipient, codes, templates) });
+  const [draft, setDraft] = useState({ key: draftKey, text: composeMessage(parcel.recipient, codes, parcel.arrivalDate, templates) });
   // A different parcel set means a different message; edits to the old one no longer apply.
-  if (draft.key !== draftKey) setDraft({ key: draftKey, text: composeMessage(parcel.recipient, codes, templates) });
-  const message = draft.text || composeMessage(parcel.recipient, group.map((p) => p.code), templates);
+  if (draft.key !== draftKey) setDraft({ key: draftKey, text: composeMessage(parcel.recipient, codes, parcel.arrivalDate, templates) });
+  const message = draft.text || composeMessage(parcel.recipient, group.map((p) => p.code), parcel.arrivalDate, templates);
 
   if (!isValidPhone(parcel.phone)) {
-    return <p className="text-muted-foreground">Add a phone number above to message or call. Until then this parcel is left out of messages.</p>;
+    return <p className="text-muted-foreground">{t('contact.addPhoneFirst')}</p>;
   }
 
   async function send() {
@@ -57,7 +57,7 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
       setAgain(false);
       setEditing(false);
     } catch (e) {
-      setSendError(`Not sent. ${(e as Error).message}`);
+      setSendError(t('contact.notSent', { error: (e as Error).message }));
     } finally {
       setSending(false);
     }
@@ -70,7 +70,7 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
           {editing ? (
             <>
               <label htmlFor="sms-preview" className="text-xs text-muted-foreground">
-                Message for {parcels(codes.length)}
+                {t('contact.messageFor', { count: codes.length })}
               </label>
               <textarea
                 id="sms-preview"
@@ -81,27 +81,26 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
                 className="mt-1 w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-base sm:text-sm"
               />
               <p className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>{draft.text.length} characters</span>
+                <span>{t('settings.sms.characters', { count: draft.text.length })}</span>
                 <button type="button" onClick={() => setEditing(false)} className="min-h-11 font-medium text-primary sm:min-h-8">
-                  Done
+                  {t('contact.done')}
                 </button>
               </p>
             </>
           ) : (
             <>
               <p className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Message for {parcels(codes.length)}</span>
+                <span>{t('contact.messageFor', { count: codes.length })}</span>
                 <button type="button" onClick={() => setEditing(true)} className="min-h-11 font-medium text-primary sm:min-h-8">
-                  Edit message
+                  {t('contact.editMessage')}
                 </button>
               </p>
-              <p className="rounded-md bg-secondary px-3 py-2.5 text-sm">{draft.text}</p>
+              <p className="rounded-md bg-secondary px-3 py-2.5 text-sm whitespace-pre-line">{draft.text}</p>
             </>
           )}
           {again && (
             <p className="mt-2 text-sm text-warning">
-              {before === group.length ? 'All of these were' : `${before} of these ${before === 1 ? 'was' : 'were'}`} messaged before. The customer gets
-              them again.
+              {before === group.length ? t('contact.againAll') : t('contact.againSome', { count: before })}
             </p>
           )}
         </div>
@@ -110,23 +109,23 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
       {codes.length > 0 && (
         <Button onClick={send} disabled={inFlight || sending || !draft.text.trim()} className="self-start">
           <Send aria-hidden />
-          {sending ? 'Saving…' : again ? 'Send again' : 'Send SMS'} · {parcels(codes.length)}
+          {sending ? t('common.saving') : t(again ? 'contact.sendAgain' : 'contact.send', { count: codes.length })}
         </Button>
       )}
 
-      {inFlight && <p className="-mt-2 text-sm text-muted-foreground">An SMS for these parcels is already waiting at the gateway.</p>}
+      {inFlight && <p className="-mt-2 text-sm text-muted-foreground">{t('contact.inFlight')}</p>}
       {before > 0 && !again && !inFlight && (
         <button type="button" onClick={() => setAgain(true)} className="-mt-2 min-h-11 self-start text-sm font-medium text-primary sm:min-h-8">
           {eligible.length > 0
-            ? `Include the ${before} messaged or reached before`
+            ? t('contact.include', { count: before })
             : group.some((p) => smsStatusOf(p.code, events) !== 'not-sent')
-              ? 'Send the SMS again'
-              : 'Send an SMS anyway'}
+              ? t('contact.resend')
+              : t('contact.anyway')}
         </button>
       )}
       {again && (
         <button type="button" onClick={() => setAgain(false)} className="-mt-2 min-h-11 self-start text-sm font-medium text-primary sm:min-h-8">
-          Cancel sending again
+          {t('contact.cancelAgain')}
         </button>
       )}
 
@@ -150,22 +149,22 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
 type Asked = 'call' | 'telegram' | 'sms' | 'pick';
 const ASK = {
   call: {
-    question: 'Did the customer answer?',
+    question: 'contact.ask.call',
     options: [
-      { outcome: 'answered', label: 'Reached', Icon: CircleCheck, primary: true },
-      { outcome: 'no-answer', label: 'No answer', Icon: PhoneMissed, primary: false },
+      { outcome: 'answered', label: 'contact.ask.reached', Icon: CircleCheck, primary: true },
+      { outcome: 'no-answer', label: 'contact.ask.noAnswer', Icon: PhoneMissed, primary: false },
     ],
-    dismiss: "Didn't call",
+    dismiss: 'contact.ask.didntCall',
   },
   telegram: {
-    question: 'Did you send the message on Telegram?',
-    options: [{ outcome: 'messaged', label: 'Yes, sent', Icon: CircleCheck, primary: true }],
-    dismiss: 'Not sent',
+    question: 'contact.ask.telegram',
+    options: [{ outcome: 'messaged', label: 'contact.ask.yesSent', Icon: CircleCheck, primary: true }],
+    dismiss: 'contact.ask.notSent',
   },
   sms: {
-    question: 'Did you send the SMS from your phone?',
-    options: [{ outcome: 'messaged', label: 'Yes, sent', Icon: CircleCheck, primary: true }],
-    dismiss: 'Not sent',
+    question: 'contact.ask.sms',
+    options: [{ outcome: 'messaged', label: 'contact.ask.yesSent', Icon: CircleCheck, primary: true }],
+    dismiss: 'contact.ask.notSent',
   },
 } as const;
 const CHANNEL_OF = { call: 'call', telegram: 'telegram', sms: 'other' } as const;
@@ -173,10 +172,10 @@ const CHANNEL_OF = { call: 'call', telegram: 'telegram', sms: 'other' } as const
 // always fit; from sm: icon beside the label, a quieter 36 px.
 const SEGMENT =
   'inline-flex min-h-11 flex-col items-center justify-center gap-0.5 px-1 py-1 text-xs font-medium text-foreground transition-colors hover:bg-secondary focus-visible:relative focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none sm:min-h-9 sm:flex-row sm:gap-1.5 sm:px-3 sm:py-0 sm:text-sm';
-const DONE: Record<Outcome, [string, typeof Phone, string]> = {
-  answered: ['Reached by call', CircleCheck, 'text-success'],
-  'no-answer': ['Called, no answer', PhoneMissed, 'text-warning'],
-  messaged: ['Sent on Telegram', MessageSquare, 'text-foreground'],
+const DONE: Record<Outcome, [MessageKey, typeof Phone, string]> = {
+  answered: ['contact.done.answered', CircleCheck, 'text-success'],
+  'no-answer': ['contact.done.noAnswer', PhoneMissed, 'text-warning'],
+  messaged: ['contact.done.messaged', MessageSquare, 'text-foreground'],
 };
 
 /**
@@ -209,6 +208,7 @@ export function DirectContact({
   /** Compact on phones: the actions show only when the row is opened (the row owns the toggle). */
   actionsOpen?: boolean;
 }) {
+  const t = useT();
   const [asked, setAsked] = useState<Asked | null>(null);
   const [copied, setCopied] = useState('');
   const [saving, setSaving] = useState(false);
@@ -220,8 +220,8 @@ export function DirectContact({
     setAsked('telegram');
     // t.me cannot carry the text, so it goes on the clipboard on the way out.
     navigator.clipboard.writeText(message).then(
-      () => setCopied('Message copied. Paste it into the chat.'),
-      () => setCopied('Copy was blocked. Select the message above and copy it.'),
+      () => setCopied(t('contact.copied')),
+      () => setCopied(t('contact.copyBlocked')),
     );
   }
 
@@ -233,31 +233,35 @@ export function DirectContact({
       setAsked(null);
       setCopied('');
     } catch (e) {
-      setSaveError(`Not saved. ${(e as Error).message}`);
+      setSaveError(t('common.notSaved', { error: (e as Error).message }));
     } finally {
       setSaving(false);
     }
   }
 
   const ask = asked && asked !== 'pick' ? ASK[asked] : null;
-  const [doneLabel, DoneIcon, doneTone] = !last ? [] : last.channel === 'other' ? ['SMS sent from a phone', Smartphone, 'text-foreground'] : DONE[last.outcome!];
+  const [doneLabel, DoneIcon, doneTone] = !last
+    ? []
+    : last.channel === 'other'
+      ? (['contact.done.other', Smartphone, 'text-foreground'] as const)
+      : DONE[last.outcome!];
 
   return (
     <section aria-labelledby={`${id}-heading`} className={compact ? undefined : 'border-t pt-4'}>
       {/* In a list (compact) the row itself says when a call went unanswered; here only the parcel page shows it. */}
       <div className={compact ? 'sr-only' : 'flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1'}>
         <h3 id={`${id}-heading`} className={compact ? undefined : 'text-sm font-medium'}>
-          Call, Telegram or SMS from your phone
+          {t('contact.heading')}
         </h3>
         <p aria-live="polite" className="text-sm">
           {last ? (
             <span className={`inline-flex items-center gap-1.5 ${doneTone}`}>
               {DoneIcon && <DoneIcon className="size-4" aria-hidden />}
-              {doneLabel}
-              <span className="font-mono text-xs text-muted-foreground">{formatTime(last.at)}</span>
+              {doneLabel && t(doneLabel)}
+              <span className="font-mono text-xs text-muted-foreground">{formatTime(last.at, t.locale)}</span>
             </span>
           ) : (
-            <span className="text-muted-foreground">Not contacted yet</span>
+            <span className="text-muted-foreground">{t('contact.notContacted')}</span>
           )}
         </p>
       </div>
@@ -266,7 +270,7 @@ export function DirectContact({
         // One slim connected group per row, so a long list reads as phone numbers, not as rows of buttons.
         <div
           role="group"
-          aria-label={`Contact ${parcel.phone}`}
+          aria-label={t('contact.group', { phone: parcel.phone })}
           className={cn(
             'w-full divide-x overflow-hidden rounded-md border bg-card sm:inline-flex sm:w-auto',
             actionsOpen ? 'grid' : 'hidden', // phones: only when the row is opened; from sm always
@@ -275,20 +279,20 @@ export function DirectContact({
         >
           <a href={`tel:${normalizePhone(parcel.phone)}`} onClick={() => setAsked('call')} className={SEGMENT}>
             <Phone className="size-4" aria-hidden />
-            Call
+            {t('contact.call')}
           </a>
           <a href={telegramLink(parcel.phone)} target="_blank" rel="noreferrer" onClick={telegram} className={SEGMENT}>
             <MessageSquare className="size-4" aria-hidden />
-            Telegram
+            {t('contact.telegram')}
           </a>
           <a href={smsLink(parcel.phone, message)} onClick={() => setAsked('sms')} className={SEGMENT}>
             <Smartphone className="size-4" aria-hidden />
-            SMS
+            {t('contact.sms')}
           </a>
           {onVerify && (
             <button type="button" aria-pressed={verifying} onClick={onVerify} className={cn(SEGMENT, verifying && 'bg-secondary')}>
               <ScanBarcode className="size-4" aria-hidden />
-              Verify
+              {t('contact.verify')}
             </button>
           )}
         </div>
@@ -300,24 +304,24 @@ export function DirectContact({
             <Button asChild variant="outline">
               <a href={`tel:${normalizePhone(parcel.phone)}`} onClick={() => setAsked('call')}>
                 <Phone aria-hidden />
-                Call
+                {t('contact.call')}
               </a>
             </Button>
             <Button asChild variant="outline">
               <a href={telegramLink(parcel.phone)} target="_blank" rel="noreferrer" onClick={telegram}>
                 <MessageSquare aria-hidden />
-                Telegram
+                {t('contact.telegram')}
               </a>
             </Button>
             <Button asChild variant="outline">
               <a href={smsLink(parcel.phone, message)} onClick={() => setAsked('sms')}>
                 <Smartphone aria-hidden />
-                SMS
+                {t('contact.sms')}
               </a>
             </Button>
           </div>
           <button type="button" onClick={() => setAsked('pick')} className="mt-1 min-h-11 text-left text-sm font-medium text-primary sm:min-h-8">
-            Called or messaged from another phone? Record it
+            {t('contact.otherPhone')}
           </button>
         </>
       )}
@@ -325,24 +329,24 @@ export function DirectContact({
       {asked === 'pick' && (
         <div role="group" aria-labelledby={`${id}-pick`} className={cn('rounded-md bg-secondary px-3 py-3', !compact && 'mt-3')}>
           <p id={`${id}-pick`} className="font-medium">
-            What did you do?
+            {t('contact.whatDid')}
           </p>
           <div className="mt-3 grid grid-cols-3 gap-2 sm:flex">
             <Button variant="outline" autoFocus onClick={() => setAsked('call')}>
               <Phone aria-hidden />
-              Called
+              {t('contact.called')}
             </Button>
             <Button variant="outline" onClick={() => setAsked('telegram')}>
               <MessageSquare aria-hidden />
-              Telegram
+              {t('contact.telegram')}
             </Button>
             <Button variant="outline" onClick={() => setAsked('sms')}>
               <Smartphone aria-hidden />
-              SMS
+              {t('contact.sms')}
             </Button>
           </div>
           <Button variant="ghost" size="sm" className="mt-1" onClick={() => setAsked(null)}>
-            Cancel
+            {t('common.cancel')}
           </Button>
         </div>
       )}
@@ -354,17 +358,17 @@ export function DirectContact({
           className={compact ? 'rounded-md bg-secondary px-3 py-3' : 'mt-3 rounded-md border-l-4 border-primary bg-secondary px-3 py-3'}
         >
           <p id={`${id}-ask`} className="font-medium">
-            {ask.question}
+            {t(ask.question)}
           </p>
           {asked === 'call' && stops > 0 && (
-            <p className="mt-0.5 text-sm text-muted-foreground">Reached stops the SMS for {parcels(stops)}, so nobody is told twice.</p>
+            <p className="mt-0.5 text-sm text-muted-foreground">{t('contact.stops', { count: stops })}</p>
           )}
           {asked === 'telegram' && copied && <p className="mt-0.5 text-sm text-muted-foreground">{copied}</p>}
           <div className="mt-3 grid grid-cols-2 gap-2 sm:flex">
             {ask.options.map(({ outcome, label, Icon, primary }, i) => (
               <Button key={outcome} variant={primary ? 'default' : 'outline'} autoFocus={i === 0} disabled={saving} onClick={() => answer(outcome)}>
                 <Icon aria-hidden />
-                {label}
+                {t(label)}
               </Button>
             ))}
           </div>
@@ -374,7 +378,7 @@ export function DirectContact({
             </p>
           )}
           <Button variant="ghost" size="sm" className="mt-1" onClick={() => setAsked(null)}>
-            {ask.dismiss}
+            {t(ask.dismiss)}
           </Button>
         </div>
       )}

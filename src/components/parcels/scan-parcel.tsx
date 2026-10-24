@@ -11,11 +11,10 @@ import { cameraSupport } from '@/lib/scanner/camera-barcode';
 import { CameraScanner } from './camera-scanner';
 import { ParcelDetail } from './parcel-detail';
 import { SecureConnectionHelp } from './secure-connection-help';
-
-const relatedLine = (n: number) =>
-  n === 0 ? 'No other parcels on this phone number.' : `${n} more parcel${n === 1 ? '' : 's'} on this phone number.`;
+import { useT } from '@/lib/i18n-react';
 
 export function ScanParcel() {
+  const t = useT();
   const data = useParcelData();
   const loadError = useParcelError();
   const input = useRef<HTMLInputElement>(null);
@@ -52,10 +51,10 @@ export function ScanParcel() {
 
   return (
     <>
-      <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight">Scan Parcel</h1>
+      <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight">{t('scan.title')}</h1>
       {!scanned && (
         <p className="mt-1 text-muted-foreground">
-          Scan the barcode with the camera or a barcode scanner, or type the tracking code and press Enter.
+          {t('scan.lead')}
         </p>
       )}
 
@@ -67,7 +66,7 @@ export function ScanParcel() {
         }}
       >
         <label htmlFor="scan-input" className="font-medium">
-          Tracking code
+          {t('scan.code')}
         </label>
         <div className="mt-2 grid grid-cols-2 gap-2 sm:flex">
           <div className="relative col-span-2 flex-1">
@@ -85,12 +84,12 @@ export function ScanParcel() {
             />
           </div>
           <Button type="submit" variant="outline" className="h-12 sm:h-12" disabled={!value.trim()}>
-            Find
+            {t('scan.find')}
           </Button>
           {/* The one filled button until a parcel is on screen; then Send SMS is, and this becomes Scan next. */}
           <Button ref={cameraButton} type="button" variant={scanned ? 'outline' : 'default'} className="h-12 sm:h-12" onClick={() => setCamera(true)}>
             <Camera aria-hidden />
-            {scanned ? 'Scan next' : 'Camera'}
+            {scanned ? t('scan.next') : t('scan.camera')}
           </Button>
         </div>
         {insecure && (
@@ -102,35 +101,37 @@ export function ScanParcel() {
 
       {/* One short sentence for screen readers; the full result would be too long to announce. */}
       <p aria-live="polite" className="sr-only">
-        {parcel && data ? `Found ${parcel.code}. ${relatedLine(phoneGroup(parcel, data.parcels).length - 1)}` : ''}
+        {parcel && data
+          ? t('scan.found', {
+              code: parcel.code,
+              related: phoneGroup(parcel, data.parcels).length > 1 ? t('scan.related', { count: phoneGroup(parcel, data.parcels).length - 1 }) : t('scan.relatedNone'),
+            })
+          : ''}
       </p>
       <div className="mt-5">
         {!scanned ? null : loadError ? (
           <p role="alert" className="rounded-md border bg-card px-5 py-6 text-destructive">
-            The parcel list could not be loaded, so this code cannot be looked up. {loadError}
+            {t('scan.loadFailed', { error: loadError })}
           </p>
         ) : !data ? (
           <Skeleton className="h-40 w-full" />
         ) : !parcel ? (
           <div role="alert" className="rounded-md border bg-card px-5 py-6">
             <p className="font-medium">
-              No parcel with code <span className="font-mono">{scanned}</span>
+              {t.rich('scan.notFound', { code: <span className="font-mono">{scanned}</span> })}
             </p>
             <p className="mt-1 text-muted-foreground">
-              {fromCamera
-                ? 'The camera read this code from the label. If it does not match the printed tracking code, scan again or type it.'
-                : 'Check the code against the label.'}{' '}
-              If the parcel arrived today, its file may not be imported yet.
+              {fromCamera ? t('scan.cameraRead') : t('scan.checkLabel')} {t('scan.notImported')}
             </p>
             {fromCamera && (
               <Button variant="outline" className="mt-4" onClick={() => setCamera(true)}>
                 <Camera aria-hidden />
-                Scan again
+                {t('scan.again')}
               </Button>
             )}
           </div>
         ) : (
-          <ParcelDetail key={parcel.code} parcel={parcel} data={data} onSelect={lookup} label="Scanned" />
+          <ParcelDetail key={parcel.code} parcel={parcel} data={data} onSelect={lookup} label={t('scan.scanned')} />
         )}
       </div>
 

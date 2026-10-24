@@ -11,7 +11,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
         <SidebarNav />
       </aside>
       <Header username={user.username} isAdmin={user.isAdmin} />
-      <main className="mx-auto max-w-[1600px] px-4 py-6 lg:px-7 lg:py-6">{children}</main>
+      <main className="mx-auto max-w-[1920px] px-4 py-6 lg:px-3.5 lg:py-3">{children}</main>
     </div>
   );
 }

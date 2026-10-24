@@ -1,4 +1,5 @@
 // Pure settings shape and checks. No React, no I/O, so it runs under `node --test`.
+import type { Message } from './messages.ts';
 
 /** The settings every staff member shares, kept on the server (Phase 10). The defaults are the server's. */
 export interface Settings {
@@ -15,40 +16,42 @@ export interface Settings {
 export const SMS_GAP_LIMITS = { min: 15, max: 600 };
 
 export const CHECK_INTERVALS = [30, 60, 120, 300];
-const TOKENS = ['{name}', '{codes}', '{count}'];
+const TOKENS = ['{name}', '{codes}', '{count}', '{date}', '{newline}'];
 
-export function folderError(path: string) {
+// Each check returns a message key (translated where it is shown) or null when the value is fine.
+export function folderError(path: string): Message | null {
   const p = path.trim();
-  if (!p) return 'Enter the folder the logistics system exports to.';
+  if (!p) return { key: 'settingsError.folderEmpty' };
   // Windows drive, network share, or a Unix-style absolute path.
-  if (!/^([A-Za-z]:\\|\\\\[^\\]+\\|\/)/.test(p)) return 'Use the full path, for example D:\\Logistics\\Exports or \\\\server\\exports.';
+  if (!/^([A-Za-z]:\\|\\\\[^\\]+\\|\/)/.test(p)) return { key: 'settingsError.folderPath' };
   return null;
 }
 
-export function templateError(text: string) {
-  if (!text.trim()) return 'The message cannot be empty.';
+export function templateError(text: string): Message | null {
+  if (!text.trim()) return { key: 'settingsError.templateEmpty' };
   const unknown = (text.match(/\{[^}]*\}/g) ?? []).find((t) => !TOKENS.includes(t));
-  if (unknown) return `${unknown} is not a placeholder. Use {name}, {codes} or {count}.`;
-  if (!text.includes('{codes}')) return 'Include {codes} so the customer knows which parcels arrived.';
+  // {token} is filled; the {name}, {codes}, {count}, {date} and {newline} in the sentence stay as written.
+  if (unknown) return { key: 'settingsError.templateUnknown', vars: { token: unknown } };
+  if (!text.includes('{codes}')) return { key: 'settingsError.templateCodes' };
   return null;
 }
 
-export function gatewayUrlError(url: string) {
+export function gatewayUrlError(url: string): Message | null {
   if (!url.trim()) return null; // npm run gateway asks for it separately
   try {
     const u = new URL(url.trim());
-    return u.protocol === 'http:' || u.protocol === 'https:' ? null : 'Use an http:// or https:// address.';
+    return u.protocol === 'http:' || u.protocol === 'https:' ? null : { key: 'settingsError.urlScheme' };
   } catch {
-    return 'Enter the full address, for example http://192.168.1.20:8080.';
+    return { key: 'settingsError.urlFull' };
   }
 }
 
-export function gapError(gap: { from: number; to: number }) {
+export function gapError(gap: { from: number; to: number }): Message | null {
   const { min, max } = SMS_GAP_LIMITS;
   const ok = (n: number) => Number.isInteger(n) && n >= min && n <= max;
-  if (!ok(gap.from) || !ok(gap.to)) return `Use whole seconds from ${min} to ${max}.`;
-  if (gap.to < gap.from) return 'The longest wait cannot be shorter than the shortest.';
+  if (!ok(gap.from) || !ok(gap.to)) return { key: 'settingsError.gapRange', vars: { min, max } };
+  if (gap.to < gap.from) return { key: 'settingsError.gapOrder' };
   return null;
 }
 
-export const columnError = (name: string) => (name.trim() ? null : 'Enter the column heading exactly as it appears in the export.');
+export const columnError = (name: string): Message | null => (name.trim() ? null : { key: 'settingsError.column' });

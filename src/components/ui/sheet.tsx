@@ -4,6 +4,7 @@ import * as React from 'react';
 import * as SheetPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useT } from '@/lib/i18n-react';
 
 const Sheet = SheetPrimitive.Root;
 const SheetTrigger = SheetPrimitive.Trigger;
@@ -21,6 +22,7 @@ function SheetContent({
   side = 'right',
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & { side?: 'left' | 'right' }) {
+  const t = useT();
   return (
     <SheetPrimitive.Portal>
       <SheetPrimitive.Overlay className="fixed inset-0 z-50 bg-sidebar/40" />
@@ -42,7 +44,7 @@ function SheetContent({
           )}
         >
           <X className="size-4" />
-          <span className="sr-only">Close</span>
+          <span className="sr-only">{t('common.close')}</span>
         </SheetPrimitive.Close>
       </SheetPrimitive.Content>
     </SheetPrimitive.Portal>

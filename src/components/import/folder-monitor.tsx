@@ -167,7 +167,7 @@ export function FolderMonitor({
                 {state.lastScan ? (
                   <>
                     <time dateTime={state.lastScan.at} className="font-mono">
-                      {formatDateTime(state.lastScan.at)}
+                      {formatDateTime(state.lastScan.at, t.locale)}
                     </time>{' '}
                     <span className="text-muted-foreground">({state.lastScan.by === 'auto' ? t('monitor.byAuto') : t('monitor.scan')})</span>
                   </>
@@ -201,7 +201,7 @@ export function FolderMonitor({
                               {f.fileName}
                             </p>
                             <time dateTime={f.modifiedAt} className="shrink-0 font-mono text-xs text-muted-foreground">
-                              {formatDateTime(f.modifiedAt)}
+                              {formatDateTime(f.modifiedAt, t.locale)}
                             </time>
                           </div>
                           <p className={cn('text-xs', s.tone)}>

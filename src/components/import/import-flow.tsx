@@ -236,7 +236,7 @@ export function ImportFlow({ request, onClose, onChanged }: { request: FlowReque
               {review.status === 'imported' && review.arrivalBatchDate && step?.s === 'review' && step.added === undefined && (
                 <p className="mt-4">
                   {t.rich('flow.importedAt', {
-                    time: <time dateTime={review.confirmedAt ?? undefined}>{review.confirmedAt && formatDateTime(review.confirmedAt)}</time>,
+                    time: <time dateTime={review.confirmedAt ?? undefined}>{review.confirmedAt && formatDateTime(review.confirmedAt, t.locale)}</time>,
                     date: <span className="font-mono">{review.arrivalBatchDate}</span>,
                   })}
                 </p>
@@ -341,7 +341,7 @@ function FileFacts({ review: r }: { review: Review }) {
           {r.format && `${r.format.toUpperCase()} · `}
           {t.rich('flow.facts', {
             size: formatBytes(r.sizeBytes),
-            time: <time dateTime={r.checkedAt}>{formatDateTime(r.checkedAt)}</time>,
+            time: <time dateTime={r.checkedAt}>{formatDateTime(r.checkedAt, t.locale)}</time>,
             source: r.source === 'folder' ? t('import.source.folder') : t('import.source.manual'),
           })}
         </p>
@@ -429,8 +429,8 @@ function EarlierImports({ review: r }: { review: Review }) {
         {r.earlier.map((e) => (
           <li key={e.id}>
             {e.scanDate
-              ? t('flow.earlierScan', { time: formatDateTime(e.confirmedAt), count: e.parcels, date: e.scanDate })
-              : t('flow.earlier', { time: formatDateTime(e.confirmedAt), count: e.parcels })}
+              ? t('flow.earlierScan', { time: formatDateTime(e.confirmedAt, t.locale), count: e.parcels, date: e.scanDate })
+              : t('flow.earlier', { time: formatDateTime(e.confirmedAt, t.locale), count: e.parcels })}
           </li>
         ))}
       </ul>

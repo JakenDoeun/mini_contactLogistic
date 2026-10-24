@@ -16,6 +16,7 @@ import { useParcelData, useParcelError } from '@/lib/parcel-service';
 import { fetchBranchAddresses } from '@/lib/branch-address';
 import { arrivalDay, formatPhone, type SmsStatus } from '@/lib/parcel-logic';
 import { cn, formatDateTime } from '@/lib/utils';
+import { formatDate } from '@/lib/i18n';
 import { useT, type MessageKey } from '@/lib/i18n-react';
 
 type T = ReturnType<typeof useT>;
@@ -46,7 +47,7 @@ export function Dashboard() {
 
   const work = data ? workList(data.parcels, data.events) : null;
   const day = arrivalDay(new Date().toISOString());
-  const today = new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
+  const today = formatDate(new Date(), t.locale, { weekday: 'long', day: 'numeric', month: 'long' }, []);
 
   return (
     <>
@@ -458,7 +459,7 @@ function ImportsToday({ records, error }: { records: ImportListItem[] | null; er
                     {t.rich('dash.latest', {
                       time: (
                         <time dateTime={latest.confirmedAt ?? latest.checkedAt} className="font-mono">
-                          {formatDateTime(latest.confirmedAt ?? latest.checkedAt)}
+                          {formatDateTime(latest.confirmedAt ?? latest.checkedAt, t.locale)}
                         </time>
                       ),
                     })}

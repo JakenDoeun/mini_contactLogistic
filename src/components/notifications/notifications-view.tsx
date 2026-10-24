@@ -286,7 +286,7 @@ function Attention({
                   key={p.code}
                   tone="warning"
                   title={p.recipient}
-                  line={t('n.att.importedFrom', { time: formatDateTime(p.importedAt), file: p.sourceFile })}
+                  line={t('n.att.importedFrom', { time: formatDateTime(p.importedAt, t.locale), file: p.sourceFile })}
                   codes={[p.code]}
                   status={
                     <span className="inline-flex items-center gap-1 text-sm text-warning">
@@ -460,7 +460,7 @@ function SendingQueue({ data, nameOf, running }: { data: ParcelData | null; name
 
       {stuck && (
         <p role="status" className="mt-4 rounded-md bg-warning-tint px-3 py-2 text-sm text-warning">
-          {!data.gateway.setUp ? t('n.q.noGateway') : t('n.q.away', { time: formatTime(data.gateway.awaySince!) })}
+          {!data.gateway.setUp ? t('n.q.noGateway') : t('n.q.away', { time: formatTime(data.gateway.awaySince!, t.locale) })}
         </p>
       )}
 
@@ -541,10 +541,10 @@ function RestoreCheck({ data, copyAt }: { data: ParcelData; copyAt: string }) {
         {t('n.restore.title')}
       </h2>
       <p className="mt-1 text-sm">
-        {t('n.restore.lead', { time: formatDateTime(copyAt) })}
+        {t('n.restore.lead', { time: formatDateTime(copyAt, t.locale) })}
       </p>
       <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm">
-        <li>{t('n.restore.step1', { time: formatDateTime(copyAt) })}</li>
+        <li>{t('n.restore.step1', { time: formatDateTime(copyAt, t.locale) })}</li>
         <li>{t('n.restore.step2')}</li>
         <li>{t('n.restore.step3')}</li>
       </ol>
@@ -580,7 +580,7 @@ function RestoreCheck({ data, copyAt }: { data: ParcelData; copyAt: string }) {
       )}
       <label className="mt-4 flex min-h-11 items-start gap-2 text-sm font-medium sm:min-h-8">
         <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-primary" />
-        {t('n.restore.checked', { time: formatDateTime(copyAt) })}
+        {t('n.restore.checked', { time: formatDateTime(copyAt, t.locale) })}
       </label>
       <Button className="mt-3" disabled={!checked || saving} onClick={resume}>
         {saving ? t('common.saving') : seen.size ? t('n.restore.save', { count: seen.size }) : t('n.restore.resume')}
@@ -1128,7 +1128,7 @@ function HistoryTable({ events, nameOf }: { events: ContactEvent[]; nameOf: (cod
           const Icon = CHANNEL[e.channel].icon;
           const time = (
             <time dateTime={e.at} className="block font-mono text-xs text-muted-foreground">
-              {formatDateTime(e.at)}
+              {formatDateTime(e.at, t.locale)}
             </time>
           );
           // Every parcel record the entry covers, each linked to its own row.
@@ -1202,7 +1202,7 @@ function RetrySheet({ event, data, onClose }: { event: ContactEvent | null; data
           <>
             <header className="border-b px-6 pt-5 pb-4 pr-14">
               <SheetTitle>{t('n.r.title', { phone: formatPhone(event.phone) })}</SheetTitle>
-              <SheetDescription>{t('n.r.last', { time: formatDateTime(event.at), result: event.result ?? '' })}</SheetDescription>
+              <SheetDescription>{t('n.r.last', { time: formatDateTime(event.at, t.locale), result: event.result ?? '' })}</SheetDescription>
             </header>
             <div className="flex-1 overflow-y-auto px-6 py-5">
               <p className="font-medium">{t('sms.scope', { count: event.parcelCodes.length })}</p>
@@ -1492,7 +1492,7 @@ function ByHandRow({ line, data }: { line: ByHandLine; data: ParcelData }) {
         {line.lastTry && (
           <p className="mt-0.5 flex items-center gap-1 pl-4 text-xs font-medium text-warning">
             <PhoneOff className="size-3.5" aria-hidden />
-            {t('n.bh.noAnswerAt', { time: formatTime(line.lastTry) })}
+            {t('n.bh.noAnswerAt', { time: formatTime(line.lastTry, t.locale) })}
             {line.tries > 1 && t('n.bh.tries', { count: line.tries })}
           </p>
         )}

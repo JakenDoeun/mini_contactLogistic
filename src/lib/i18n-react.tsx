@@ -38,6 +38,7 @@ export function useT() {
   return useMemo(() => {
     const t = (key: MessageKey, vars?: Vars) => translate(locale, key, vars);
     t.rich = (key: MessageKey, parts: Record<string, ReactNode>, vars?: Vars) => richParts(translate(locale, key, vars), parts);
+    t.locale = locale; // for dates: formatDate(…, t.locale, …)
     return t;
   }, [locale]);
 }

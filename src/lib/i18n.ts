@@ -42,3 +42,25 @@ export function placeholders(template: string): string[] {
   for (const m of withoutPlurals.matchAll(/\{(\w+)\}/g)) names.add(m[1]);
   return [...names].sort();
 }
+
+const KM_MONTHS = ['មករា', 'កុម្ភៈ', 'មីនា', 'មេសា', 'ឧសភា', 'មិថុនា', 'កក្កដា', 'សីហា', 'កញ្ញា', 'តុលា', 'វិច្ឆិកា', 'ធ្នូ'];
+const KM_DAYS: Record<string, string> = { Sun: 'អាទិត្យ', Mon: 'ច័ន្ទ', Tue: 'អង្គារ', Wed: 'ពុធ', Thu: 'ព្រហស្បតិ៍', Fri: 'សុក្រ', Sat: 'សៅរ៍' };
+
+/**
+ * A date or time in the chosen language. English keeps each screen's own format: `en` is its locale, [] meaning the
+ * device's. Khmer is put together here, "សៅរ៍ 24 តុលា, 14:05" on a 24-hour clock, because Chrome ships no Khmer date
+ * names (Intl falls back to English there); Intl still supplies the numbers, in the time zone asked for.
+ */
+export function formatDate(date: Date, locale: Locale, options: Intl.DateTimeFormatOptions, en: string | string[] = 'en-GB') {
+  if (locale !== 'km') return date.toLocaleString(en, options);
+  const part = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', { ...options, hourCycle: 'h23', month: options.month && 'numeric', weekday: options.weekday && 'short' })
+      .formatToParts(date)
+      .map((p) => [p.type, p.value]),
+  );
+  const month = part.month && KM_MONTHS[Number(part.month) - 1];
+  const dd = options.day === 'numeric' ? String(Number(part.day)) : part.day; // en-GB pads it beside a numeric month
+  const day = [part.weekday && KM_DAYS[part.weekday], [dd, month].filter(Boolean).join(' '), part.year].filter(Boolean).join(' ');
+  const time = [part.hour, part.minute, part.second].filter(Boolean).join(':');
+  return [day, time].filter(Boolean).join(', ');
+}

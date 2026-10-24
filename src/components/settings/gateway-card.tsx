@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CARRIER_LABEL, CARRIERS, carrierOf, simByCarrier, type Carrier, type SimInfo } from '@/lib/carriers';
 import { formatPhone } from '@/lib/parcel-logic';
+import { formatDate, type Locale } from '@/lib/i18n';
 import { useT, type MessageKey } from '@/lib/i18n-react';
 
 type Check = { description?: string; observedValue: number; status: string };
@@ -51,7 +52,8 @@ const TEST_LABEL: Record<Test['state'], { text: MessageKey; variant: 'success' |
 const FINAL: Test['state'][] = ['Delivered', 'Failed', 'Missing'];
 
 /** Cambodia time with seconds: the steps of one SMS are seconds apart. */
-const clock = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'Asia/Phnom_Penh', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const clock = (iso: string, locale: Locale) =>
+  formatDate(new Date(iso), locale, { timeZone: 'Asia/Phnom_Penh', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 function clockLine(seconds: number, t: ReturnType<typeof useT>) {
   const minutes = Math.round(Math.abs(seconds) / 60);
@@ -309,8 +311,8 @@ function TestSms({ isAdmin, initial, sims }: { isAdmin: boolean; initial: Test[]
                   </Badge>
                   <span>
                     {test.sim
-                      ? t('gw.t.fromSimTo', { sim: test.sim, ending: test.toEnding, time: clock(test.sentAt) })
-                      : t('gw.t.to', { ending: test.toEnding, time: clock(test.sentAt) })}
+                      ? t('gw.t.fromSimTo', { sim: test.sim, ending: test.toEnding, time: clock(test.sentAt, t.locale) })
+                      : t('gw.t.to', { ending: test.toEnding, time: clock(test.sentAt, t.locale) })}
                   </span>
                 </p>
                 {Object.keys(test.states).length > 0 && (
@@ -319,7 +321,7 @@ function TestSms({ isAdmin, initial, sims }: { isAdmin: boolean; initial: Test[]
                       .filter((k) => test.states[k])
                       .map((k) => (
                         <li key={k}>
-                          {t(`gw.step.${k}`)} <span className="tabular-nums">{clock(test.states[k]!)}</span>
+                          {t(`gw.step.${k}`)} <span className="tabular-nums">{clock(test.states[k]!, t.locale)}</span>
                         </li>
                       ))}
                   </ol>
@@ -395,7 +397,7 @@ function SimsBox({ initial }: { initial: SimScan }) {
             )}
           </ul>
         )}
-        {scan.scannedAt && <p className="mt-2 text-xs text-muted-foreground">{t('gw.s.lastScan', { time: clock(scan.scannedAt) })}</p>}
+        {scan.scannedAt && <p className="mt-2 text-xs text-muted-foreground">{t('gw.s.lastScan', { time: clock(scan.scannedAt, t.locale) })}</p>}
       </div>
     </div>
   );

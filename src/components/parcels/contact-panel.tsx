@@ -258,7 +258,7 @@ export function DirectContact({
             <span className={`inline-flex items-center gap-1.5 ${doneTone}`}>
               {DoneIcon && <DoneIcon className="size-4" aria-hidden />}
               {doneLabel && t(doneLabel)}
-              <span className="font-mono text-xs text-muted-foreground">{formatTime(last.at)}</span>
+              <span className="font-mono text-xs text-muted-foreground">{formatTime(last.at, t.locale)}</span>
             </span>
           ) : (
             <span className="text-muted-foreground">{t('contact.notContacted')}</span>

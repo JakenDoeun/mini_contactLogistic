@@ -22,6 +22,7 @@ import { formatDateTime } from '@/lib/utils';
 import { ContactPanel } from './contact-panel';
 import { PhoneText, SmsBadge } from './parcel-status';
 import { batchLabel, daysAgo, GroupList } from './phone-group';
+import { formatDate, type Locale } from '@/lib/i18n';
 import { useT, type MessageKey } from '@/lib/i18n-react';
 
 /**
@@ -82,7 +83,7 @@ export function ParcelDetail({
               <dd>{arrivedText(parcel.arrivalDate, t)}</dd>
               <dt className="text-muted-foreground">{t('parcel.imported')}</dt>
               <dd>
-                {formatDateTime(parcel.importedAt)}
+                {formatDateTime(parcel.importedAt, t.locale)}
                 <span className="block text-sm break-all text-muted-foreground">{parcel.sourceFile}</span>
               </dd>
             </dl>
@@ -114,8 +115,8 @@ export function ParcelDetail({
 }
 
 /** "Today, 19 Oct" or "12 Oct": the arrival batch, never the import time. */
-function arrivedText(day: string, t: (key: MessageKey, vars?: Record<string, string>) => string) {
-  const date = new Date(`${day}T00:00:00`).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+function arrivedText(day: string, t: ((key: MessageKey, vars?: Record<string, string>) => string) & { locale: Locale }) {
+  const date = formatDate(new Date(`${day}T00:00:00`), t.locale, { month: 'short', day: 'numeric' });
   if (daysAgo(day) !== 0 && daysAgo(day) !== 1) return date;
   const label = batchLabel(day, t);
   return t('parcel.arrivedOn', { day: `${label[0].toUpperCase()}${label.slice(1)}`, date });
@@ -256,7 +257,7 @@ function History({ events }: { events: ContactEvent[] }) {
                   {e.result && <p className="text-sm text-muted-foreground">{e.result}</p>}
                 </div>
                 <time dateTime={e.at} className="shrink-0 font-mono text-xs text-muted-foreground">
-                  {formatDateTime(e.at)}
+                  {formatDateTime(e.at, t.locale)}
                 </time>
               </li>
             );

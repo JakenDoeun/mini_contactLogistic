@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Check, Save, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { formatDate, type Locale } from '@/lib/i18n';
 import { useT, type MessageKey } from '@/lib/i18n-react';
 
 type Status = {
@@ -16,16 +17,16 @@ type Status = {
 };
 
 /** 2026-10-17 → 17 Oct */
-const dayLabel = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const dayLabel = (d: string, locale: Locale) => formatDate(new Date(`${d}T00:00:00Z`), locale, { day: 'numeric', month: 'short', timeZone: 'UTC' });
 const DAY_CHOICES = Array.from({ length: 14 }, (_, i) => i + 1);
 
 /** Cambodia time, the branch's clock whatever the viewing device is set to (plan Revision 4). */
-function when(iso: string, t: (key: MessageKey, vars: Record<string, string>) => string) {
+function when(iso: string, t: ((key: MessageKey, vars: Record<string, string>) => string) & { locale: Locale }) {
   const zone = { timeZone: 'Asia/Phnom_Penh' } as const;
   const day = (d: Date) => d.toLocaleDateString('en-CA', zone);
-  const time = new Date(iso).toLocaleTimeString('en-GB', { ...zone, hour: '2-digit', minute: '2-digit' });
+  const time = formatDate(new Date(iso), t.locale, { ...zone, hour: '2-digit', minute: '2-digit' });
   if (day(new Date(iso)) === day(new Date())) return t('time.todayAt', { time });
-  return t('time.dayAt', { date: new Date(iso).toLocaleDateString('en-GB', { ...zone, day: 'numeric', month: 'short' }), time });
+  return t('time.dayAt', { date: formatDate(new Date(iso), t.locale, { ...zone, day: 'numeric', month: 'short' }), time });
 }
 
 /** Backups and data retention, on the real server (Phase 3). Backups are automatic; the button is for peace of mind. */
@@ -165,7 +166,7 @@ export function BackupCard() {
                   {t.rich(
                     'backup.nextDeletion',
                     { label: <span className="font-semibold">{t('backup.afterMidnight')}</span> },
-                    { parcels: s.nextDeletion.parcels, customers: s.nextDeletion.customers, date: dayLabel(s.nextDeletion.arrivedOn) },
+                    { parcels: s.nextDeletion.parcels, customers: s.nextDeletion.customers, date: dayLabel(s.nextDeletion.arrivedOn, t.locale) },
                   )}
                 </span>
               </p>

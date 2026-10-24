@@ -37,13 +37,16 @@ After code adds new messages, `npm run locales` copies the new keys into km.json
 ## Not translated yet
 
 - **Messages that come from the server**: API error texts, the Tailscale readiness checks in Settings
-  (`src/lib/tailscale.ts`), import refusals and rules, SMS results ("Delivered", gateway errors). This is the next step
-  of Phase 13; its new keys will come as a separate short list so nothing is translated twice.
+  (`src/lib/tailscale.ts`), import refusals and rules, SMS results ("Delivered", gateway errors). They stay English
+  (owner, 2026-10-24).
 - **The SMS sent to customers** is a setting (Settings › Default SMS message), not part of the catalogue. A Khmer SMS
   fits about 70 characters per part instead of 160. Its placeholders are {name}, {codes}, {count} and {date} (the
   parcels' arrival day as dd-mm-yyyy, added 2026-10-23). Enter starts a new line; the
   line break is kept in the SMS.
-- **Dates and times** stay in the English format (e.g. 23 Oct, 03:04 PM) for now.
+- **Dates and times** are in Khmer since 2026-10-24: "សៅរ៍ 24 តុលា", "24 តុលា, 14:05", on a 24-hour clock. They are put
+  together in `formatDate` (`src/lib/i18n.ts`), because Chrome ships no Khmer date names and would show English. The
+  browser's own date picker (Custom range, From/To) follows the device's language, and {date} in an SMS stays
+  dd-mm-yyyy.
 
 ## Checks (2026-10-23)
 

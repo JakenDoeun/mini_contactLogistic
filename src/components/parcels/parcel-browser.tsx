@@ -126,7 +126,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
           </Button>
         )}
       </TableCell>
-      <TableCell className="hidden font-mono 2xl:table-cell">{formatDateTime(p.importedAt)}</TableCell>
+      <TableCell className="hidden font-mono 2xl:table-cell">{formatDateTime(p.importedAt, t.locale)}</TableCell>
       <TableCell className="hidden xl:table-cell">
         {sizeOf(p) > 1 ? (
           <GroupBadge size={sizeOf(p)} onClick={() => setGroupOf(p.code)} />

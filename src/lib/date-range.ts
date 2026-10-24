@@ -1,5 +1,6 @@
 // Date filter shared by the Parcels, Notifications and Import history lists.
 // Pure: no React, no I/O, so it runs under `node --test`. Days follow the office computer's local time.
+import { formatDate, type Locale } from './i18n.ts';
 import type { MessageKey } from '@/lib/messages';
 
 export type DatePreset = 'any' | 'today' | 'yesterday' | '7d' | '30d' | 'custom';
@@ -57,8 +58,8 @@ export function inDateRange(iso: string, range: DateRange, now = new Date()) {
 export const isAnyDate = (range: DateRange) => range.preset === 'any' || (range.preset === 'custom' && !parseDay(range.from) && !parseDay(range.to));
 
 /** Fills {range} in result lines: "imported in the last 7 days", "sent between 10 Oct and 12 Oct". */
-export function rangePhrase(range: DateRange, t: (key: MessageKey, vars?: Record<string, string>) => string) {
-  const fmt = (s?: string) => parseDay(s)?.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+export function rangePhrase(range: DateRange, t: ((key: MessageKey, vars?: Record<string, string>) => string) & { locale: Locale }) {
+  const fmt = (s?: string) => { const d = parseDay(s); return d && formatDate(d, t.locale, { day: 'numeric', month: 'short' }); };
   const [from, to] = [fmt(range.from), fmt(range.to)];
   switch (range.preset) {
     case 'today':

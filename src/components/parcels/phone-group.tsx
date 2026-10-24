@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { smsStatusOf, type ContactEvent, type Parcel } from '@/lib/parcel-logic';
 import { cn, formatDateTime } from '@/lib/utils';
 import { SmsBadge } from './parcel-status';
+import { formatDate, type Locale } from '@/lib/i18n';
 import { useT, type MessageKey } from '@/lib/i18n-react';
 
 // One look for "these parcels share a phone number" on every page: info colour and the Boxes icon.
@@ -17,10 +18,10 @@ export function daysAgo(day: string, now = new Date()) {
 }
 
 /** An arrival batch said the way staff would: "today", "yesterday" or "10 Oct". */
-export function batchLabel(day: string, t: (key: MessageKey) => string, now = new Date()) {
+export function batchLabel(day: string, t: ((key: MessageKey) => string) & { locale: Locale }, now = new Date()) {
   const diff = daysAgo(day, now);
   const [y, m, d] = day.split('-').map(Number);
-  return diff === 0 ? t('day.today') : diff === 1 ? t('day.yesterday') : new Date(y, m - 1, d).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  return diff === 0 ? t('day.today') : diff === 1 ? t('day.yesterday') : formatDate(new Date(y, m - 1, d), t.locale, { month: 'short', day: 'numeric' });
 }
 
 /** Shown only for groups of two or more. With `onClick` it opens the group. */
@@ -92,7 +93,7 @@ export function GroupList({
             )}
             {p.code === current && <span className="ml-2 text-xs text-muted-foreground">{t('group.thisParcel')}</span>}
             <span className="block text-xs text-muted-foreground">
-              {t('group.imported', { recipient: p.recipient, time: formatDateTime(p.importedAt) })}
+              {t('group.imported', { recipient: p.recipient, time: formatDateTime(p.importedAt, t.locale) })}
             </span>
           </div>
           <div className="flex flex-wrap gap-1.5">

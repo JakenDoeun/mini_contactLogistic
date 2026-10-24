@@ -201,7 +201,7 @@ export function ImportHistory({
                       {r.fileName}
                     </TableCell>
                     <TableCell>{r.source === 'manual' ? t('import.source.manual') : t('import.source.folder')}</TableCell>
-                    <TableCell className="font-mono">{formatDateTime(importTime(r))}</TableCell>
+                    <TableCell className="font-mono">{formatDateTime(importTime(r), t.locale)}</TableCell>
                     {r.status !== 'imported' ? (
                       // Nothing was imported, so counts would only look like an empty file.
                       <TableCell colSpan={2} className="text-right text-muted-foreground">

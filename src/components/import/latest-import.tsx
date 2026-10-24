@@ -36,7 +36,7 @@ export function LatestImport({ record, onView }: { record: ImportListItem | null
                 {record.source === 'manual' ? t('import.source.manual') : t('import.source.folder')}
                 <span aria-hidden>·</span>
                 <time dateTime={importTime(record)} className="font-mono">
-                  {formatDateTime(importTime(record))}
+                  {formatDateTime(importTime(record), t.locale)}
                 </time>
                 {record.status === 'imported' && (
                   <>

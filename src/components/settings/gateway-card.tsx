@@ -19,7 +19,7 @@ type Status = { isAdmin: boolean; test: Test | null } & (
   | { configured: false; problem?: string }
   | {
       configured: true;
-      url: string;
+      url?: string; // admin only
       problem: { kind: 'unreachable' | 'timeout' | 'auth' | 'refused'; message: string } | null;
       health: { ready: boolean; version: string | null; checks: Record<string, Check>; clockOffsetSeconds: number | null } | null;
       deleteAfterSet: boolean;
@@ -115,9 +115,11 @@ export function GatewayCard() {
             <div className="text-sm">
               <p className="font-medium text-destructive">{s!.problem.message}</p>
               <p className="mt-1">{PROBLEM_HELP[s!.problem.kind]}</p>
-              <p className="mt-1 text-muted-foreground">
-                Address: <span className="font-mono break-all">{s!.url}</span>
-              </p>
+              {s!.url && (
+                <p className="mt-1 text-muted-foreground">
+                  Address: <span className="font-mono break-all">{s!.url}</span>
+                </p>
+              )}
             </div>
           ) : (
             <Details status={s!} />
@@ -166,8 +168,12 @@ function Details({ status }: { status: Extract<Status, { configured: true }> }) 
       <dd>
         Deleted on the phone after {status.deleteAfterDays} days{status.deleteAfterSet && ' (set just now)'}
       </dd>
-      <dt className="text-muted-foreground">Address</dt>
-      <dd className="font-mono break-all">{status.url}</dd>
+      {status.url && (
+        <>
+          <dt className="text-muted-foreground">Address</dt>
+          <dd className="font-mono break-all">{status.url}</dd>
+        </>
+      )}
       {h.version && (
         <>
           <dt className="text-muted-foreground">Gateway app</dt>

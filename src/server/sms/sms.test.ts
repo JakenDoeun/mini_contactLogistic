@@ -337,7 +337,7 @@ test('a refused line in the restore check saves nothing and keeps the hold', asy
   assert.equal(listContactEvents(db).length, 0);
 });
 
-test('a gap of 25 to 80 seconds between two SMS, also after a restart', async (t) => {
+test('a random gap between two SMS (25 to 80 seconds unless the admin changes it), also after a restart', async (t) => {
   const { db, dir, a1, b1 } = await setup(t);
   const phone = fakePhone();
   let clock = Date.now();
@@ -357,7 +357,8 @@ test('a gap of 25 to 80 seconds between two SMS, also after a restart', async (t
   await restarted.tick();
   assert.equal(phone.sends.length, 2);
 
-  const gaps = Array.from({ length: 500 }, randomGap);
+  const gaps = Array.from({ length: 500 }, () => randomGap({ from: 25, to: 80 }));
   assert.ok(gaps.every((g) => g >= 25_000 && g <= 80_000));
   assert.ok(Math.max(...gaps) - Math.min(...gaps) > 30_000); // spread out, not one fixed pause
+  assert.ok(Array.from({ length: 100 }, () => randomGap({ from: 15, to: 15 })).every((g) => g === 15_000));
 });

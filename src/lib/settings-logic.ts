@@ -7,7 +7,12 @@ export interface Settings {
   /** What to do when a file with the same fingerprint was imported before. */
   duplicateFile: 'warn' | 'block';
   templates: { single: string; combined: string };
+  /** The random wait between two SMS, in whole seconds. */
+  smsGap: { from: number; to: number };
 }
+
+// Never under 15 seconds between two SMS (owner, 2026-10-23); 10 minutes is far past any useful pace.
+export const SMS_GAP_LIMITS = { min: 15, max: 600 };
 
 export const CHECK_INTERVALS = [30, 60, 120, 300];
 const TOKENS = ['{name}', '{codes}', '{count}'];
@@ -36,6 +41,14 @@ export function gatewayUrlError(url: string) {
   } catch {
     return 'Enter the full address, for example http://192.168.1.20:8080.';
   }
+}
+
+export function gapError(gap: { from: number; to: number }) {
+  const { min, max } = SMS_GAP_LIMITS;
+  const ok = (n: number) => Number.isInteger(n) && n >= min && n <= max;
+  if (!ok(gap.from) || !ok(gap.to)) return `Use whole seconds from ${min} to ${max}.`;
+  if (gap.to < gap.from) return 'The longest wait cannot be shorter than the shortest.';
+  return null;
 }
 
 export const columnError = (name: string) => (name.trim() ? null : 'Enter the column heading exactly as it appears in the export.');

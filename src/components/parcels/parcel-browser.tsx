@@ -12,7 +12,7 @@ import {
   eligibleForMessage,
   formatPhone,
   inFilter,
-  normalizePhone,
+  matchesSearch,
   phoneGroup,
   phoneKey,
   smsStatusOf,
@@ -45,17 +45,6 @@ const batchKey = (p: Parcel) => {
 const groupCount = (parcels: Parcel[]) => new Set(parcels.flatMap((p) => batchKey(p) ?? [])).size;
 const TODAY: DateRange = { preset: 'today' };
 
-function matches(p: Parcel, q: string) {
-  const text = q.trim().toLowerCase();
-  if (!text) return true;
-  const digits = normalizePhone(text);
-  return (
-    p.code.toLowerCase().includes(text.replace(/\s+/g, '')) ||
-    p.recipient.toLowerCase().includes(text) ||
-    (digits.length >= 4 && normalizePhone(p.phone).includes(digits.replace(/^0/, '')))
-  );
-}
-
 export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { initialQuery: string; initialFilter?: string; previewError?: boolean }) {
   const data = useParcelData();
   const loadError = useParcelError();
@@ -84,7 +73,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
   const count = (f: ParcelFilter) => dated.filter((p) => inFilter(p, events, f)).length;
 
   const rows = data
-    ? dated.filter((p) => inFilter(p, events, filter) && matches(p, query)).sort((a, b) => b.importedAt.localeCompare(a.importedAt))
+    ? dated.filter((p) => inFilter(p, events, filter) && matchesSearch(p, query)).sort((a, b) => b.importedAt.localeCompare(a.importedAt))
     : null;
   const openParcel = data?.parcels.find((p) => p.code === open);
   const groupParcel = data?.parcels.find((p) => p.code === groupOf);
@@ -93,7 +82,7 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
   const narrowed = filter !== 'all' || query.trim() !== '' || dates.preset !== 'today';
   // Search stays within the chosen dates, but says when the same search finds parcels on other days.
   const elsewhere =
-    data && query.trim() && !anyDate ? data.parcels.filter((p) => !arrivedIn(p) && inFilter(p, events, filter) && matches(p, query)).length : 0;
+    data && query.trim() && !anyDate ? data.parcels.filter((p) => !arrivedIn(p) && inFilter(p, events, filter) && matchesSearch(p, query)).length : 0;
   const active = FILTERS.find((f) => f.key === filter)!;
   const reset = () => {
     setQuery('');

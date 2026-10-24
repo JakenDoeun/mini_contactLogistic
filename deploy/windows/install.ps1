@@ -402,6 +402,8 @@ Write-Host @"
    Log:      $LogFile
    Data:     $DataDir   (database and backups; customer data, keep private)
    Imports:  $ImportsDir   (save the courier export here, then Scan Folder Now)
+   Gateway:  cd '$AppDir'; `$env:DATA_DIR = '$DataDir'
+             & '$NodeExe' --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\gateway.ts set   (address, user, password from SMSGate)
    Restore:  Disable-ScheduledTask '$TaskName'; Stop-ScheduledTask '$TaskName'
              cd '$AppDir'; `$env:DATA_DIR = '$DataDir'
              & '$NodeExe' --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\restore.ts      (lists backups)

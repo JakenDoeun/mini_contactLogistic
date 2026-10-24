@@ -53,6 +53,7 @@ The rules were first applied on 2026-10-21 with test devices standing in (owner'
 - [ ] Test VM `win10s`: remove `tag:office` or delete the machine; tag the branch laptop `tag:office` instead.
 - [ ] Old laptop running the emulator (if tagged `tag:gateway`): remove it from the tailnet; tag the real phone instead.
 - [ ] Delete both admin SSH lines (`tag:office:22`, `tag:gateway:22`) from `acls`.
+- [ ] Change the branch router's admin password from the factory one (owner, once the system works; 2026-10-22).
 
 ## 3. Check it
 
@@ -66,3 +67,15 @@ The rules were first applied on 2026-10-21 with test devices standing in (owner'
 
 If Settings shows the gateway as unreachable after Save, the gateway phone is probably not tagged `tag:gateway` yet,
 or the office computer not `tag:office`.
+
+## The gateway phone on the branch Wi-Fi
+
+SMSGate listens on every network the phone is on, and these rules only cover the tailnet: on Wi-Fi, port 8080 is also
+open to the other devices on that Wi-Fi. The owner chose on 2026-10-22 to keep the phone on the branch Wi-Fi: it is
+used by staff, customers join it rarely and briefly, and the SMSGate password is never given out. What keeps this safe:
+
+- The SMSGate password stays long and random (24 characters), and stays only in `gateway.json` on the office computer.
+- The app reaches the phone by its Tailscale name, so the password and messages never cross the Wi-Fi unencrypted.
+- No port forwarding to the phone in the router; the router's admin password is changed from the default.
+- If the Wi-Fi is ever opened to customers for good, put the phone on a network with client isolation (a guest
+  network with "AP isolation") or on mobile data with Wi-Fi off.

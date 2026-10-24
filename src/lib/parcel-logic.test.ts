@@ -5,6 +5,8 @@ import {
   composeMessage,
   groupByPhone,
   eligibleForMessage,
+  findByCode,
+  matchesSearch,
   normalizePhone,
   phoneGroup,
   smsInFlight,
@@ -127,4 +129,19 @@ test('the contact line says what one SMS would cover, without repeating the coun
   assert.equal(contactLine(3, 3, 'today'), 'Not messaged yet · one SMS covers all 3 parcels on this number today');
   assert.equal(contactLine(1, 3, 'yesterday'), '1 of 3 parcels on this number yesterday not messaged yet');
   assert.equal(contactLine(0, 2, 'today'), 'Messaged or reached already · all 2 parcels on this number today');
+});
+
+test('scan lookup finds a stored code whatever its case or spaces', () => {
+  const parcels = [{ code: 's000000018' }, { code: 'SPX 123' }] as Parcel[];
+  assert.equal(findByCode(parcels, 'S000000018')?.code, 's000000018');
+  assert.equal(findByCode(parcels, ' spx123 ')?.code, 'SPX 123');
+  assert.equal(findByCode(parcels, 'S000000019'), undefined);
+});
+
+test('parcels search finds a code, a name or a phone whatever its format', () => {
+  const p = { code: 'SPX 123456', recipient: 'Sokha Chan', phone: '012 345 678' } as Parcel;
+  for (const q of ['spx123', 'SPX 1234', '3456', 'sokha', ' CHAN ', '012345678', '+855 12 345 678', '345-678', ''])
+    assert.equal(matchesSearch(p, q), true, q);
+  for (const q of ['SPX 9', 'dara', '999 999'])
+    assert.equal(matchesSearch(p, q), false, q);
 });

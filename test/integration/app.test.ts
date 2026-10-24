@@ -376,7 +376,10 @@ test('backups and data: any staff member saves a backup; only the admin changes 
 test('sms: with no gateway phone set up, Notify is refused and the pages are told why (Phase 10)', async () => {
   const db = openDatabase(path.join(site.dataDir, 'branch.db'));
   const { id: adminId } = db.prepare("SELECT id FROM users WHERE username = 'first.staff'").get() as { id: number };
+  const staff = await createUser(db, 'gateway.staff', 'correct horse battery', 'cli');
+  assert.ok(staff.ok);
   const cookie = `__Host-cb_session=${createSession(db, adminId)}`;
+  const staffCookie = `__Host-cb_session=${createSession(db, staff.userId)}`;
   db.close();
   const notify = () => postJson('/api/sms/batch', { requestKey: crypto.randomUUID(), day: '2026-01-01', items: [] }, { cookie });
   const gateway = async () => (await (await send('/api/parcels', { cookie })).json()).gateway;
@@ -391,6 +394,11 @@ test('sms: with no gateway phone set up, Notify is refused and the pages are tol
   try {
     assert.equal((await gateway()).setUp, true);
     assert.notEqual((await (await notify()).json()).error, 'no_gateway'); // past the gateway check; refused for its own reasons
+    // Row 26: the gateway's address goes to the admin only.
+    assert.equal((await (await send('/api/gateway', { cookie })).json()).url, 'http://127.0.0.1:9');
+    const forStaff = await (await send('/api/gateway', { cookie: staffCookie })).json();
+    assert.equal(forStaff.configured, true);
+    assert.equal('url' in forStaff, false);
   } finally {
     fs.rmSync(path.join(site.dataDir, GATEWAY_FILE), { force: true });
   }
@@ -441,6 +449,47 @@ test('imports: upload, review, staff decisions and Confirm through the real API 
   const bad = await upload('headers-no-send-outlet.xlsx', 'b.xlsx');
   assert.equal(bad.status, 422);
   assert.deepEqual(Object.keys(await bad.json()).sort(), ['errorCode', 'importId', 'message', 'status']);
+});
+
+test('imports: the same mixed file uploaded and found in the folder gives the same review (acceptance row 36)', async () => {
+  const db = openDatabase(path.join(site.dataDir, 'branch.db'));
+  const { id: staffId } = db.prepare("SELECT id FROM users WHERE username = 'first.staff'").get() as { id: number };
+  const cookie = `__Host-cb_session=${createSession(db, staffId)}`;
+  const watched = path.join(site.dataDir, 'watched-row36');
+  fs.mkdirSync(watched);
+  db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('folder.settings', ?, ?)").run(
+    JSON.stringify({ path: watched, auto: false, intervalSeconds: 30 }),
+    new Date().toISOString(),
+  );
+  db.close();
+  const file = path.join(REPO, 'test/fixtures/scan-record-mixed.csv'); // the .xlsx bytes were imported by the Phase 4 test
+  const review = async (importId: number) => {
+    const r = await (await send(`/api/imports/${importId}?choice=single_scan_date`, { cookie })).json();
+    return { counts: r.counts, items: r.items.length };
+  };
+
+  try {
+    // Folder first: once a file's content has been imported, the folder scan lists it as imported, not waiting.
+    fs.copyFileSync(file, path.join(watched, 'scan-record-mixed.csv'));
+    assert.equal((await postJson('/api/folder/scan', {}, { cookie })).status, 200);
+    const found = (await (await send('/api/folder', { cookie })).json()).files.find((f: { fileName: string }) => f.fileName === 'scan-record-mixed.csv');
+    assert.equal(found?.state, 'waiting');
+    const checked = await postJson(`/api/folder/files/${found.id}/check`, {}, { cookie });
+    assert.equal(checked.status, 201);
+
+    const form = new FormData();
+    form.append('file', new Blob([fs.readFileSync(file)]), 'scan-record-mixed.csv');
+    const uploaded = await send('/api/imports/check', { method: 'POST', body: form, cookie });
+    assert.equal(uploaded.status, 201);
+
+    const [a, b] = [await review((await uploaded.json()).importId), await review((await checked.json()).importId)];
+    assert.ok(a.items > 0);
+    assert.deepEqual(b, a);
+  } finally {
+    const clean = siteDb();
+    clean.prepare("DELETE FROM settings WHERE key = 'folder.settings'").run();
+    clean.close();
+  }
 });
 
 test('serve: migrates, starts the app, restarts it after a crash, and saves a backup when stopped (Phase 3)', async () => {

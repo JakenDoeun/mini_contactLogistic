@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Db } from '../db/connection.ts';
@@ -180,6 +181,30 @@ test('an error during Confirm rolls everything back and marks the import failed 
   assert.equal(cancelImport(db, other.importId, null), true);
   assert.equal(cancelImport(db, other.importId, null), false);
   assert.equal(count(db, 'SELECT count(*) FROM imports WHERE status = ?', 'cancelled'), 1);
+});
+
+test('a process killed in the middle of Confirm leaves nothing behind, and the import can be confirmed again (acceptance row 6)', async (t) => {
+  const { db, dir, dbPath, cleanup } = await createTestDb();
+  t.after(cleanup);
+  const r = checkImport(db, dir, { bytes: fixture('scan-record-two-days.csv'), fileName: 'f.csv', source: 'manual', userId: null, now: ON_SCAN_DAY });
+  const url = (f: string) => JSON.stringify(new URL(f, import.meta.url).href);
+  // The child confirms, and a trigger kills it outright (SIGKILL, no cleanup) right after the first parcel is written.
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    const { openDatabase } = await import(${url('../db/connection.ts')});
+    const { confirmImport } = await import(${url('./store.ts')});
+    const db = openDatabase(${JSON.stringify(dbPath)});
+    db.function('die', () => process.kill(process.pid, 'SIGKILL'));
+    db.exec('CREATE TEMP TRIGGER die AFTER INSERT ON parcels BEGIN SELECT die(); END');
+    confirmImport(db, ${JSON.stringify(dir)}, ${r.importId}, { arrivalBatchDate: '2026-10-10', dateChoice: { kind: 'all_on_batch_date' }, batchDateChosen: true, userId: null, now: new Date(${ON_SCAN_DAY.getTime()}) });
+  `]);
+  assert.equal(child.signal, 'SIGKILL', child.stderr.toString());
+
+  assert.equal(count(db, 'SELECT count(*) FROM parcels'), 0);
+  assert.equal(count(db, 'SELECT count(*) FROM parcel_scan_events'), 0);
+  assert.equal(db.prepare('SELECT status FROM imports WHERE id = ?').pluck().get(r.importId), 'checked');
+  const again = confirm(db, dir, r.importId, { dateChoice: { kind: 'all_on_batch_date' }, batchDateChosen: true });
+  assert.equal(again.ok, true);
+  assert.ok(count(db, 'SELECT count(*) FROM parcels') > 0);
 });
 
 test('retention keeps a stored file while a newer import of the same file still uses it', async (t) => {

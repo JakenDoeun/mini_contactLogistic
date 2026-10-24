@@ -30,8 +30,8 @@ export interface ContactEvent {
 }
 
 // A random gap between two SMS from the gateway SIM, so its traffic looks like a person's and is less likely to be
-// flagged or blocked by the carrier (owner, 2026-10-20).
-export const SMS_GAP_SECONDS = [25, 80] as const;
+// flagged or blocked by the carrier (owner, 2026-10-20). The admin can change it in Settings (owner, 2026-10-23).
+export const DEFAULT_SMS_GAP = { from: 25, to: 80 };
 
 export const SMS_STATUSES: SmsStatus[] = ['not-sent', 'queued', 'sending', 'sent', 'delivered', 'failed', 'unconfirmed'];
 
@@ -60,6 +60,21 @@ export function formatPhone(raw: string) {
 }
 
 export const normalizeCode = (raw: string) => raw.trim().toUpperCase().replace(/\s+/g, '');
+
+/** The parcel a scanned or typed code belongs to: stored codes keep their spelling, so both sides are normalized. */
+export const findByCode = (parcels: Parcel[], raw: string) => parcels.find((p) => normalizeCode(p.code) === normalizeCode(raw));
+
+/** Parcels search: part of the code (any case or spaces), the recipient's name, or 4+ digits of the phone in any format. */
+export function matchesSearch(p: Parcel, q: string) {
+  const text = q.trim().toLowerCase();
+  if (!text) return true;
+  const digits = normalizePhone(text);
+  return (
+    normalizeCode(p.code).includes(normalizeCode(text)) ||
+    p.recipient.toLowerCase().includes(text) ||
+    (digits.length >= 4 && normalizePhone(p.phone).includes(digits.replace(/^0/, '')))
+  );
+}
 
 const newestFirst = (a: ContactEvent, b: ContactEvent) => b.at.localeCompare(a.at);
 

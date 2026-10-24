@@ -20,19 +20,17 @@ English and Khmer (ខ្មែរ), switchable on every device.
 3. [What each page does](#what-each-page-does)
 4. [Admin and staff](#admin-and-staff)
 5. [What you need](#what-you-need)
-6. [Install on the office computer (Windows)](#install-on-the-office-computer-windows)
-7. [First account, staff accounts, staff phones](#first-account-staff-accounts-staff-phones)
-8. [Set up the SMS gateway phone](#set-up-the-sms-gateway-phone)
-9. [A normal day](#a-normal-day)
-10. [SMS wording](#sms-wording)
-11. [Languages](#languages)
-12. [Data, backups and privacy](#data-backups-and-privacy)
-13. [Beta testing](#beta-testing)
-14. [Troubleshooting](#troubleshooting)
-15. [Admin command reference](#admin-command-reference)
-16. [Development](#development)
-17. [Documentation](#documentation)
-18. [License](#license)
+6. [Setup workflow](#setup-workflow): A. office computer, B. gateway phone
+7. [A normal day](#a-normal-day)
+8. [SMS wording](#sms-wording)
+9. [Languages](#languages)
+10. [Data, backups and privacy](#data-backups-and-privacy)
+11. [Beta testing](#beta-testing)
+12. [Troubleshooting](#troubleshooting)
+13. [Admin command reference](#admin-command-reference)
+14. [Development](#development)
+15. [Documentation](#documentation)
+16. [License](#license)
 
 ---
 
@@ -150,44 +148,72 @@ in the app. Signed-in devices stay signed in for up to 30 days, or until 7 days 
 
 ---
 
-## Install on the office computer (Windows)
+## Setup workflow
 
-1. Download [`deploy/windows/install.ps1`](deploy/windows/install.ps1) to the office computer.
-2. Open PowerShell in the download folder and run:
+Two systems are set up, in this order:
 
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File install.ps1
-   ```
+- **A. The office computer** runs the app (with Tailscale, so staff phones can reach it).
+- **B. The gateway phone** sends the SMS (SMSGate, also on Tailscale). It is connected **to** the app, so it comes
+  last. Until it is connected no SMS can leave, which makes part A safe to use on its own.
 
-   It installs `main`. To try a fix before it is merged, add `-Branch <branch name>`.
+```
+ A1 Tailscale account ─▶ A2 install on office computer ─▶ A3 admin account ─▶ A4 staff accounts ─▶ A5 staff phones
+                                                                                                        │
+      staff can work now: imports, Parcels, Scan Parcel, Contact by hand  ◀─────────────────────────────┘
+                                                                                                        │
+ B1 phone + SIMs ─▶ B2 SMSGate Local Server ─▶ B3 Tailscale on phone ─▶ B4 tags + rule ─▶ B5 connect (gateway set)
+                                                                                                        │
+                                              B6 Scan SIMs + confirm ─▶ B7 test SMS ─▶ B8 small real batch ─▶ daily use
+```
 
-3. Approve the administrator prompt. The installer then:
-   - installs Tailscale if missing (checked against its published SHA-256) and asks you to sign this computer in once,
-   - downloads the app and its own Node.js 24.21.0 into `C:\Program Files\CampusBranch` (no system Node.js or Git needed),
-   - builds it, creates a local account `campusbranch` that only runs the app, and a private data folder
-     `C:\ProgramData\CampusBranch`,
-   - creates the shared folder **Campus Branch Imports** (Public Documents, with a desktop shortcut) for the courier export,
-   - registers the task **Campus Branch** (starts at boot, restarts on failure), keeps the computer awake on mains power,
-   - starts the app, shares it on your tailnet with Tailscale Serve, and prints the **staff address** and, on a new
-     install, a **one-time code** for the first account.
+### How the app reaches the phone
+
+```
+Office computer (Campus Branch app)
+      │  Tailscale (encrypted): http://<phone-name>:8080, SMSGate's username and password
+      ▼
+Gateway phone: SMSGate "Local Server"
+      │  sends from the SIM matching the customer's carrier
+      ▼
+Customer's phone
+```
+
+The app never sends an SMS itself. SMSGate turns the phone into a small server that accepts "send this text to this
+number"; the app hands it one SMS at a time and follows each one until it is *Delivered*. The phone is reachable only
+inside your Tailscale network, and a Tailscale rule lets only the office computer reach it.
+
+### Part A: the office computer
+
+**A1. Tailscale account.** Create one Tailscale account for the branch (the free plan is enough). In the admin console
+(login.tailscale.com) turn on **MagicDNS** and **HTTPS certificates**. Every device below signs in to this account.
+
+**A2. Install the app.** On the office computer, download [`deploy/windows/install.ps1`](deploy/windows/install.ps1),
+open PowerShell in the download folder and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+Approve the administrator prompt. The installer:
+- installs Tailscale if missing (checked against its published SHA-256) and asks you to sign this computer in to the
+  branch account once,
+- downloads the app (branch `main`) and its own Node.js 24.21.0 into `C:\Program Files\CampusBranch` (no system
+  Node.js or Git needed),
+- builds it, creates a local account `campusbranch` that only runs the app, and the private data folder
+  `C:\ProgramData\CampusBranch`,
+- creates the shared folder **Campus Branch Imports** (Public Documents, with a desktop shortcut) for the courier export,
+- registers the task **Campus Branch** (starts at boot with nobody signed in, restarts on failure) and keeps the
+  computer awake on mains power,
+- starts the app, shares it on your tailnet with Tailscale Serve, and prints the **staff address**
+  (`https://<office-computer>.<your-tailnet>.ts.net`) and a **one-time code**.
 
 If Tailscale prints a link to enable HTTPS for your tailnet, open it and enable it; the installer carries on.
 
-**Update**: run the same command again. The new version is built beside the running one, then swapped in: the app is
-down for seconds, and accounts and data stay.
+**A3. Admin account.** Open the staff address and go to `/login`, type the one-time code, and choose the admin's user
+name and password (12 characters or more). The code then stops working. The first account is the admin. In Settings,
+*Ready for phones?* should say *Yes*.
 
-Linux: build the app, then `sudo sh deploy/linux/install.sh` (systemd service, data in `/var/lib/campus-branch`).
-Details in `docs/phase3-backups.md`.
-
----
-
-## First account, staff accounts, staff phones
-
-**First account (once).** Open the staff address on the office computer (or any device signed in to the same
-Tailscale account), go to `/login`, type the one-time code the installer printed, and choose the admin's user name and
-password (12 characters or more). The code then stops working. In Settings, *Ready for phones?* should say *Yes*.
-
-**Staff accounts.** At the office computer, in PowerShell as administrator:
+**A4. Staff accounts.** On the office computer, in PowerShell as administrator:
 
 ```powershell
 cd 'C:\Program Files\CampusBranch\app'
@@ -198,47 +224,78 @@ $env:DATA_DIR = 'C:\ProgramData\CampusBranch'
 It prints a generated password once; give it to that person. `... scripts\user.ts disable sokha` disables an account
 and signs it out everywhere.
 
-**Staff phones.**
-1. Install the Tailscale app and sign in with the branch's Tailscale account (an admin may need to approve the phone).
-2. Turn Tailscale on. It works on any network, not only the branch Wi-Fi.
-3. Scan the QR code in Settings › *Set up a staff phone* (or on the Dashboard's QR icon), and sign in.
-4. Optional: *Add to Home Screen* so it opens like an app.
+**A5. Staff phones.** On each phone: install the Tailscale app, sign in to the branch account (an admin may need to
+approve it) and turn it on. Then scan the QR code in Settings › *Set up a staff phone* (or the QR icon on the
+Dashboard) and sign in. Optional: *Add to Home Screen* so it opens like an app.
+
+> **Staff can start working here**: imports, Parcels, Scan Parcel, and *Contact by hand* (calls and Telegram from their
+> own phones). If someone presses *Notify customers* before part B, the SMS only wait ("Waiting for the gateway
+> phone"): press **Stop** on that run in Notifications before step B5, or they go out as soon as the phone connects.
 
 **Forgotten password.** On the sign-in page choose *Forgot password?* and use the recovery code, which the admin reads
-at the office computer with `scripts\recovery-code.ts show` (create one first with `rotate`). Resetting a password
-signs that account out everywhere.
+at the office computer with `scripts\recovery-code.ts show` (create one first with `rotate`). A reset signs that
+account out everywhere.
 
----
+### Part B: the gateway phone
 
-## Set up the SMS gateway phone
+**B1. Phone and SIMs.** An Android phone used only for this. Put in one SIM per carrier you send from (for example
+Cellcard and Smart). Keep the charger connected. Block incoming calls on the SIMs if you can: a call during sending can
+make an SMS fail.
 
-1. **Phone.** Put in the SIM(s): one per carrier you want to send from (for example Cellcard and Smart). Turn off
-   battery optimisation for SMSGate, keep the charger connected, and block incoming calls on the SIMs if you can (a
-   call during sending can make an SMS fail).
-2. **SMSGate.** Install [SMS Gateway for Android](https://github.com/capcom6/android-sms-gateway), give it the SMS
-   and Phone permissions, turn on **Local Server** (port 8080). Note its username and password.
-3. **Tailscale on the phone.** Sign in to the same tailnet, turn on Always-on VPN. In the Tailscale admin console give
-   the phone the tag `tag:gateway` and the office computer `tag:office`, and apply the rules in
-   [`docs/tailnet-rules.md`](docs/tailnet-rules.md): only the office computer may reach the phone on port 8080.
-4. **Connect it** at the office computer (PowerShell as administrator):
+**B2. SMSGate.** Install [SMS Gateway for Android](https://github.com/capcom6/android-sms-gateway). Allow its **SMS**
+and **Phone** permissions and turn off battery optimisation for it. Open **Settings › Local Server**, turn it on (port
+**8080**) and note the **username** and **password**. You may replace the generated password with a longer one.
 
-   ```powershell
-   cd 'C:\Program Files\CampusBranch\app'
-   $env:DATA_DIR = 'C:\ProgramData\CampusBranch'
-   & 'C:\Program Files\CampusBranch\node\node.exe' --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\gateway.ts set
-   ```
+**B3. Tailscale on the phone.** Install Tailscale, sign in to the branch account, turn it on and turn on **Always-on
+VPN** (Android settings › VPN), so it reconnects by itself after a restart.
 
-   It asks for the phone's address (`http://<phone name>:8080`), username and password, checks them with the phone and
-   saves them in `gateway.json` in the data folder (never in the database, never shown to staff). Type the password;
-   do not paste it into chats or files.
-5. **Confirm the SIMs.** Settings › SMS gateway › **Scan SIMs**, then confirm each SIM's carrier. Customers
-   whose carrier has a confirmed SIM get SMS from that SIM; everyone else goes to *Contact by hand*. There is no
-   fallback SIM: a Smart customer is never sent an SMS from the Cellcard SIM.
-6. **Test SMS** (admin): Settings › SMS gateway › Test SMS, to your **own** number, once per SIM. Each should reach
-   *Delivered*.
+**B4. Tags and rule.** In the Tailscale admin console › Machines: note the phone's name (for example `gateway-phone`),
+give the phone the tag **`tag:gateway`** and the office computer **`tag:office`**. Then add the rules from
+[`docs/tailnet-rules.md`](docs/tailnet-rules.md) under Access controls: only the office computer may reach the phone on
+port 8080; staff phones and laptops cannot.
 
-If the phone is away (off, no network, SMSGate stopped), SMS wait in the queue and go out once it is back. None is sent
-twice. If one SIM fails twice in a row (no credit, blocked), the run pauses until someone presses Resume.
+**B5. Connect the app to the phone.** On the office computer, in PowerShell as administrator:
+
+```powershell
+cd 'C:\Program Files\CampusBranch\app'
+$env:DATA_DIR = 'C:\ProgramData\CampusBranch'
+& 'C:\Program Files\CampusBranch\node\node.exe' --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\gateway.ts set
+```
+
+It asks three things:
+
+| Question | Answer |
+|---|---|
+| Address | `http://<phone name from B4>:8080`, e.g. `http://gateway-phone:8080` |
+| Username | from SMSGate (B2) |
+| Password | from SMSGate (B2); type it, it stays hidden. Do not paste it into chats or files |
+
+It then checks with the phone and should say **"Connected. SMSGate … phone checks pass"**. It also sets the phone to
+delete sent messages after 7 days, so customer numbers do not pile up on it. The values are saved in `gateway.json` in
+the private data folder: never in the database, never shown to staff. Run it again whenever SMSGate's password or the
+phone changes.
+
+**B6. Confirm the SIMs.** In the app: Settings › SMS gateway shows the phone as connected. Press **Scan SIMs**, then
+confirm each SIM's carrier. Customers whose carrier has a confirmed SIM get SMS from that SIM; everyone else goes to
+*Contact by hand*. There is no fallback SIM: a Smart customer is never sent an SMS from the Cellcard SIM.
+
+**B7. Test SMS.** As admin: Settings › SMS gateway › Test SMS to **your own** number, once per SIM. Each should reach
+*Delivered*, from the right SIM.
+
+**B8. A small real batch.** Notify a few customers, watch the run finish in Notifications, then use it for the whole day.
+
+If the phone is away later (off, no network, SMSGate stopped), SMS wait in the queue and go out once it is back; none
+is sent twice. If one SIM fails twice in a row (no credit, blocked), the run pauses until someone presses Resume.
+
+### Updating, and other systems
+
+**Update** the app: run `install.ps1` again on the office computer. The new version is built beside the running one,
+then swapped in; the app is down for seconds, and accounts, data and the gateway connection stay. To try a fix before
+it is merged, add `-Branch <branch name>`.
+
+**Linux** instead of Windows: build the app, then `sudo sh deploy/linux/install.sh` (systemd service, data in
+`/var/lib/campus-branch`); the same steps then use `npm run user -- add`, `npm run gateway -- set` with `DATA_DIR`
+set. Details in `docs/phase3-backups.md`.
 
 ---
 
@@ -317,15 +374,11 @@ computer remembers its own choice. Arrow keys work on it too.
 
 The beta can run at the branch now, in two steps, so nothing reaches customers before the SIMs are proven.
 
-**Step 1: work without automatic SMS (safe from day one).**
-Install, create the accounts, connect staff phones, but **do not connect the gateway phone yet**.
-Staff use imports, Parcels, Scan Parcel and *Contact by hand* (calls and Telegram from their own phones) for real.
-If someone presses *Notify customers* in this step, the SMS only wait ("Waiting for the gateway phone"); press **Stop**
-on that run in Notifications before connecting the gateway, or they will go out when it connects.
+**Step 1: Part A only (safe from day one).** Do [Part A](#part-a-the-office-computer) of the setup and let staff
+work for real: imports, Parcels, Scan Parcel and *Contact by hand*. No SMS can leave yet.
 
-**Step 2: turn on SMS (after the real-day checks).**
-Connect the gateway phone, confirm the SIMs, send a test SMS from each SIM to your own number, then notify a small
-batch (a few customers) and watch it finish before using it for the whole day.
+**Step 2: Part B, when the gateway phone and SIMs are ready.** Do [Part B](#part-b-the-gateway-phone): connect the gateway phone, confirm
+the SIMs, test SMS from each SIM to your own number, then a small real batch before the whole day.
 
 **What to note during the beta** (one line each is enough, in a shared chat or sheet):
 
@@ -351,6 +404,7 @@ customer who got no SMS or two; a phone that cannot open the app.
 | Problem | What to check |
 |---|---|
 | Phone cannot open the app | Tailscale on and signed in to the branch account? Settings › *Ready for phones?* on the office computer says what is missing |
+| `gateway.ts set` cannot reach the phone | Tailscale on and connected on the phone? Phone tagged `tag:gateway` and the computer `tag:office`, with the rule from `docs/tailnet-rules.md`? SMSGate's Local Server on, port 8080? The address uses the phone's exact Tailscale name? |
 | "Waiting for the gateway phone" | Gateway phone on, charged, Tailscale on, SMSGate running. SMS go out by themselves once it answers |
 | A carrier's customers all go to *Contact by hand* | No confirmed SIM for that carrier: Settings › SMS gateway › Scan SIMs, then confirm them |
 | Run paused after failures | Check that SIM's credit and signal, then Resume in Notifications |

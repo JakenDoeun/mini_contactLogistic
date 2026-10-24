@@ -36,7 +36,7 @@ export function BranchReadiness() {
 
   return (
     <div className="mt-4 rounded-md border">
-      <div className="flex items-center justify-between gap-3 border-b px-4 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2.5">
         <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold">
           {t('ready.title')}
           {s && !loading && (

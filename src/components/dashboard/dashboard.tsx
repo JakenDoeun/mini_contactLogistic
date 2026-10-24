@@ -1,17 +1,19 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { ArrowRight, CircleCheck, CircleDashed, CircleX, FileUp, FolderSearch, PhoneOff, ScanBarcode, Send, type LucideIcon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowRight, CircleCheck, CircleDashed, CircleX, FileUp, FolderSearch, PhoneOff, QrCode as QrIcon, ScanBarcode, Send, type LucideIcon } from 'lucide-react';
 import { SmsBadge } from '@/components/parcels/parcel-status';
 import { batchLabel, daysAgo, GroupBadge, toNotifyLine } from '@/components/parcels/phone-group';
 import { StatusBadge } from '@/components/import/status-badge';
+import { QrCode } from '@/components/shared/qr-code';
 import { SampleDataNotice } from '@/components/shared/sample-data-notice';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { dayProgress, workList, type DayProgress, type WorkGroup } from '@/lib/dashboard-logic';
 import { getFolder, listImports, type ImportListItem } from '@/lib/import-api';
 import { useParcelData, useParcelError } from '@/lib/parcel-service';
+import { fetchBranchAddresses } from '@/lib/branch-address';
 import { arrivalDay, formatPhone, type SmsStatus } from '@/lib/parcel-logic';
 import { cn, formatDateTime } from '@/lib/utils';
 import { useT, type MessageKey } from '@/lib/i18n-react';
@@ -54,7 +56,8 @@ export function Dashboard() {
           <h1 className="mt-0.5 text-[1.75rem] leading-tight font-semibold tracking-tight">{t('dash.title')}</h1>
           <p className="mt-1 text-muted-foreground">{t('dash.lead')}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {/* relative: the QR card hangs from this row's right edge, so it stays on screen when the buttons wrap. */}
+        <div className="relative flex flex-wrap gap-2">
           <Button asChild>
             <Link href="/scan?camera=1">
               <ScanBarcode aria-hidden />
@@ -67,6 +70,7 @@ export function Dashboard() {
               {t('nav.importArrivals')}
             </Link>
           </Button>
+          <PhoneQr />
         </div>
       </div>
 
@@ -80,6 +84,61 @@ export function Dashboard() {
         <ImportsToday records={imports} error={importError} />
       </div>
     </>
+  );
+}
+
+/** This console's address as a QR code in a small card under its button, so a phone opens it with its camera. */
+function PhoneQr() {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState<string | null | undefined>(undefined);
+  const box = useRef<HTMLDivElement>(null);
+  // A tap anywhere else closes it, as the profile card in the header does.
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [open]);
+  const toggle = () => {
+    setOpen(!open);
+    if (url !== undefined) return;
+    // Phones reach the console at the Tailscale address; without one, this page's own address unless it is this computer's.
+    const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+    fetchBranchAddresses().then(({ secure }) => setUrl(secure ?? (local ? null : location.origin)));
+  };
+  return (
+    <div ref={box} onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}>
+      <Button variant="outline" size="icon" onClick={toggle} aria-expanded={open} aria-controls="phone-qr" aria-label={t('dash.qr.show')} title={t('dash.qr.show')}>
+        <QrIcon aria-hidden />
+      </Button>
+      {open && (
+        <div
+          id="phone-qr"
+          role="dialog"
+          aria-labelledby="phone-qr-heading"
+          // Grows out of the button: starting: is the style it fades and scales in from.
+          className="absolute top-full right-0 z-40 mt-2 w-[248px] origin-top-right rounded-md border bg-card p-4 shadow-lg transition duration-200 ease-out starting:scale-95 starting:opacity-0 motion-reduce:transition-none"
+        >
+          <h2 id="phone-qr-heading" className="font-semibold">
+            {t('dash.qr.title')}
+          </h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">{t('dash.qr.lead')}</p>
+          <div className="mt-3">
+            {url === undefined ? (
+              <Skeleton className="size-[200px]" />
+            ) : url === null ? (
+              <p className="rounded-md bg-secondary px-3 py-2.5 text-sm">{t('dash.qr.noAddress')}</p>
+            ) : (
+              <>
+                <QrCode url={url} />
+                <p className="mt-2 font-mono text-xs break-all">{url}</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -377,7 +436,8 @@ function ImportsToday({ records, error }: { records: ImportListItem[] | null; er
           {/* Each step keeps part of the one before it, so the line reads left to right as the file narrows down. */}
           <ol className="grid grid-cols-2 border-y sm:grid-cols-4">
             {steps.map(([label, n], i) => (
-              <li key={label} className={cn('px-4 py-3', i % 2 === 1 && 'border-l', i >= 2 && 'border-t sm:border-t-0', i === 2 && 'sm:border-l')}>
+              // Numbers sit on one line even when a label wraps (Khmer labels run longer).
+              <li key={label} className={cn('flex flex-col justify-between px-4 py-3', i % 2 === 1 && 'border-l', i >= 2 && 'border-t sm:border-t-0', i === 2 && 'sm:border-l')}>
                 <span className="block text-xs text-muted-foreground">{t(label)}</span>
                 <span className={cn('mt-0.5 block font-mono text-xl font-medium', i === 3 && today.length > 0 && 'text-success')}>
                   {records ? n : <Skeleton className="mt-1 h-7 w-10" />}

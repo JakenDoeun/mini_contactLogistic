@@ -62,8 +62,10 @@ test('a new arrival is messaged alone; earlier notified parcels are left out', (
   const events = [ev('1', '1', { parcelCodes: ['A', 'B'], smsStatus: 'sent' })];
   const eligible = eligibleForMessage(group, events).map((x) => x.code);
   assert.deepEqual(eligible, ['C']);
-  assert.match(composeMessage('Sokha Chan', eligible), /^Hi Sokha, your parcel C has arrived/);
-  assert.match(composeMessage('Sokha Chan', ['A', 'B']), /2 new parcels .*: A, B\./);
+  assert.match(composeMessage('Sokha Chan', eligible, '2026-10-23'), /^Hi Sokha, your parcel C has arrived/);
+  assert.match(composeMessage('Sokha Chan', ['A', 'B'], '2026-10-23'), /2 new parcels .*: A, B\./);
+  assert.equal(composeMessage('Sokha', ['A'], '2026-10-03', { single: '{codes} came on {date}', combined: '' }), 'A came on 03-10-2026');
+  assert.equal(composeMessage('Sokha', ['A'], '2026-10-03', { single: 'Hi {name}{newline}{codes}', combined: '' }), 'Hi Sokha\nA');
 });
 
 test('an SMS waiting at the gateway blocks a duplicate', () => {

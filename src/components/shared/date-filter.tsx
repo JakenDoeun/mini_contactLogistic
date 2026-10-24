@@ -45,7 +45,7 @@ export function DateFilter({
         >
           {DATE_PRESETS.map((p) => (
             <option key={p.key} value={p.key}>
-              {p.label}
+              {t(p.label)}
             </option>
           ))}
         </select>

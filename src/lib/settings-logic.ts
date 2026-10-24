@@ -16,7 +16,7 @@ export interface Settings {
 export const SMS_GAP_LIMITS = { min: 15, max: 600 };
 
 export const CHECK_INTERVALS = [30, 60, 120, 300];
-const TOKENS = ['{name}', '{codes}', '{count}'];
+const TOKENS = ['{name}', '{codes}', '{count}', '{date}', '{newline}'];
 
 // Each check returns a message key (translated where it is shown) or null when the value is fine.
 export function folderError(path: string): Message | null {
@@ -30,7 +30,7 @@ export function folderError(path: string): Message | null {
 export function templateError(text: string): Message | null {
   if (!text.trim()) return { key: 'settingsError.templateEmpty' };
   const unknown = (text.match(/\{[^}]*\}/g) ?? []).find((t) => !TOKENS.includes(t));
-  // {token} is filled; the {name}, {codes} and {count} in the sentence stay as written.
+  // {token} is filled; the {name}, {codes}, {count}, {date} and {newline} in the sentence stay as written.
   if (unknown) return { key: 'settingsError.templateUnknown', vars: { token: unknown } };
   if (!text.includes('{codes}')) return { key: 'settingsError.templateCodes' };
   return null;

@@ -13,7 +13,11 @@ file"); the owner translates `src/locales/km.json` themselves or with an LLM.
   `src/lib/i18n-react.tsx` (`useT`, `t.rich`), `src/lib/i18n-server.ts` (page titles). Helpers that used to return
   English (`validateFile`, `contactLine`, the Settings checks) now return a message key and values; the screen
   translates them.
-- **Fonts:** Noto Sans Khmer and the system Khmer fonts come after the Latin font, so digits and codes keep their look.
+- **Fonts:** Kantumruy Pro for both languages (bundled, `@fontsource-variable/kantumruy-pro`): its Latin and Khmer are
+  one family, so mixed lines ("Cellcard 3 កញ្ចប់") read as one font, the same on every phone and PC. The owner picked it
+  over Geist, Inter, IBM Plex Sans and Figtree; Kantumruy Pro was chosen over Noto Sans Khmer for the Khmer. Geist Mono
+  stays for codes and phone numbers. Khmer is drawn at 95% so it reads the same size as English (see 2026-10-24), Khmer lines are
+  taller (1.65) so stacked vowels and subscripts never touch, and letter-spacing is off for Khmer.
 
 ## Rules for whoever translates km.json
 
@@ -36,7 +40,9 @@ After code adds new messages, `npm run locales` copies the new keys into km.json
   (`src/lib/tailscale.ts`), import refusals and rules, SMS results ("Delivered", gateway errors). This is the next step
   of Phase 13; its new keys will come as a separate short list so nothing is translated twice.
 - **The SMS sent to customers** is a setting (Settings › Default SMS message), not part of the catalogue. A Khmer SMS
-  fits about 70 characters per part instead of 160.
+  fits about 70 characters per part instead of 160. Its placeholders are {name}, {codes}, {count} and {date} (the
+  parcels' arrival day as dd-mm-yyyy, added 2026-10-23). Enter starts a new line; the
+  line break is kept in the SMS.
 - **Dates and times** stay in the English format (e.g. 23 Oct, 03:04 PM) for now.
 
 ## Checks (2026-10-23)
@@ -46,3 +52,26 @@ After code adds new messages, `npm run locales` copies the new keys into km.json
 - Browser, built app with a pseudo-Khmer catalogue (every message prefixed with "ក") on every page, the import review,
   the parcel drawer and the Notify panel: no screen text bypasses the catalogue apart from the items listed above and
   the browser's own date on the Dashboard. No sideways scrolling at 390 px. `html lang` follows the switch.
+
+## Owner's translation (2026-10-23)
+
+- km.json translated by the owner; `npm test` passes. `placeholders()` now ignores the words inside plural options
+  (they are text, not placeholders), so a translated plural no longer fails the check.
+- Browser sweep of the built app in real Khmer, desktop and 390 px: no text overflows or is clipped, no sideways
+  scrolling, no raw message keys. Fixed on the way: the date filter showed its keys (`range.preset.today`); the branch
+  readiness header pushed its button out of the card on a phone; the Dashboard's import numbers sat at uneven heights
+  when a Khmer label wrapped; the sign-in illustration spread Khmer letters apart.
+
+## Owner's requests (2026-10-24)
+
+- English uses the same line heights as Khmer, and Khmer letters are drawn at 95% (were 105%, which made a consonant
+  28% taller than English lowercase), so switching language no longer looks like zooming in or out.
+- The language switch has no box or shadow: UK flag + EN, Cambodian flag + KM (flag-icons 7.5.0, MIT), with a lavender
+  pill that slides under the chosen language. Radio buttons named "English" and "Khmer": arrow keys, Home and End
+  switch; only the chosen one is a Tab stop. Phones show the flags only, so the page name in the header still fits.
+- Page padding on wide screens halved (28 → 14 px sides, 24 → 12 px top), and the content may grow to 1920 px.
+- Notification sounds last about 3 seconds: a four-note rising chime, and three rounds of three beeps.
+- `{newline}` in an SMS template is a line break, the same as pressing Enter.
+- Dashboard: a QR icon button beside Import Arrivals opens a small card (fades and grows in) with a QR code of the
+  console's address and the address as text: the Tailscale address, else the page's own address unless it is this
+  computer's local one. A tap outside or Escape closes it. The QR drawing is shared with Settings.

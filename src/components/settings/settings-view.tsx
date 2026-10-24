@@ -262,7 +262,7 @@ function ImportSection({ settings, readOnly }: { settings: Settings; readOnly: b
   );
 }
 
-const SAMPLE = { name: 'Sokha Chan', codes: ['CB4810276635', 'CB2291048871', 'CB7730192245'] };
+const SAMPLE = { name: 'Sokha Chan', codes: ['CB4810276635', 'CB2291048871', 'CB7730192245'], day: '2026-10-23' };
 
 function TemplateSection({ settings, readOnly }: { settings: Settings; readOnly: boolean }) {
   const t = useT();
@@ -288,6 +288,8 @@ function TemplateSection({ settings, readOnly }: { settings: Settings; readOnly:
           name: <code className="font-mono text-foreground">{'{name}'}</code>,
           codes: <code className="font-mono text-foreground">{'{codes}'}</code>,
           count: <code className="font-mono text-foreground">{'{count}'}</code>,
+          date: <code className="font-mono text-foreground">{'{date}'}</code>,
+          newline: <code className="font-mono text-foreground">{'{newline}'}</code>,
         })}
       </p>
       {kinds.map(([kind, label, codes]) => {
@@ -310,11 +312,11 @@ function TemplateSection({ settings, readOnly }: { settings: Settings; readOnly:
             </Field>
             <div>
               <p className="font-medium text-muted-foreground">{t('settings.sms.preview')}</p>
-              <p className="mt-1.5 rounded-md bg-secondary px-3 py-2 text-sm">
-                {error ? <span className="text-muted-foreground">{t('settings.sms.fixFirst')}</span> : composeMessage(SAMPLE.name, [...codes], s.draft.templates)}
+              <p className="mt-1.5 rounded-md bg-secondary px-3 py-2 text-sm whitespace-pre-line">
+                {error ? <span className="text-muted-foreground">{t('settings.sms.fixFirst')}</span> : composeMessage(SAMPLE.name, [...codes], SAMPLE.day, s.draft.templates)}
               </p>
               <p className="mt-1 font-mono text-xs text-muted-foreground">
-                {error ? '' : t('settings.sms.characters', { count: composeMessage(SAMPLE.name, [...codes], s.draft.templates).length })}
+                {error ? '' : t('settings.sms.characters', { count: composeMessage(SAMPLE.name, [...codes], SAMPLE.day, s.draft.templates).length })}
               </p>
             </div>
           </div>

@@ -37,6 +37,8 @@ export function format(template: string, vars: Vars = {}, locale: Locale = 'en')
 /** The placeholder names a message uses, plurals included: a translation must use the same ones. */
 export function placeholders(template: string): string[] {
   const names = new Set<string>();
-  for (const m of template.matchAll(/\{(\w+)(?:, plural,|\})/g)) names.add(m[1]);
+  for (const m of template.matchAll(/\{(\w+),\s*plural,/g)) names.add(m[1]);
+  const withoutPlurals = template.replace(PLURAL, '');
+  for (const m of withoutPlurals.matchAll(/\{(\w+)\}/g)) names.add(m[1]);
   return [...names].sort();
 }

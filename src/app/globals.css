@@ -3,9 +3,9 @@
 /* Periwinkle on navy over warm neutrals. Periwinkle marks actions, focus and selection only; green, amber, red are status;
    the muted indigo "info" pair labels preview and simulated states so they never borrow a status colour. */
 @theme inline {
-  /* Khmer letters come from the device: Noto Sans Khmer (Android), Khmer Sangam MN (iPhone), Leelawadee UI / Khmer UI (Windows). */
-  --font-sans: var(--font-geist-sans), "Noto Sans Khmer", "Khmer Sangam MN", "Leelawadee UI", "Khmer UI", system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  /* Kantumruy Pro, bundled (layout.tsx): Latin and Khmer faces; the device's own Khmer font only while it loads. */
+  --font-sans: var(--font-latin), var(--font-khmer), "Noto Sans Khmer", "Khmer Sangam MN", "Leelawadee UI", "Khmer UI", system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), var(--font-khmer), ui-monospace, monospace;
 
   --color-background: #f5f3ef;
   --color-card: #ffffff;
@@ -43,6 +43,15 @@
     @apply bg-background text-foreground font-sans antialiased;
     font-size: 14px;
   }
+  /* Khmer stacks vowels above and subscript letters below the line: taller lines so they never touch or clip.
+     English uses the same heights, so switching language never changes the size of the page (owner, 2026-10-24). */
+  html {
+    line-height: 1.65;
+    --text-xs--line-height: 1.7;
+    --text-sm--line-height: 1.65;
+    --text-base--line-height: 1.65;
+    --text-lg--line-height: 1.6;
+  }
   * {
     @apply border-border;
   }
@@ -60,4 +69,9 @@
   .font-mono {
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* Unlayered, so it beats tracking utilities: spacing out letters splits Khmer clusters apart. */
+html:lang(km) :is(svg text, .uppercase) {
+  letter-spacing: 0;
 }

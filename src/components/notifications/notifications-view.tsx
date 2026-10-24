@@ -1184,9 +1184,9 @@ function RetrySheet({ event, data, onClose }: { event: ContactEvent | null; data
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   if (event && data && key !== event.id) {
-    const name = data.parcels.find((p) => p.code === event.parcelCodes[0])?.recipient ?? '';
+    const first = data.parcels.find((p) => p.code === event.parcelCodes[0]);
     setKey(event.id);
-    setText(event.message || composeMessage(name, event.parcelCodes, currentTemplates()));
+    setText(event.message || composeMessage(first?.recipient ?? '', event.parcelCodes, first?.arrivalDate ?? arrivalDay(event.at), currentTemplates()));
     setSendAnyway(false);
     setError('');
   }

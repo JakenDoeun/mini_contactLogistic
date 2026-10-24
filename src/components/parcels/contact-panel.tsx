@@ -40,10 +40,10 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
   const queued = events.find((e) => e.id === queuedId);
 
   const draftKey = `${parcel.recipient}|${codes.join(',')}|${templates?.single}|${templates?.combined}`;
-  const [draft, setDraft] = useState({ key: draftKey, text: composeMessage(parcel.recipient, codes, templates) });
+  const [draft, setDraft] = useState({ key: draftKey, text: composeMessage(parcel.recipient, codes, parcel.arrivalDate, templates) });
   // A different parcel set means a different message; edits to the old one no longer apply.
-  if (draft.key !== draftKey) setDraft({ key: draftKey, text: composeMessage(parcel.recipient, codes, templates) });
-  const message = draft.text || composeMessage(parcel.recipient, group.map((p) => p.code), templates);
+  if (draft.key !== draftKey) setDraft({ key: draftKey, text: composeMessage(parcel.recipient, codes, parcel.arrivalDate, templates) });
+  const message = draft.text || composeMessage(parcel.recipient, group.map((p) => p.code), parcel.arrivalDate, templates);
 
   if (!isValidPhone(parcel.phone)) {
     return <p className="text-muted-foreground">{t('contact.addPhoneFirst')}</p>;
@@ -95,7 +95,7 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
                   {t('contact.editMessage')}
                 </button>
               </p>
-              <p className="rounded-md bg-secondary px-3 py-2.5 text-sm">{draft.text}</p>
+              <p className="rounded-md bg-secondary px-3 py-2.5 text-sm whitespace-pre-line">{draft.text}</p>
             </>
           )}
           {again && (

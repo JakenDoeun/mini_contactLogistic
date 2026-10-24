@@ -32,7 +32,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
               CB
             </span>
             {await serverT('brand.name')}
-            <LanguageSwitch className="ml-auto text-white hover:bg-white/10 hover:text-white" />
+            <LanguageSwitch className="ml-auto" />
           </p>
           <p className="mt-5 hidden max-w-md text-[2rem] leading-[1.15] font-semibold tracking-tight text-balance lg:block">
             {await serverT('login.tagline')}

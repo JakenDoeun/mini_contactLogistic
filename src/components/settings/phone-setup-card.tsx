@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { BrowserQRCodeSvgWriter } from '@zxing/browser';
+import { useEffect, useState } from 'react';
+import { QrCode } from '@/components/shared/qr-code';
 import { fetchBranchAddresses } from '@/lib/branch-address';
 import { BranchReadiness } from './branch-readiness';
 import { useT } from '@/lib/i18n-react';
@@ -9,21 +9,11 @@ import { useT } from '@/lib/i18n-react';
 /** A QR code for the phone setup page at the branch's Tailscale https address, to show on the office screen. */
 export function PhoneSetupCard() {
   const t = useT();
-  const qr = useRef<HTMLDivElement>(null);
   const [url, setUrl] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     fetchBranchAddresses().then(({ setup }) => setUrl(setup));
   }, []);
-
-  // The QR box only exists once the address is known.
-  useEffect(() => {
-    if (!url || !qr.current) return;
-    const svg = new BrowserQRCodeSvgWriter().write(url, 200, 200);
-    svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', t('phoneCard.qr', { url }));
-    qr.current.replaceChildren(svg);
-  }, [url, t]);
 
   return (
     <section aria-labelledby="phone-setup-heading" className="rounded-md border bg-card px-5 py-5 sm:px-6">
@@ -40,8 +30,7 @@ export function PhoneSetupCard() {
         </p>
       ) : (
         <div className="mt-4 flex flex-col items-start gap-5 sm:flex-row sm:items-center">
-          {/* White behind the code whatever the theme: QR readers need dark-on-light. */}
-          <div ref={qr} className="size-[200px] shrink-0 rounded-md border bg-white" />
+          {url ? <QrCode url={url} /> : <div className="size-[200px] shrink-0 rounded-md border bg-white" />}
           <ol className="list-decimal space-y-1.5 pl-5">
             <li>{t('phoneCard.step1')}</li>
             <li>{t('phoneCard.step2')}</li>

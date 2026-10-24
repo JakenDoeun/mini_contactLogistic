@@ -10,6 +10,8 @@ test('folder path must be absolute', () => {
 
 test('templates need {codes} and only known placeholders', () => {
   assert.equal(templateError('Hi {name}, {count} parcels: {codes}.'), null);
+  assert.equal(templateError('Hi {name}, arrived {date}: {codes}.'), null);
+  assert.equal(templateError('Hi {name},{newline}{codes}'), null);
   assert.equal(templateError('Hi {name}, your parcel arrived.')?.key, 'settingsError.templateCodes');
   assert.deepEqual(templateError('Hi {nmae}: {codes}'), { key: 'settingsError.templateUnknown', vars: { token: '{nmae}' } });
 });

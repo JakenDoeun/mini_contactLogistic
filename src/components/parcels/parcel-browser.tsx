@@ -22,7 +22,6 @@ import {
 import { ANY_DATE, inDateRange, isAnyDate, rangePhrase, type DateRange } from '@/lib/date-range';
 import { reloadParcels, useParcelData, useParcelError } from '@/lib/parcel-service';
 import { DateFilter } from '@/components/shared/date-filter';
-import { SampleDataNotice } from '@/components/shared/sample-data-notice';
 import { cn, formatDateTime } from '@/lib/utils';
 import { ParcelDetail } from './parcel-detail';
 import { PhoneText, SmsBadge } from './parcel-status';
@@ -179,10 +178,6 @@ export function ParcelBrowser({ initialQuery, initialFilter, previewError }: { i
           />
         </div>
       </div>
-
-      <SampleDataNotice>
-        {t('parcels.sampleNotice')}
-      </SampleDataNotice>
 
       {!loadFailed && (
         <div className="mt-5 flex flex-wrap items-center gap-2">

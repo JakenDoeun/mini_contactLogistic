@@ -7,7 +7,6 @@ import { SmsBadge } from '@/components/parcels/parcel-status';
 import { batchLabel, daysAgo, GroupBadge, toNotifyLine } from '@/components/parcels/phone-group';
 import { StatusBadge } from '@/components/import/status-badge';
 import { QrCode } from '@/components/shared/qr-code';
-import { SampleDataNotice } from '@/components/shared/sample-data-notice';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { dayProgress, workList, type DayProgress, type WorkGroup } from '@/lib/dashboard-logic';
@@ -74,8 +73,6 @@ export function Dashboard() {
           <PhoneQr />
         </div>
       </div>
-
-      <SampleDataNotice>{t('dash.sampleNotice')}</SampleDataNotice>
 
       <TodayArrivals progress={data ? dayProgress(data.parcels, data.events, day) : null} error={parcelError} />
 

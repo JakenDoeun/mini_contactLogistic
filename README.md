@@ -38,22 +38,21 @@ English and Khmer (ខ្មែរ), switchable on every device.
 
 ## Status
 
-**Beta.** Every part is built and tested on a test Windows computer, an Android emulator and a stand-in dual-SIM
-gateway. What is left is one test day at the branch with the real equipment, then the owner approves going live.
+**Beta, in use at the branch** (merged into `main` on 2026-10-24 so the branch can start using it). Every part is
+built and tested on a test Windows computer, an Android emulator and a stand-in dual-SIM gateway. Still to do: the
+real-day checks with the real SIMs and phones (see [Beta testing](#beta-testing)). Bugs found in use are fixed on a
+branch and merged again.
 
 | Part | State |
 |---|---|
-| Login, accounts, first-run code, recovery code | Done, on `main` |
-| Database, start-up self-test, backups, data retention, start at boot | Done, on `main` |
-| Imports (upload and watched folder) | Done, on `main` |
-| Parcels, Scan Parcel, contact history | Done, on `main` |
-| SMS gateway connection, sending queue, test SMS | Done, on `main`; tested on the Android emulator |
+| Login, accounts, first-run code, recovery code | Done |
+| Database, start-up self-test, backups, data retention, start at boot | Done |
+| Imports (upload and watched folder) | Done |
+| Parcels, Scan Parcel, contact history | Done |
+| SMS gateway connection, sending queue, test SMS | Done; tested on the Android emulator |
 | Acceptance checks (Phase 11) | 31 of 36 pass; 5 need the real day (real export, real SIMs, real phones) |
 | SMS from the SIM that matches the customer's carrier (Phase 12) | Built; tested with a stand-in dual-SIM phone |
 | Khmer (Phase 13): every screen, Khmer dates, Khmer font | Done; server error messages stay in English |
-
-Phases 11, 12 and 13 are on branch **`phase13-khmer`** (it contains all three). They are merged into `main` after the
-real day. Until then, install the beta from that branch (see below).
 
 ---
 
@@ -157,12 +156,10 @@ in the app. Signed-in devices stay signed in for up to 30 days, or until 7 days 
 2. Open PowerShell in the download folder and run:
 
    ```powershell
-   # Beta (Phases 11–13), until they are merged:
-   powershell -ExecutionPolicy Bypass -File install.ps1 -Branch phase13-khmer
-
-   # After go-live:
    powershell -ExecutionPolicy Bypass -File install.ps1
    ```
+
+   It installs `main`. To try a fix before it is merged, add `-Branch <branch name>`.
 
 3. Approve the administrator prompt. The installer then:
    - installs Tailscale if missing (checked against its published SHA-256) and asks you to sign this computer in once,
@@ -321,7 +318,7 @@ computer remembers its own choice. Arrow keys work on it too.
 The beta can run at the branch now, in two steps, so nothing reaches customers before the SIMs are proven.
 
 **Step 1: work without automatic SMS (safe from day one).**
-Install from `phase13-khmer`, create the accounts, connect staff phones, but **do not connect the gateway phone yet**.
+Install, create the accounts, connect staff phones, but **do not connect the gateway phone yet**.
 Staff use imports, Parcels, Scan Parcel and *Contact by hand* (calls and Telegram from their own phones) for real.
 If someone presses *Notify customers* in this step, the SMS only wait ("Waiting for the gateway phone"); press **Stop**
 on that run in Notifications before connecting the gateway, or they will go out when it connects.
@@ -345,7 +342,7 @@ customer who got no SMS or two; a phone that cannot open the app.
 - [ ] Gateway phone: restart, airplane mode, low battery: SMS wait, then go out once
 - [ ] Camera scan on iPhone Safari and Android Chrome
 - [ ] A small real batch reaches real customers
-- [ ] Owner approves going live; branches merged into `main`; router admin password changed
+- [ ] Owner approves going live; router admin password changed
 
 ---
 
@@ -378,7 +375,7 @@ $node = 'C:\Program Files\CampusBranch\node\node.exe'
 
 | Task | Command |
 |---|---|
-| Update the app | run `install.ps1` again (with `-Branch phase13-khmer` during the beta) |
+| Update the app | run `install.ps1` again |
 | Stop the app | `Disable-ScheduledTask 'Campus Branch'; Stop-ScheduledTask 'Campus Branch'` |
 | Start the app | `Enable-ScheduledTask 'Campus Branch'; Start-ScheduledTask 'Campus Branch'` |
 | Add a staff account | `& $node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\user.ts add <username>` |

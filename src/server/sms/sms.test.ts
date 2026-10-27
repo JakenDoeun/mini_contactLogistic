@@ -482,6 +482,24 @@ test('Phase 12: two failures in a row on one SIM pause the run; Resume carries o
   assert.equal(phone.sends.length, 3);
 });
 
+test('a Retry of a failed SMS from a finished batch goes out; it does not wait forever as Queued', async (t) => {
+  const { db, dir, b1 } = await setup(t);
+  const phone = fakePhone();
+  const worker = smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate });
+  const r = notifyDay(db, { requestKey: crypto.randomUUID(), day: TODAY, items: [{ phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha' }] }, null);
+  assert.ok(r.ok);
+  await worker.tick();
+  phone.set(phone.sends[0], 'Failed', 'RESULT_ERROR_GENERIC_FAILURE');
+  await worker.tick();
+  assert.equal(db.prepare('SELECT status FROM send_batches').pluck().get(), 'done');
+
+  const n = attempts(db)[0].notification_id;
+  assert.ok(queueMessage(db, { phone: '097 880 1123', parcelIds: [b1], text: 'Hi Sokha', retryOf: n }, null).ok);
+  await worker.tick();
+  assert.equal(phone.sends.length, 2);
+  assert.equal(attempts(db)[1].state, 'submitted');
+});
+
 test('Phase 12: an SMS sent from another phone is recorded in the history', async (t) => {
   const { db, b1 } = await setup(t);
   assert.ok(recordContact(db, { phone: '097 880 1123', parcelIds: [b1], channel: 'other', outcome: 'messaged' }, null).ok);

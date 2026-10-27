@@ -180,13 +180,15 @@ export function smsWorker(
   /**
    * The oldest waiting message whose SIM is in the phone now, still confirmed for its customer's carrier (Phase 12).
    * Messages for a missing SIM wait; the others go on. Messages from before Phase 12 have no SIM and go as before.
+   * A paused batch holds its messages. A stopped batch cancels its waiting ones, so what waits in a stopped or done
+   * batch is a staff Retry, which goes like any single message.
    */
   async function nextMessage() {
     const waiting = db
       .prepare(
         `SELECT a.*, n.phone_normalized AS phone FROM sms_attempts a JOIN notifications n ON n.id = a.notification_id
          LEFT JOIN send_batches b ON b.id = n.batch_id
-         WHERE a.state = 'queued' AND (b.id IS NULL OR b.status = 'running')
+         WHERE a.state = 'queued' AND (b.id IS NULL OR b.status <> 'paused')
          ORDER BY a.queued_at, a.attempt_no`,
       )
       .all() as (Attempt & { phone: string })[];

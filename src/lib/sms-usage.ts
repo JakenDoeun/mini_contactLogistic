@@ -69,16 +69,44 @@ export function periods(rows: DayTotal[], kind: PeriodKind, today: string, count
   return out;
 }
 
+const median = (xs: number[]) => {
+  const a = [...xs].sort((x, y) => x - y);
+  const m = a.length / 2;
+  return a.length % 2 ? a[Math.floor(m)] : (a[m - 1] + a[m]) / 2;
+};
+/** The p-th quantile (0 to 1), linear between the sorted values. */
+const quantile = (xs: number[], p: number) => {
+  const a = [...xs].sort((x, y) => x - y);
+  const at = (a.length - 1) * p;
+  const lo = Math.floor(at);
+  return a[lo] + (a[Math.min(lo + 1, a.length - 1)] - a[lo]) * (at - lo);
+};
+
 /**
- * What to plan the next period for: from the usual (the mean) to the busiest of the last complete periods that had
- * SMS (4 weeks or 3 months), rounded to tens. Parcels are not steady, so it is a range, not one number; null until
- * there are at least two such periods to go by. A period that began before `firstDay`, the first day with any total,
- * is only partly counted (the totals started then), so it is left out.
+ * What to plan the next period for, as a range (owner, 2026-10-29), from the last complete periods that had SMS. A
+ * period that began before `firstDay`, the first day with any total, is only partly counted, so it is left out.
+ * 1. The normal period: the median of the last 4, so one busy sale week does not pull it up.
+ * 2. A trend only when it is clear: the median slope between every two of the last 6 (Theil-Sen), followed only
+ *    when it is at least 2% of the normal period and 3 in 4 of those slopes agree; ordinary ups and downs stay flat.
+ * 3. The range: half the spread between the 20th and 80th percentile of the last 8, never under ±4%.
+ * Rounded to tens; null until there are two such periods. Checked against steady, spiking, growing and falling weeks
+ * (sms-usage.test.ts).
  */
-export function plan(list: Period[], kind: PeriodKind, firstDay = '') {
-  const done = list.filter((p) => !p.partial && p.total > 0 && p.start >= firstDay).slice(kind === 'week' ? -4 : -3);
+export function plan(list: Period[], firstDay = '') {
+  const done = list.filter((p) => !p.partial && p.total > 0 && p.start >= firstDay).map((p) => p.total);
   if (done.length < 2) return null;
-  const round = (n: number) => Math.round(n / 10) * 10;
-  const totals = done.map((p) => p.total);
-  return { lo: round(totals.reduce((a, b) => a + b, 0) / totals.length), hi: round(Math.max(...totals)), from: done.length };
+  const recent = done.slice(-4);
+  let centre = median(recent);
+  const trend = done.slice(-6);
+  if (trend.length >= 4) {
+    const slopes = trend.flatMap((a, i) => trend.slice(i + 1).map((b, j) => (b - a) / (j + 1)));
+    const slope = median(slopes);
+    const agree = slopes.filter((v) => Math.sign(v) === Math.sign(slope)).length / slopes.length;
+    // The median of the last few sits (n + 1) / 2 periods before the next one.
+    if (Math.abs(slope) >= 0.02 * centre && agree >= 0.75) centre += (slope * (recent.length + 1)) / 2;
+  }
+  const spread = done.slice(-8);
+  const half = Math.max((quantile(spread, 0.8) - quantile(spread, 0.2)) / 2, 0.04 * centre);
+  const round = (n: number) => Math.max(0, Math.round(n / 10) * 10);
+  return { lo: round(centre - half), hi: round(centre + half), from: spread.length };
 }

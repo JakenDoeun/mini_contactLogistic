@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { periods, plan, smsParts, type DayTotal } from './sms-usage.ts';
+import { periods, plan, smsParts, type DayTotal, type Period } from './sms-usage.ts';
 
 test('SMS parts as the carrier counts them: 160/153 for plain text, 70/67 once any Khmer is in it', () => {
   assert.equal(smsParts(''), 1);
@@ -34,17 +34,32 @@ test('weeks run Monday to Sunday, newest last, zero-filled, the current one mark
   assert.equal(w[1].failed, 2);
 });
 
-test('months are calendar months; the plan is the usual to the busiest, only with enough history', () => {
+test('months are calendar months; the forecast needs two full periods', () => {
   const m = periods(rows, 'month', '2026-11-03', 3);
   assert.deepEqual(m.map((p) => [p.start, p.end]), [['2026-09-01', '2026-09-30'], ['2026-10-01', '2026-10-31'], ['2026-11-01', '2026-11-30']]);
   assert.equal(m[1].total, 205); // 10 + 50 + 40 + 100 + 5
-  assert.equal(plan(m, 'month'), null, 'one month with SMS is not enough to plan by');
+  assert.equal(plan(m), null, 'one month with SMS is not enough to plan by');
 
   const m2 = periods([...rows, { day: '2026-09-20', sim: 1, sms: 1, parts: 2, failed: 0 }], 'month', '2026-11-03', 3);
-  assert.equal(plan(m2, 'month', '2026-09-20'), null, 'September began before the first total: only partly counted, so left out');
-  assert.deepEqual(plan(m2, 'month', '2026-09-01'), { lo: 100, hi: 210, from: 2 }); // (1 + 205) / 2 = 103; 205 rounds to 210
+  assert.equal(plan(m2, '2026-09-20'), null, 'September began before the first total: only partly counted, so left out');
+  assert.ok(plan(m2, '2026-09-01'), 'two full months are enough');
 
   const w = periods(rows, 'week', '2026-10-29', 5);
-  // Complete weeks with SMS: 5 Oct (10), 12 Oct (90), 19 Oct (100); the empty week and this week do not count.
-  assert.deepEqual(plan(w, 'week'), { lo: 70, hi: 100, from: 3 }); // (10 + 90 + 100) / 3 = 66.7 → 70
+  assert.equal(plan(w)?.from, 3, 'complete weeks with SMS: 5, 12 and 19 Oct; the empty week and this week do not count');
+});
+
+// Weekly SMS totals, oldest first, as complete periods; the plan must hold what a real next week would likely be.
+const weeks = (totals: number[]): Period[] =>
+  totals.map((total, i) => ({ start: `2026-0${1 + Math.floor(i / 4)}-1${i % 4}`, end: '', partial: false, bySim: {}, total, failed: 0 }));
+
+test('the forecast: steady weeks, a one-off sale week, and a clear rise or fall each land in the range', () => {
+  assert.deepEqual(plan(weeks([408, 372, 382, 392, 356, 412, 376])), { lo: 370, hi: 400, from: 7 }, 'steady: about 385');
+  // The busiest-of-4 rule gave 490-800 here for four weeks after the sale; the median ignores it.
+  assert.deepEqual(plan(weeks([408, 372, 382, 392, 356, 412, 800, 376])), { lo: 380, hi: 410, from: 8 }, 'sale over: about 385');
+  const up = plan(weeks([300, 318, 337, 357, 379, 401, 425, 451]))!; // +6% a week: about 478 next
+  assert.ok(up.lo <= 478 && 478 <= up.hi, `rising: ${up.lo}-${up.hi}`);
+  const down = plan(weeks([480, 456, 433, 411, 391, 371, 353, 335]))!; // -5% a week: about 318 next
+  assert.ok(down.lo <= 318 && 318 <= down.hi, `falling: ${down.lo}-${down.hi}`);
+  assert.deepEqual(plan(weeks([100, 120])), { lo: 100, hi: 120, from: 2 }, 'little history: no trend, the normal week and its spread');
+  assert.equal(plan(weeks([100])), null);
 });

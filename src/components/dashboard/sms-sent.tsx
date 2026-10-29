@@ -42,7 +42,7 @@ export function SmsSent({ sims }: { sims: SimInfo[] | null }) {
   }, []);
 
   const list = usage ? periods(usage.days, kind, usage.today, COUNT[kind]) : [];
-  const next = plan(list, kind, usage?.days[0]?.day); // the days come oldest first
+  const next = plan(list, usage?.days[0]?.day); // the days come oldest first; weeks and months follow the same rules
   const slots = [...new Set(usage?.days.map((d) => d.sim) ?? [])].sort((a, b) => (a || 9) - (b || 9));
   const simName = (sim: number) => (sim ? t('dash.sms.sim', { sim }) : t('dash.sms.noSim'));
   const carrierOf = (sim: number) => sims?.find((s) => s.simNumber === sim)?.carrier ?? null;

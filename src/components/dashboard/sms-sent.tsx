@@ -95,7 +95,7 @@ export function SmsSent({ sims }: { sims: SimInfo[] | null }) {
         </p>
       ) : !usage ? (
         <div className="space-y-3 px-5 py-5" aria-busy="true" aria-label={t('common.loading')}>
-          <Skeleton className="h-40 w-full" />
+          <Skeleton className="h-24 w-full" />
           <Skeleton className="h-5 w-2/3" />
         </div>
       ) : usage.days.length === 0 ? (
@@ -196,9 +196,9 @@ function Chart({
   simName: (sim: number) => string;
 }) {
   const t = useT();
-  const W = 720, H = 220, L = 44, B = 28, T = 16;
+  const W = 720, H = 120, L = 44, B = 22, T = 14; // half the first height (owner, 2026-10-29)
   const top = Math.max(next?.hi ?? 0, ...list.map((p) => p.total), 1) * 1.1;
-  const step = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000].find((s) => top / s <= 5) ?? 25000;
+  const step = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000].find((s) => top / s <= 3) ?? 25000;
   const ticks = Array.from({ length: Math.floor(top / step) + 1 }, (_, i) => i * step);
   const band = (W - L) / (list.length + 1);
   const bw = Math.min(24, band * 0.5);
@@ -241,7 +241,7 @@ function Chart({
                     d={`M${x(i)} ${y0} V${y1 + r} Q${x(i)} ${y1} ${x(i) + r} ${y1} H${x(i) + bw - r} Q${x(i) + bw} ${y1} ${x(i) + bw} ${y1 + r} V${y0} Z`} />
                 ) : null;
               })}
-              <text x={x(i) + bw / 2} y={H - 9} textAnchor="middle" fill={on ? INK.text : INK.muted} className="font-mono text-[11px]">{label(p)}</text>
+              <text x={x(i) + bw / 2} y={H - 6} textAnchor="middle" fill={on ? INK.text : INK.muted} className="font-mono text-[11px]">{label(p)}</text>
             </g>
           );
         })}
@@ -251,7 +251,7 @@ function Chart({
             <text x={x(list.length) + bw / 2} y={y(next.hi) - 8} textAnchor="middle" fill={INK.text} className="font-mono text-[11px] font-medium">{short(next.lo)}–{short(next.hi)}</text>
           </g>
         )}
-        <text x={x(list.length) + bw / 2} y={H - 9} textAnchor="middle" fill={INK.muted} className="text-[11px]">{nextLabel}</text>
+        <text x={x(list.length) + bw / 2} y={H - 6} textAnchor="middle" fill={INK.muted} className="text-[11px]">{nextLabel}</text>
         <line x1={L} x2={W} y1={y(0)} y2={y(0)} stroke={INK.axis} strokeWidth={1} />
       </svg>
       {h && (

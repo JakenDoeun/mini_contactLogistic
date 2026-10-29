@@ -1,6 +1,8 @@
 import { Header } from '@/components/shell/header';
 import { Brand, SidebarNav } from '@/components/shell/sidebar-nav';
+import { UpdateNotice } from '@/components/shell/update-notice';
 import { requirePageUser } from '@/server/auth/page';
+import pkg from '../../../package.json';
 
 export default async function ConsoleLayout({ children }: { children: React.ReactNode }) {
   const user = await requirePageUser();
@@ -10,8 +12,11 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
         <Brand />
         <SidebarNav />
       </aside>
-      <Header username={user.username} isAdmin={user.isAdmin} />
-      <main className="mx-auto max-w-[1920px] px-4 py-6 lg:px-3.5 lg:py-3">{children}</main>
+      <Header username={user.username} isAdmin={user.isAdmin} version={pkg.version} />
+      <main className="mx-auto max-w-[1920px] px-4 py-6 lg:px-3.5 lg:py-3">
+        <UpdateNotice isAdmin={user.isAdmin} />
+        {children}
+      </main>
     </div>
   );
 }

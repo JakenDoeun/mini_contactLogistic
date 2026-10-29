@@ -197,7 +197,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 Approve the administrator prompt. The installer:
 - installs Tailscale if missing (checked against its published SHA-256) and asks you to sign this computer in to the
   branch account once,
-- downloads the app (branch `main`) and its own Node.js 24.21.0 into `C:\Program Files\CampusBranch` (no system
+- downloads the app (the newest published release) and its own Node.js 24.21.0 into `C:\Program Files\CampusBranch` (no system
   Node.js or Git needed),
 - builds it, creates a local account `campusbranch` that only runs the app, and the private data folder
   `C:\ProgramData\CampusBranch`,
@@ -289,9 +289,29 @@ is sent twice. If one SIM fails twice in a row (no credit, blocked), the run pau
 
 ### Updating, and other systems
 
-**Update** the app: run `install.ps1` again on the office computer. The new version is built beside the running one,
-then swapped in; the app is down for seconds, and accounts, data and the gateway connection stay. To try a fix before
-it is merged, add `-Branch <branch name>`.
+**Updates are automatic.** Once, 3 minutes after each start of the office computer, the task "Campus Branch Update"
+asks GitHub whether a newer **published release** exists. If so, and the charger is in, it:
+1. builds the new version beside the running one (staff keep working; every page shows a bar with the step);
+2. waits until no SMS batch is sending and no SMS is being handed to the phone;
+3. stops the app, saves a backup, switches to the new version (a few seconds; open pages show "Back in a moment" and
+   reload by themselves) and starts it;
+4. if the new version does not answer within 5 minutes, puts the previous version back, with the database copy from
+   just before the new version changed it, if it did. Admins then see "The update did not work" at the top of the page.
+
+The data folder (`C:\ProgramData\CampusBranch`: database, backups, accounts, gateway setup) is never replaced. Without
+internet or on battery it simply tries at the next start. Log: `C:\ProgramData\CampusBranch\logs\update.log`. The version
+running is in the account card (hover your name at the top right).
+
+**Releasing a version** (on the development computer, from an up-to-date `main` with everything committed):
+1. `npm run release -- rc` makes a test candidate (`v0.2.0-rc.0`, then `rc.1`, …). It runs the tests and the type
+   check first, then tags and, after you confirm, pushes. A tag alone installs nothing.
+2. Open the link it prints, tick **Set as a pre-release**, and publish. Only the test VM (installed with
+   `-Channel test`) takes it, at its next start.
+3. When it works there: `npm run release -- minor` (or `patch` for a fix), open the link and publish without the
+   pre-release tick. The office takes it at its next start. For an urgent fix, restart the office computer.
+
+To install a chosen version by hand: `install.ps1 -Version v0.2.0`; to try a branch before it is merged:
+`install.ps1 -Branch <branch name>`. Running `install.ps1` again by hand is still safe and keeps all data.
 
 **Linux** instead of Windows: build the app, then `sudo sh deploy/linux/install.sh` (systemd service, data in
 `/var/lib/campus-branch`); the same steps then use `npm run user -- add`, `npm run gateway -- set` with `DATA_DIR`
@@ -429,7 +449,8 @@ $node = 'C:\Program Files\CampusBranch\node\node.exe'
 
 | Task | Command |
 |---|---|
-| Update the app | run `install.ps1` again |
+| Update the app | automatic at start (see [Updating](#updating-and-other-systems)); by hand: run `install.ps1` again, or `install.ps1 -Version v0.2.0` |
+| Check for an update now | `Start-ScheduledTask 'Campus Branch Update'` (log: `C:\ProgramData\CampusBranch\logs\update.log`) |
 | Stop the app | `Disable-ScheduledTask 'Campus Branch'; Stop-ScheduledTask 'Campus Branch'` |
 | Start the app | `Enable-ScheduledTask 'Campus Branch'; Start-ScheduledTask 'Campus Branch'` |
 | Add a staff account | `& $node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\user.ts add <username>` |
@@ -440,7 +461,7 @@ $node = 'C:\Program Files\CampusBranch\node\node.exe'
 | List backups | stop the app, then `& $node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\restore.ts` |
 | Restore backup number 2 | `... scripts\restore.ts 2`, then start the app |
 | Log file | `C:\ProgramData\CampusBranch\logs\serve.log` |
-| Uninstall | `Unregister-ScheduledTask 'Campus Branch' -Confirm:$false; Remove-LocalUser campusbranch`, then delete `C:\Program Files\CampusBranch` (and `C:\ProgramData\CampusBranch`, which holds the customer data) |
+| Uninstall | `Unregister-ScheduledTask 'Campus Branch' -Confirm:$false; Unregister-ScheduledTask 'Campus Branch Update' -Confirm:$false; Remove-LocalUser campusbranch`, then delete `C:\Program Files\CampusBranch` (and `C:\ProgramData\CampusBranch`, which holds the customer data) |
 
 On Linux or in development the same tools are npm scripts: `npm run user -- add <name>`, `npm run gateway -- set`,
 `npm run recovery-code -- show`, `npm run restore`, `npm run first-run-code`, with `DATA_DIR` pointing at the data

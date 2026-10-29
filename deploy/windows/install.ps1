@@ -7,10 +7,12 @@
 # Run the same command again to update. It asks for administrator rights if needed, then:
 #  1. installs Tailscale if missing (checked against its published SHA-256), keeps it running with nobody signed in
 #     ("Run unattended"), and asks you to sign in once if this computer is not on your tailnet yet;
-#  2. downloads the app (the GitHub branch below, or uses the clone this script sits in) and its own Node.js 24.21.0
-#     (checked against nodejs.org's SHA-256 list) into C:\Program Files\CampusBranch; no system Node.js or Git needed;
-#  3. builds it next to the running version, then stops the app and swaps the folders (the previous one kept as
-#     app.old), so the app is down only for seconds;
+#  2. downloads the app (the newest published GitHub Release, or -Version, or -Branch, or uses the clone this script
+#     sits in) and its own Node.js 24.21.0 (checked against nodejs.org's SHA-256 list) into
+#     C:\Program Files\CampusBranch; no system Node.js or Git needed;
+#  3. builds it next to the running version, then stops the app, saves a backup and swaps the folders (the previous
+#     one kept as app.old), so the app is down only for seconds; if the new version does not answer, the previous one
+#     goes back (with the database as it was, when the new version changed it);
 #  4. creates the standard local account "campusbranch" that only runs the app (random password given only to Task
 #     Scheduler, hidden from the sign-in screen) with the right to run while nobody is signed in;
 #  5. creates the data folder C:\ProgramData\CampusBranch that only that account, Administrators and SYSTEM can open,
@@ -19,23 +21,42 @@
 #  7. keeps the computer awake on mains power (no sleep; closing the lid does nothing), hibernates on a critical
 #     battery, and turns on automatic time if it was off;
 #  8. starts the app, waits until it answers, shares it on the tailnet with Tailscale Serve, then prints its address
-#     and, on a new install, the one-time code for the first account.
+#     and, on a new install, the one-time code for the first account;
+#  9. registers the task "Campus Branch Update" (deploy/windows/update.ps1): once, 3 minutes after each start, it
+#     installs a newer published release by running that release's install.ps1 -Unattended. -Channel test (the test
+#     VM) also takes pre-releases; the office never does.
+# -Unattended is for that task: no questions, it waits until no SMS is being sent before the switch, and it reports
+# its steps in the data folder's update.json for the pages.
 param(
   [string]$Repo = 'JakenDoeun/mini_contactLogistic',
-  [string]$Branch = 'main',
+  [string]$Branch = 'main', # used only when given, or when the repository has no published release yet
+  [string]$Version = '', # a release tag such as v0.2.0; empty: the newest published release
+  [ValidateSet('', 'office', 'test')]
+  [string]$Channel = '', # empty keeps the computer's channel (office on a new install)
+  [switch]$Unattended,
   [string]$InstallDir = "$env:ProgramFiles\CampusBranch",
   [string]$DataDir = "$env:ProgramData\CampusBranch",
   [string]$Account = 'campusbranch',
   [int]$Port = 3000
 )
 $ErrorActionPreference = 'Stop'
+$StatusFile = "$DataDir\update.json"
+$Shown = $Version.TrimStart('v')
+$script:Retry = $true # a failed download or check is tried again at the next start; a failed build or start is not
+# The pages show the updater's steps from this file; only the updater's own run writes it.
+function Set-UpdateStatus([hashtable]$status) {
+  if ($Unattended) { [IO.File]::WriteAllText($StatusFile, ($status | ConvertTo-Json -Compress)) }
+}
 $ProgressPreference = 'SilentlyContinue' # the progress bar makes downloads in Windows PowerShell 5.1 very slow
 
 # ---- Administrator rights: reopen this script elevated, in a window that stays open ---------------------------------
 $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
   $forward = @('-NoProfile', '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
-  foreach ($p in $PSBoundParameters.GetEnumerator()) { $forward += @("-$($p.Key)", "`"$($p.Value)`"") }
+  foreach ($p in $PSBoundParameters.GetEnumerator()) {
+    if ($p.Value -is [switch]) { if ($p.Value) { $forward += "-$($p.Key)" } }
+    else { $forward += @("-$($p.Key)", "`"$($p.Value)`"") }
+  }
   Write-Host 'Asking for administrator rights; the installation continues in the new window.'
   Start-Process powershell.exe -Verb RunAs -ArgumentList $forward
   exit
@@ -45,6 +66,8 @@ trap {
   Write-Host 'Fix the problem above, then run this script again; it continues where it can.' -ForegroundColor Red
   # Stop-App disables the task; turn it back on so the version in place keeps running.
   Enable-ScheduledTask -TaskName 'Campus Branch' -ErrorAction SilentlyContinue | Out-Null
+  Start-ScheduledTask -TaskName 'Campus Branch' -ErrorAction SilentlyContinue
+  try { Set-UpdateStatus @{ state = 'failed'; version = $Shown; retry = $script:Retry } } catch { }
   exit 1
 }
 # nodejs.org, GitHub and Tailscale accept TLS 1.2 or later only; older Windows PowerShell may not offer it by default.
@@ -169,6 +192,9 @@ if (-not (Test-Path $TailscaleExe)) {
 $state = $null
 for ($i = 0; $i -lt 30 -and -not $state; $i++) { Start-Sleep -Seconds 2; $state = Get-TailscaleState }
 if (-not $state) { throw 'The Tailscale service does not answer. Restart the computer and run this script again.' }
+if ($state -ne 'Running' -and $Unattended) {
+  throw 'Tailscale is not signed in on this computer. Sign in from the Tailscale icon next to the clock; the update is tried again at the next start.'
+}
 if ($state -ne 'Running') {
   Write-Host 'Sign this computer in to your tailnet: open the link printed below in a browser and sign in.' -ForegroundColor Yellow
   Write-Host '(Use the same Tailscale account as the staff phones. The script continues by itself afterwards.)'
@@ -208,10 +234,20 @@ if (Test-Path (Join-Path $clone 'scripts\serve.ts')) {
   $from = (Resolve-Path $clone).Path
   Write-Host "Using the clone $from"
 } else {
-  $zip = Get-File "https://github.com/$Repo/archive/refs/heads/$Branch.zip"
+  $tag = $Version
+  if (-not $tag -and -not $PSBoundParameters.ContainsKey('Branch')) {
+    try {
+      $tag = (Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -UseBasicParsing).tag_name
+    } catch {
+      Write-Host "$Repo has no published release yet; installing branch $Branch."
+    }
+  }
+  $zip = if ($tag) { Get-File "https://github.com/$Repo/archive/refs/tags/$tag.zip" } else { Get-File "https://github.com/$Repo/archive/refs/heads/$Branch.zip" }
   Expand-Zip $zip "$Work\source"
   $from = (Get-ChildItem "$Work\source" -Directory | Select-Object -First 1).FullName
-  if (-not (Test-Path "$from\scripts\serve.ts")) { throw "Branch $Branch of $Repo has no scripts\serve.ts; it is not a Campus Branch version that installs." }
+  $what = if ($tag) { "Version $tag" } else { "Branch $Branch" }
+  if (-not (Test-Path "$from\scripts\serve.ts")) { throw "$what of $Repo has no scripts\serve.ts; it is not a Campus Branch version that installs." }
+  Write-Host "$what of $Repo"
 }
 Copy-Folder $from "$AppDir.new" @('.git', 'node_modules', '.next')
 
@@ -220,14 +256,44 @@ Push-Location "$AppDir.new"
 try {
   & "$NodeDir\npm.cmd" ci --no-audit --no-fund
   if ($LASTEXITCODE -ne 0) { throw "npm ci failed (exit code $LASTEXITCODE)." }
+  $script:Retry = $false # the same code builds the same way next time
   & "$NodeDir\npm.cmd" run build
   if ($LASTEXITCODE -ne 0) { throw "The build failed (exit code $LASTEXITCODE); the running version is unchanged." }
+  $script:Retry = $true
 } finally {
   Pop-Location
 }
 
+# The new version's helpers (scripts/update.ts), run with this Node.js on the data folder.
+function Invoke-Helper([string]$app, [string[]]$helperArgs) {
+  $env:DATA_DIR = $DataDir
+  $ErrorActionPreference = 'Continue' # a native command's stderr must not count as a failure here
+  $out = & $NodeExe --disable-warning=MODULE_TYPELESS_PACKAGE_JSON "$app\scripts\update.ts" @helperArgs 2>&1
+  $script:HelperCode = $LASTEXITCODE
+  return "$out".Trim()
+}
+if ($Unattended) {
+  # An SMS being handed to the phone, or a batch sending: switch only once it is quiet (owner, 2026-10-27).
+  while ($true) {
+    $out = Invoke-Helper "$AppDir.new" @('busy')
+    if ($script:HelperCode -eq 0) { break }
+    if ($script:HelperCode -ne 3) { throw "Could not check whether SMS are being sent: $out" }
+    Set-UpdateStatus @{ state = 'updating'; step = 'wait'; version = $Shown }
+    Start-Sleep -Seconds 60
+  }
+  # Open pages ask every 3 seconds while an update runs; this lets them show the switch before the app stops.
+  Set-UpdateStatus @{ state = 'updating'; step = 'switch'; version = $Shown }
+  Start-Sleep -Seconds 8
+}
+
 Step 'Swapping in the new version'
 Stop-App
+# A copy with every last change, taken after the app stopped and before the new version can touch the database.
+if (Test-Path "$DataDir\branch.db") {
+  $out = Invoke-Helper "$AppDir.new" @('backup')
+  if ($script:HelperCode -ne 0) { throw "Could not save a backup before the switch, so nothing was switched: $out" }
+  Write-Host "Backup before the switch: $out"
+}
 Remove-Folder "$AppDir.old"
 if (Test-Path $AppDir) { Rename-Item $AppDir 'app.old' }
 Rename-Item "$AppDir.new" 'app'
@@ -284,7 +350,7 @@ $shortcut.Save()
 New-Item -ItemType Directory -Force -Path "$AppDir\.next\cache" | Out-Null
 icacls "$AppDir\.next\cache" /grant "${Account}:(OI)(CI)M" | Out-Null
 
-# ---- 6. The task ------------------------------------------------------------------------------------------------------
+# ---- 6. The tasks -----------------------------------------------------------------------------------------------------
 Step "Task '$TaskName'"
 $arguments = "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\serve.ts --data-dir=`"$DataDir`" --port=$Port --branch-url=$address --log=`"$LogFile`""
 $action = New-ScheduledTaskAction -Execute $NodeExe -Argument $arguments -WorkingDirectory $AppDir
@@ -299,6 +365,24 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
   -User "$env:COMPUTERNAME\$Account" -Password $plain -RunLevel Limited -Force | Out-Null
 $plain = $null
+
+# The update task (deploy/windows/update.ps1), kept outside the app folder so a switch never replaces it while it runs.
+Copy-Item "$AppDir\deploy\windows\update.ps1" "$InstallDir\update.ps1" -Force
+if ($Channel) { Set-Content "$InstallDir\channel.txt" $Channel }
+elseif (-not (Test-Path "$InstallDir\channel.txt")) { Set-Content "$InstallDir\channel.txt" 'office' }
+Write-Host "Updates: published releases for the $((Get-Content "$InstallDir\channel.txt" -Raw).Trim()) channel, checked once 3 minutes after each start."
+# Registered by a run by hand only: re-registering it from inside its own run could end that run.
+if (-not $Unattended) {
+  $updateAction = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$InstallDir\update.ps1`" -Repo $Repo -InstallDir `"$InstallDir`" -DataDir `"$DataDir`""
+  $updateTrigger = New-ScheduledTaskTrigger -AtStartup
+  $updateTrigger.Delay = 'PT3M' # time for the network to come up
+  # It checks the charger itself, so it can say so in its log; 12 hours covers a long wait for a batch to finish.
+  $updateSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+    -ExecutionTimeLimit (New-TimeSpan -Hours 12) -MultipleInstances IgnoreNew
+  Register-ScheduledTask -TaskName "$TaskName Update" -Action $updateAction -Trigger $updateTrigger -Settings $updateSettings `
+    -User 'NT AUTHORITY\SYSTEM' -RunLevel Highest -Force | Out-Null
+}
 
 # ---- 7. Power and time ------------------------------------------------------------------------------------------------
 Step 'Power and time'
@@ -325,16 +409,53 @@ w32tm /resync /nowait | Out-Null
 
 # ---- 8. Start, check, share ---------------------------------------------------------------------------------------------
 Step 'Starting Campus Branch'
-Start-ScheduledTask -TaskName $TaskName
 # Wait for the sign-in page itself; showing it also creates the one-time code on a new install.
-$up = $false
-for ($i = 0; $i -lt 60 -and -not $up; $i++) {
-  Start-Sleep -Seconds 2
-  try {
-    $up = (Invoke-WebRequest "http://127.0.0.1:$Port/login" -UseBasicParsing -TimeoutSec 10).StatusCode -eq 200
-  } catch {
-    $up = $false
+function Wait-App {
+  # A deadline, not a count: on Windows each refused connection itself takes about two seconds. Generous, since rolling
+  # back a good version that a slow computer starts late is worse than noticing a broken one a little later.
+  $deadline = (Get-Date).AddMinutes(5)
+  while ((Get-Date) -lt $deadline) {
+    Start-Sleep -Seconds 2
+    try {
+      if ((Invoke-WebRequest "http://127.0.0.1:$Port/login" -UseBasicParsing -TimeoutSec 10).StatusCode -eq 200) { return $true }
+    } catch { }
   }
+  return $false
+}
+Start-ScheduledTask -TaskName $TaskName
+$up = Wait-App
+if (-not $up -and (Test-Path "$AppDir.old\scripts\serve.ts")) {
+  $script:Retry = $false
+  Write-Host 'The new version did not answer within 5 minutes; putting the previous version back.' -ForegroundColor Yellow
+  if (Test-Path $LogFile) { Get-Content $LogFile -Tail 40 }
+  Stop-App
+  # If the new version already changed the database, the previous one cannot open it: put back the copy the new
+  # version took just before it changed it (scripts/restore.ts keeps the current one as a before-restore copy).
+  $out = Invoke-Helper $AppDir @('db-newer', "$AppDir.old\drizzle")
+  $restore = $null
+  if ($script:HelperCode -eq 3) {
+    $restore = Invoke-Helper $AppDir @('pre-migration')
+    if ($script:HelperCode -ne 0) { throw "The new version changed the database and no copy from before was found: $restore. Restore a backup by hand (see Restore below)." }
+  } elseif ($script:HelperCode -ne 0) {
+    throw "Could not check the database: $out"
+  }
+  Remove-Folder "$AppDir.failed"
+  Rename-Item $AppDir 'app.failed'
+  Rename-Item "$AppDir.old" 'app'
+  if ($restore) {
+    Push-Location $AppDir
+    try {
+      $env:DATA_DIR = $DataDir
+      & $NodeExe --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\restore.ts $restore
+      if ($LASTEXITCODE -ne 0) { throw "Putting back the database copy failed (exit code $LASTEXITCODE). Restore a backup by hand (see Restore below)." }
+    } finally {
+      Pop-Location
+    }
+  }
+  Enable-ScheduledTask -TaskName $TaskName | Out-Null
+  Start-ScheduledTask -TaskName $TaskName
+  $back = if (Wait-App) { 'and it answers again' } else { "but it does not answer either; see $LogFile" }
+  throw "The new version did not start, so the previous version is back, $back. The new one is kept in $AppDir.failed for its log."
 }
 if (-not $up) {
   $result = (Get-ScheduledTaskInfo -TaskName $TaskName).LastTaskResult
@@ -344,9 +465,10 @@ if (-not $up) {
   if ($result -eq 2147943785) {
     throw "Windows refused to start the task as $Account (no 'Log on as a batch job' right). On Windows Pro: secpol.msc > Local Policies > User Rights Assignment > Log on as a batch job > add $Account, then run this again."
   }
-  throw "Campus Branch did not answer within 2 minutes (task result $result). The log lines above say why."
+  throw "Campus Branch did not answer within 5 minutes (task result $result). The log lines above say why."
 }
 Write-Host "The app answers on http://127.0.0.1:$Port"
+if ($Unattended -and (Test-Path $StatusFile)) { Remove-Item $StatusFile -Force } # the pages reload on the new version
 
 Step 'Sharing it on the tailnet'
 Write-Host 'If Tailscale prints a link to enable HTTPS for your tailnet, open it, enable it, and this continues.'
@@ -396,7 +518,9 @@ Write-Host @"
    then open the address above, or scan the QR code under Settings > "Set up a staff phone".
 
  For the administrator (PowerShell as administrator):
-   Update:   run this installer again
+   Update:   automatic, once 3 minutes after each start, to the newest published release
+             (log: $DataDir\logs\update.log); now: Start-ScheduledTask '$TaskName Update'
+             or run this installer again; -Version v0.2.0 for one version
    Stop:     Disable-ScheduledTask '$TaskName'; Stop-ScheduledTask '$TaskName'   (else it restarts within a minute)
    Start:    Enable-ScheduledTask '$TaskName'; Start-ScheduledTask '$TaskName'
    Log:      $LogFile
@@ -409,6 +533,7 @@ Write-Host @"
              & '$NodeExe' --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\restore.ts      (lists backups)
              & '$NodeExe' --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts\restore.ts 2    (puts back number 2)
              Enable-ScheduledTask '$TaskName'; Start-ScheduledTask '$TaskName'
-   Remove:   Unregister-ScheduledTask '$TaskName' -Confirm:`$false; Remove-LocalUser $Account
+   Remove:   Unregister-ScheduledTask '$TaskName' -Confirm:`$false; Unregister-ScheduledTask '$TaskName Update' -Confirm:`$false
+             Remove-LocalUser $Account
              then delete $InstallDir (and $DataDir, which holds the customer data)
 "@

@@ -86,7 +86,10 @@ branch and merged again.
 
 **Dashboard.** Today at a glance: how far today's arrivals have got (messaged, at the gateway, to retry, no phone
 number, not messaged yet), what needs someone now, and today's imports. Buttons for Scan Parcel and Import Arrivals,
-and a QR icon that shows the console's address as a QR code so a phone can open it with its camera.
+and a QR icon that shows the console's address as a QR code so a phone can open it with its camera. **SMS sent** shows
+the SMS parts sent per week or month, by SIM (a long or Khmer SMS counts 2 or more, as the carrier counts it), with a
+range to plan the next week or month by, and a table below. Only daily totals are kept for it, with no names or
+numbers, so it keeps its history after the SMS records are deleted.
 
 **Import Arrivals.** Bring in the courier's "Today" export (`.xlsx`, `.xls` or `.csv`): upload it, or save it into the
 watched folder and press Scan Folder Now (or let the app check the folder every few minutes, if turned on). Every file
@@ -104,7 +107,11 @@ whether they were told, with Call, Telegram, SMS and the contact history right t
 **Notifications.** Where messages go out.
 - *Today*: what needs attention, the sending queue (live progress, Pause, Resume, Stop), and **Ready**: everyone who has
   new parcels and has not been told, counted by carrier. One press of *Notify customers* queues one SMS per customer
-  (several parcels on one number become one combined SMS). SMS go out one at a time with a random gap.
+  (several parcels on one number become one combined SMS). SMS go out one at a time with a random gap. An SMS still
+  waiting from an earlier day is never sent by itself: it shows under *Needs your attention* as "Not sent: waited since
+  …" with **Send again** (today's wording) and **Already told** (staff told the customer by hand and forgot to record
+  it). Each is one tap with a few seconds to Undo; the ⋯ menu calls, sends an SMS from your own phone or opens Telegram,
+  then asks what happened.
 - *Contact by hand*: customers whose carrier has no SIM in the gateway phone, or whose SMS failed. Call, Telegram or
   SMS from your own phone, then record what happened.
 - *History*: every SMS, call and Telegram message, searchable.

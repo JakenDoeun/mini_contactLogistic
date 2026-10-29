@@ -467,10 +467,31 @@ export const backupRuns = sqliteTable(
   ],
 );
 
+/**
+ * SMS sent and failed per Cambodia day and gateway SIM (0: no SIM, before Phase 12), for the Dashboard's SMS sent
+ * (v0.2.1, owner 2026-10-29). Counts only, no names or numbers, so retention keeps it after the SMS records go.
+ * `parts` is what the carrier counts: a long or Khmer SMS is 2 or more.
+ */
+export const smsDaily = sqliteTable(
+  'sms_daily',
+  {
+    day: text('day').notNull(),
+    sim: integer('sim').notNull(),
+    sms: integer('sms').notNull(),
+    parts: integer('parts').notNull(),
+    failed: integer('failed').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.day, t.sim] }),
+    check('sms_daily_day', sql`${t.day} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`),
+    check('sms_daily_sim', sql`${t.sim} BETWEEN 0 AND 8`),
+  ],
+);
+
 /** The 18 approved tables, in the order of docs/phase1-schema.md, then the tables added later. */
 export const ALL_TABLES = [
   parcels, imports, importReviewItems, parcelScanEvents, detectedFiles, parcelPhoneChanges,
   sendBatches, notifications, notificationParcels, smsAttempts, contactAttempts, contactAttemptParcels,
   settings, users, sessions, auditLog, workerLease, backupRuns,
-  recoveryCodes,
+  recoveryCodes, smsDaily,
 ] as const;

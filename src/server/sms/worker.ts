@@ -13,6 +13,8 @@ import { smsGap } from '../settings/app-settings.ts';
 import { carrierOf } from '../../lib/carriers.ts';
 import { scanSims } from '../gateway/sims.ts';
 import { PHONE_AWAY, restoreHold, SIM_MISSING, SIM_PAUSE, type AttemptState } from './queue.ts';
+import { backfillDaily, countSms } from './usage.ts';
+import { cambodiaDate } from '../db/values.ts';
 
 const LEASE_MS = 60_000;
 // A phone that says Processed this long without a result is not going to say more (plan, status mapping).
@@ -89,6 +91,8 @@ export function smsWorker(
       Object.assign(fields, { state: 'unconfirmed', error_code: 'no_result' });
     }
     update(a.id, fields);
+    if ((next === 'sent' || next === 'delivered') && !a.sent_at) countSms(db, a.id, 'sent', at);
+    if (next === 'failed') countSms(db, a.id, 'failed', at);
     if (fields.state === 'failed') pauseOnFailStreak(a.sim_number);
   }
 
@@ -132,8 +136,24 @@ export function smsWorker(
   const open = (states: AttemptState[]) =>
     db.prepare(`SELECT * FROM sms_attempts WHERE state IN (${states.map(() => '?').join(', ')}) ORDER BY queued_at, attempt_no`).all(...states) as Attempt[];
 
+  /**
+   * An SMS still waiting from an earlier Cambodia day is never sent by itself: it may tell a customer about a parcel
+   * days late, after staff already told them by hand. It shows on Notifications for staff to send again or clear
+   * (owner, 2026-10-29).
+   */
+  function holdPastDays() {
+    const r = db
+      .prepare(`UPDATE sms_attempts SET state = 'cancelled', error_code = 'stale', failed_at = @at WHERE state = 'queued' AND date(queued_at, '+7 hours') < @today`)
+      .run({ at: iso(), today: cambodiaDate(new Date(now())) });
+    if (r.changes) {
+      changed = true;
+      log(`SMS: held back ${r.changes} SMS queued on an earlier day; staff decide on Notifications`);
+    }
+  }
+
   /** On start, before anything new: settle what a crash may have left half done. */
   async function recover(gate: SmsGate) {
+    if (backfillDaily(db)) changed = true; // first start of v0.2.1: totals from the SMS records still kept
     for (const a of open(['submitting', 'submitted'])) {
       let found: MessageState | null;
       try {
@@ -249,10 +269,12 @@ export function smsWorker(
         update(next.id, { state: 'queued' }); // nothing left this computer, so it waits for the phone
       } else if (e.problem === 'auth') {
         update(next.id, { state: 'failed', error_code: 'auth', failed_at: iso() });
+        countSms(db, next.id, 'failed', iso());
         db.prepare(`UPDATE send_batches SET status = 'paused' WHERE status = 'running'`).run();
         log('SMS: the gateway refused its password; batches paused');
       } else {
         update(next.id, { state: 'failed', error_code: 'refused', error_detail: e.message.slice(0, 200), failed_at: iso() });
+        countSms(db, next.id, 'failed', iso());
         pauseOnFailStreak(next.sim_number);
       }
       return;
@@ -288,6 +310,7 @@ export function smsWorker(
         const gate = make(config);
         if (!recovered) await recover(gate);
         await poll(gate);
+        holdPastDays();
         await sendNext(gate);
         finishBatches();
       } catch (e) {

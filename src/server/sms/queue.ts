@@ -11,6 +11,7 @@ import { readSetting, writeSetting } from '../db/settings.ts';
 import { cambodiaDate, nowIso } from '../db/values.ts';
 import { simState } from '../gateway/sims.ts';
 import { readGatewayConfig } from '../gateway/smsgate.ts';
+import { countSms } from './usage.ts';
 
 export type AttemptState = 'queued' | 'submitting' | 'submitted' | 'sent' | 'delivered' | 'failed' | 'unconfirmed' | 'cancelled';
 /** Waiting for or at the phone: a second message for these parcels would duplicate it. */
@@ -74,6 +75,7 @@ export function releaseRestoreHold(db: Db, seen: { phone: string; parcelIds: num
       for (const line of lines as { ok: true; rows: ParcelRow[] }[]) {
         const saved = insertMessage(db, line.rows, 'An SMS seen on the gateway phone after a restore.', 'resend', null, userId, at);
         db.prepare(`UPDATE sms_attempts SET state = 'sent', error_code = 'seen_on_phone', submitted_at = ?, sent_at = ? WHERE id = ?`).run(at, at, saved.attemptId);
+        countSms(db, saved.attemptId, 'sent', at); // sent after the copy, so the restored totals miss it
       }
       db.prepare('DELETE FROM settings WHERE key = ?').run(RESTORE_HOLD);
       writeAudit(db, { action: 'sms.hold_released', entity: 'notification', entityIds: [], outcome: 'ok', userId, at, detail: { count: seen.length } });
@@ -193,11 +195,13 @@ export function queueMessage(db: Db, input: QueueInput, userId: number | null, a
       if (input.retryOf !== undefined) {
         const prev = db.prepare('SELECT id, message_text FROM notifications WHERE id = ?').get(input.retryOf) as { id: number; message_text: string } | undefined;
         if (!prev) return refuse('not_found', 'This message no longer exists. Reload the page.');
-        const last = db.prepare('SELECT attempt_no, state FROM sms_attempts WHERE notification_id = ? ORDER BY attempt_no DESC LIMIT 1').get(prev.id) as {
+        const last = db.prepare('SELECT attempt_no, state, error_code FROM sms_attempts WHERE notification_id = ? ORDER BY attempt_no DESC LIMIT 1').get(prev.id) as {
           attempt_no: number;
           state: AttemptState;
+          error_code: string | null;
         };
-        if (last.state !== 'failed' && last.state !== 'unconfirmed') return refuse('not_retryable', 'This message did not fail, so there is nothing to retry.');
+        const held = last.state === 'cancelled' && last.error_code === 'stale'; // waited past its day (v0.2.1)
+        if (last.state !== 'failed' && last.state !== 'unconfirmed' && !held) return refuse('not_retryable', 'This message did not fail, so there is nothing to retry.');
         const linked = (db.prepare('SELECT parcel_id FROM notification_parcels WHERE notification_id = ? ORDER BY parcel_id').all(prev.id) as { parcel_id: number }[])
           .map((r) => r.parcel_id)
           .join(',');
@@ -340,7 +344,9 @@ const OUTCOME_OUT: Record<string, Outcome> = { reached: 'answered', no_answer: '
 export function recordContact(db: Db, input: { phone: string; parcelIds: number[]; channel: unknown; outcome: unknown }, userId: number | null, at = nowIso()) {
   const valid =
     (input.channel === 'call' && (input.outcome === 'answered' || input.outcome === 'no-answer')) ||
-    ((input.channel === 'telegram' || input.channel === 'other') && input.outcome === 'messaged');
+    ((input.channel === 'telegram' || input.channel === 'other') && input.outcome === 'messaged') ||
+    // "Already told" on Notifications: staff told the customer by hand and forgot to record how (v0.2.1).
+    (input.channel === 'other' && input.outcome === 'answered');
   if (!valid) return refuse('invalid_request', 'Choose what happened.');
   return db
     .transaction(() => {
@@ -396,6 +402,8 @@ function resultText(a: { state: AttemptState; gateway_state: string | null; erro
           ? 'Not sent: staff reached the customer by phone first.'
           : a.error_code === 'sim_missing'
             ? 'Not sent: its SIM was not in the gateway phone, so staff contact this customer by hand.'
+          : a.error_code === 'stale'
+            ? 'Not sent: it waited past its day, so it was held back.'
           : 'Not sent: the computer stopped before the phone got it.';
   }
 }
@@ -441,6 +449,7 @@ export function listContactEvents(db: Db): ContactEvent[] {
       message: m.message_text,
       result: resultText(m),
       sim: m.sim_number,
+      ...(m.state === 'cancelled' && m.error_code === 'stale' ? { heldSince: cambodiaDate(new Date(m.queued_at)) } : {}),
     })),
     ...contacts.map((c) => ({
       id: `contact-${c.id}`,

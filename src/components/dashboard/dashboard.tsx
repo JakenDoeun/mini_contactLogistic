@@ -8,6 +8,7 @@ import { batchLabel, daysAgo, GroupBadge, toNotifyLine } from '@/components/parc
 import { StatusBadge } from '@/components/import/status-badge';
 import { QrCode } from '@/components/shared/qr-code';
 import { Button } from '@/components/ui/button';
+import { SmsSent } from './sms-sent';
 import { Skeleton } from '@/components/ui/skeleton';
 import { dayProgress, workList, type DayProgress, type WorkGroup } from '@/lib/dashboard-logic';
 import { getFolder, listImports, type ImportListItem } from '@/lib/import-api';
@@ -81,6 +82,8 @@ export function Dashboard() {
         <Attention work={work} waiting={waiting} error={parcelError} />
         <ImportsToday records={imports} error={importError} />
       </div>
+
+      <SmsSent sims={data?.gateway.sims ?? null} />
     </>
   );
 }

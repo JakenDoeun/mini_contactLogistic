@@ -147,7 +147,7 @@ export function ContactPanel({ parcel, group, events }: { parcel: Parcel; group:
 // 'pick' is a call or message made outside the app, from another phone: staff say which first. 'sms' is an SMS sent
 // from this device's own messaging app, outside the gateway phone (Phase 12).
 type Asked = 'call' | 'telegram' | 'sms' | 'pick';
-const ASK = {
+export const ASK = {
   call: {
     question: 'contact.ask.call',
     options: [
@@ -167,7 +167,7 @@ const ASK = {
     dismiss: 'contact.ask.notSent',
   },
 } as const;
-const CHANNEL_OF = { call: 'call', telegram: 'telegram', sms: 'other' } as const;
+export const CHANNEL_OF = { call: 'call', telegram: 'telegram', sms: 'other' } as const;
 // A segment of the compact group. On phones: an even quarter of the row, icon over a small label, 44 px tall, so four
 // always fit; from sm: icon beside the label, a quieter 36 px.
 const SEGMENT =
@@ -243,7 +243,9 @@ export function DirectContact({
   const [doneLabel, DoneIcon, doneTone] = !last
     ? []
     : last.channel === 'other'
-      ? (['contact.done.other', Smartphone, 'text-foreground'] as const)
+      ? last.outcome === 'answered'
+        ? (['event.alreadyTold', CircleCheck, 'text-success'] as const)
+        : (['contact.done.other', Smartphone, 'text-foreground'] as const)
       : DONE[last.outcome!];
 
   return (

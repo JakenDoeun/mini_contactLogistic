@@ -40,8 +40,8 @@ function addParcel(code: string, importId: number, fields: Record<string, unknow
 
 const rejects = (fn: () => unknown, pattern: RegExp) => assert.throws(fn, pattern);
 
-test('the Drizzle schema and the migrated database have the same 19 tables and columns', () => {
-  assert.equal(ALL_TABLES.length, 19);
+test('the Drizzle schema and the migrated database have the same 20 tables and columns', () => {
+  assert.equal(ALL_TABLES.length, 20);
   for (const table of ALL_TABLES) {
     const config = getTableConfig(table);
     const dbColumns = (db.pragma(`table_info(${config.name})`) as { name: string }[]).map((c) => c.name).sort();

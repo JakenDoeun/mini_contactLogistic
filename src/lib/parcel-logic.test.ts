@@ -152,3 +152,19 @@ test('parcels search finds a code, a name or a phone whatever its format', () =>
 test("the SMS link opens the phone's own messaging app with the number and the message filled in", () => {
   assert.equal(smsLink('012 345 678', 'Hi Dara: 2 parcels & more'), 'sms:+85512345678?&body=Hi%20Dara%3A%202%20parcels%20%26%20more');
 });
+
+test('v0.2.1: an SMS held back from an earlier day can be sent again; any SMS leaves the list once staff told the customer by hand', () => {
+  const sms = (id: string, at: string, extra: Partial<ContactEvent>): ContactEvent => ({ id, at, channel: 'sms', phone: '012345678', parcelCodes: ['A'], ...extra });
+  const held = sms('sms-1', '2026-10-27T03:00:00Z', { smsStatus: 'not-sent', heldSince: '2026-10-27' });
+  const stopped = sms('sms-2', '2026-10-27T03:00:00Z', { smsStatus: 'not-sent' }); // a stopped batch: nothing to do
+  assert.equal(canRetry(held, [held]), true);
+  assert.equal(canRetry(stopped, [stopped]), false);
+
+  const failed = sms('sms-3', '2026-10-29T03:00:00Z', { smsStatus: 'failed' });
+  const told = (outcome: ContactEvent['outcome'], at: string): ContactEvent => ({ id: `c-${outcome}-${at}`, at, channel: 'other', phone: '012345678', parcelCodes: ['A'], outcome });
+  assert.equal(canRetry(failed, [failed, told('no-answer', '2026-10-29T04:00:00Z')]), true, 'no answer is not telling them');
+  assert.equal(canRetry(failed, [failed, told('answered', '2026-10-29T02:00:00Z')]), true, 'told before this SMS: it still failed after');
+  assert.equal(canRetry(failed, [failed, told('answered', '2026-10-29T04:00:00Z')]), false);
+  assert.equal(canRetry(failed, [failed, told('messaged', '2026-10-29T04:00:00Z')]), false);
+  assert.equal(canRetry(held, [held, told('answered', '2026-10-29T04:00:00Z')]), false);
+});

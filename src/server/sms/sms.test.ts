@@ -503,7 +503,7 @@ test('a Retry of a failed SMS from a finished batch goes out; it does not wait f
 test('Phase 12: an SMS sent from another phone is recorded in the history', async (t) => {
   const { db, b1 } = await setup(t);
   assert.ok(recordContact(db, { phone: '097 880 1123', parcelIds: [b1], channel: 'other', outcome: 'messaged' }, null).ok);
-  assert.equal(recordContact(db, { phone: '097 880 1123', parcelIds: [b1], channel: 'other', outcome: 'answered' }, null).ok, false);
+  assert.equal(recordContact(db, { phone: '097 880 1123', parcelIds: [b1], channel: 'other', outcome: 'no-answer' }, null).ok, false);
   const e = listContactEvents(db).find((x) => x.channel === 'other');
   assert.deepEqual([e?.outcome, e?.parcelCodes], ['messaged', ['B1']]);
 });
@@ -525,4 +525,62 @@ test('Phase 12: staff can move the SMS waiting for a missing SIM to Contact by h
   assert.equal(phone.sends.length, 0);
   const e = listContactEvents(db).find((x) => x.channel === 'sms');
   assert.deepEqual([e?.smsStatus, e?.result], ['not-sent', 'Not sent: its SIM was not in the gateway phone, so staff contact this customer by hand.']);
+});
+
+const daily = (db: Db) => db.prepare('SELECT day, sim, sms, parts, failed FROM sms_daily ORDER BY day, sim').all();
+
+test('v0.2.1: an SMS still waiting from an earlier day is held back, never sent by itself; staff can send it again', async (t) => {
+  const { db, dir, y1, a1 } = await setup(t);
+  const phone = fakePhone();
+  const worker = smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate });
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+  const old = queueMessage(db, { phone: '012 345 678', parcelIds: [y1], text: 'Hi Dara, from yesterday' }, null, yesterday);
+  const fresh = queueMessage(db, { phone: '012 345 678', parcelIds: [a1], text: 'Hi Dara, today' }, null);
+  assert.ok(old.ok && fresh.ok);
+
+  await worker.tick();
+  assert.equal(phone.sends.length, 1, "only today's SMS goes");
+  const held = attempts(db).find((a) => a.notification_id === old.notificationId)!;
+  assert.deepEqual([held.state, held.error_code], ['cancelled', 'stale']);
+  const event = listContactEvents(db).find((e) => e.id === `sms-${old.notificationId}`)!;
+  assert.equal(event.smsStatus, 'not-sent');
+  assert.equal(event.heldSince, cambodiaDate(new Date(yesterday)));
+  assert.match(event.result ?? '', /waited past its day/);
+
+  // Send again, with today's wording: a new message for the same parcel, sent like any other.
+  const again = queueMessage(db, { phone: '012 345 678', parcelIds: [y1], text: 'Hi Dara, your parcel arrived yesterday', retryOf: old.notificationId }, null);
+  assert.ok(again.ok);
+  await worker.tick();
+  assert.equal(phone.sends.length, 2);
+});
+
+test('v0.2.1: each SMS sent or failed is added to the daily totals, with its parts; the first start fills them once', async (t) => {
+  const { db, dir, a1, b1 } = await setup(t);
+  const phone = fakePhone();
+  const worker = smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate });
+  assert.ok(queueMessage(db, { phone: '012 345 678', parcelIds: [a1], text: `Hi ${'x'.repeat(200)}` }, null).ok); // 2 parts
+  assert.ok(queueMessage(db, { phone: '097 880 1123', parcelIds: [b1], text: 'សួស្តី' }, null).ok); // 1 part
+  await worker.tick();
+  const [first] = attempts(db);
+  phone.set(first.id, 'Sent');
+  await worker.tick(); // first is Sent; the second goes
+  phone.set(first.id, 'Delivered');
+  phone.set(attempts(db)[1].id, 'Failed', 'RESULT_ERROR_GENERIC_FAILURE');
+  await worker.tick();
+  const today = cambodiaDate();
+  assert.deepEqual(daily(db), [{ day: today, sim: 0, sms: 1, parts: 2, failed: 1 }], 'Delivered after Sent is not counted twice');
+
+  // A database from before v0.2.1 has records but no totals: the first start fills them from what is kept.
+  db.prepare('DELETE FROM sms_daily').run();
+  worker.release(); // as when the app stops
+  const restarted = smsWorker(db, dir, silent, { gap: () => 0, make: () => phone.gate });
+  await restarted.tick();
+  assert.deepEqual(daily(db), [{ day: today, sim: 0, sms: 1, parts: 2, failed: 1 }]);
+});
+
+test('v0.2.1: "Already told" records a hand contact that reached the customer', async (t) => {
+  const { db, a1 } = await setup(t);
+  assert.ok(recordContact(db, { phone: '012 345 678', parcelIds: [a1], channel: 'other', outcome: 'answered' }, null).ok);
+  assert.equal(listContactEvents(db).find((e) => e.channel === 'other')?.outcome, 'answered');
+  assert.equal(recordContact(db, { phone: '012 345 678', parcelIds: [a1], channel: 'other', outcome: 'no-answer' }, null).ok, false);
 });

@@ -249,7 +249,7 @@ function History({ events }: { events: ContactEvent[] }) {
                       {e.channel === 'sms'
                         ? t('sms.scope', { count: e.parcelCodes.length })
                         : e.channel === 'other'
-                          ? t('event.otherPhone')
+                          ? t(e.outcome === 'answered' ? 'event.alreadyTold' : 'event.otherPhone')
                           : t(CHANNEL_LABEL[e.channel], { outcome: t(OUTCOME_LABEL[e.outcome!]) })}
                     </span>
                     {e.smsStatus && <SmsBadge status={e.smsStatus} bare />}

@@ -30,6 +30,7 @@ export interface ContactEvent {
   result?: string; // gateway or staff note
   outcome?: Outcome; // call, telegram and other only
   sim?: number | null; // sms only: the gateway phone's SIM slot that sent it (Phase 12)
+  heldSince?: string; // sms only: the day it was queued, when it waited past that day and was held back (v0.2.1)
 }
 
 // A random gap between two SMS from the gateway SIM, so its traffic looks like a person's and is less likely to be
@@ -167,11 +168,22 @@ export const smsInFlight = (codes: string[], events: ContactEvent[]) =>
   events.some((e) => e.channel === 'sms' && (e.smsStatus === 'queued' || e.smsStatus === 'sending') && e.parcelCodes.some((c) => codes.includes(c)));
 
 /**
+ * Staff recorded telling the customer another way after this SMS (a call they answered, a Telegram or an SMS from a
+ * phone, "Already told"): there is nothing left to do about it, so it leaves Needs your attention (v0.2.1).
+ */
+export const toldByHand = (sms: ContactEvent, events: ContactEvent[]) =>
+  events.some(
+    (e) => e.channel !== 'sms' && (e.outcome === 'answered' || e.outcome === 'messaged') && e.at > sms.at && e.parcelCodes.some((c) => sms.parcelCodes.includes(c)),
+  );
+
+/**
  * A failed or unconfirmed SMS can be retried while it is still the latest SMS for one of its parcels
  * (a later one means someone already retried) and nothing for them is waiting at the gateway.
  */
 export function canRetry(event: ContactEvent, events: ContactEvent[]) {
-  if (event.smsStatus !== 'failed' && event.smsStatus !== 'unconfirmed') return false;
+  const held = event.smsStatus === 'not-sent' && !!event.heldSince;
+  if (event.smsStatus !== 'failed' && event.smsStatus !== 'unconfirmed' && !held) return false;
+  if (toldByHand(event, events)) return false;
   const latest = event.parcelCodes.some((c) => eventsFor(c, events).find((e) => e.channel === 'sms')?.id === event.id);
   return latest && !smsInFlight(event.parcelCodes, events);
 }

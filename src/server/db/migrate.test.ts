@@ -67,11 +67,11 @@ async function seededDb(t: TestContext) {
   return { dir, folder, dbPath, backupDir, before };
 }
 
-test('fresh database: all 19 tables (18 approved + recovery_codes), triggers, foreign keys and integrity', async (t) => {
+test('fresh database: all 20 tables (18 approved + recovery_codes + sms_daily), triggers, foreign keys and integrity', async (t) => {
   const { db, dir, cleanup } = await createTestDb();
   t.after(cleanup);
   assert.deepEqual(userTables(db), [...EXPECTED_TABLES].sort());
-  assert.equal(userTables(db).length, 19);
+  assert.equal(userTables(db).length, 20);
   const triggers = db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'trigger'").get() as { n: number };
   assert.equal(triggers.n, 27, '18 from 0000 and 9 strict-date triggers from 0001');
   assert.equal(db.pragma('foreign_keys', { simple: true }), 1);

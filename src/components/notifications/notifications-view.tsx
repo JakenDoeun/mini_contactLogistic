@@ -2,14 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Camera, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, MessageSquare, ScanBarcode, X, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Smartphone, Square } from 'lucide-react';
+import { ArrowRight, Camera, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, MessageSquare, MoreHorizontal, ScanBarcode, X, Pause, Phone, PhoneOff, Play, RotateCcw, Search, Send, Smartphone, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { CameraScanner } from '@/components/parcels/camera-scanner';
-import { DirectContact } from '@/components/parcels/contact-panel';
+import { ASK, CHANNEL_OF, DirectContact } from '@/components/parcels/contact-panel';
 import { ParcelDetail } from '@/components/parcels/parcel-detail';
 import { SmsBadge } from '@/components/parcels/parcel-status';
 import { batchLabel } from '@/components/parcels/phone-group';
@@ -26,14 +26,18 @@ import {
   formatPhone,
   normalizePhone,
   smsInFlight,
+  smsLink,
   telegramLink,
   type Channel,
   type ContactEvent,
+  type Outcome,
+  type Parcel,
 } from '@/lib/parcel-logic';
-import { controlBatch, dismissBatch, queueBatch, queueSms, reloadParcels, releaseRestoreHold, useParcelData, type ParcelData, type SmsBatch } from '@/lib/parcel-service';
+import { controlBatch, dismissBatch, queueBatch, queueSms, recordOutcome, reloadParcels, releaseRestoreHold, useParcelData, type ParcelData, type SmsBatch } from '@/lib/parcel-service';
 import { currentGap, currentTemplates, useSettings } from '@/lib/settings-service';
 import { playAttention, playDone } from '@/lib/sounds';
 import { cn, formatDateTime, formatTime } from '@/lib/utils';
+import { formatDate } from '@/lib/i18n';
 import { useT, type MessageKey } from '@/lib/i18n-react';
 
 type T = ReturnType<typeof useT>;
@@ -154,7 +158,7 @@ export function NotificationsView({ initialFilter, initialTab = 'today' }: { ini
         className={tab === 'today' ? 'mt-7 grid items-start gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_19rem]' : 'hidden'}
       >
         <div className="flex min-w-0 flex-col gap-8">
-          <Attention work={work} events={events} nameOf={nameOf} onRetry={setRetrying} onOpen={setContacting} />
+          <Attention work={work} events={events} parcels={data?.parcels ?? []} templates={templates} nameOf={nameOf} onRetry={setRetrying} onOpen={setContacting} />
           <SendingQueue data={data} nameOf={nameOf} running={running} />
         </div>
         <Ready
@@ -215,12 +219,16 @@ function Heading({ id, title, hint, count, tone = 'neutral', large }: { id: stri
 function Attention({
   work,
   events,
+  parcels,
+  templates,
   nameOf,
   onRetry,
   onOpen,
 }: {
   work: ReturnType<typeof workList> | null;
   events: ContactEvent[] | null;
+  parcels: Parcel[];
+  templates: Templates | undefined;
   nameOf: (code: string) => string;
   onRetry: (e: ContactEvent) => void;
   onOpen: (code: string) => void;
@@ -252,33 +260,7 @@ function Attention({
         </div>
       ) : (
         <div className="mt-5 flex flex-col gap-6">
-          {work.retry.length > 0 && (
-            <AttentionGroup label={t('n.att.failed')}>
-              {work.retry.map((e) => (
-                <AttentionItem
-                  key={e.id}
-                  tone={e.smsStatus === 'failed' ? 'destructive' : 'warning'}
-                  title={nameOf(e.parcelCodes[0])}
-                  phone={e.phone}
-                  line={`${t('sms.scope', { count: e.parcelCodes.length })} · ${e.result ?? ''}`}
-                  codes={e.parcelCodes}
-                  status={<SmsBadge status={e.smsStatus!} />}
-                >
-                  {/* An unconfirmed SMS may have arrived, so its retry is the quieter button. */}
-                  <Button
-                    size="sm"
-                    variant={e.smsStatus === 'failed' ? 'default' : 'outline'}
-                    onClick={() => onRetry(e)}
-                    aria-label={t('n.att.retryFor', { phone: formatPhone(e.phone) })}
-                  >
-                    <RotateCcw aria-hidden />
-                    {t('n.att.retry')}
-                  </Button>
-                  <ReachLinks phone={e.phone} />
-                </AttentionItem>
-              ))}
-            </AttentionGroup>
-          )}
+          <SmsToDo work={work} events={events} parcels={parcels} templates={templates} nameOf={nameOf} onRetry={onRetry} />
           {work.noPhone.length > 0 && (
             <AttentionGroup label={t('n.att.noPhone')}>
               {work.noPhone.map((p) => (
@@ -315,6 +297,310 @@ const AttentionGroup = ({ label, children }: { label: string; children: React.Re
   </div>
 );
 
+type Templates = NonNullable<ReturnType<typeof useSettings>>['templates'];
+type Pending = { kind: 'send' | 'told'; timer: ReturnType<typeof setTimeout> };
+// Long enough to see what happened and take it back; nothing reaches the server or the phone before it ends.
+const UNDO_MS = 6000;
+
+/**
+ * The SMS staff must decide on (v0.2.1, owner 2026-10-29): those held back because they waited past their day, and
+ * those that failed or cannot be confirmed. One tap does it, with Undo instead of a question; how to reach the customer
+ * by hand sits behind "more".
+ */
+function SmsToDo({
+  work,
+  events,
+  parcels,
+  templates,
+  nameOf,
+  onRetry,
+}: {
+  work: ReturnType<typeof workList>;
+  events: ContactEvent[];
+  parcels: Parcel[];
+  templates: Templates | undefined;
+  nameOf: (code: string) => string;
+  onRetry: (e: ContactEvent) => void;
+}) {
+  const t = useT();
+  const [pending, setPending] = useState<Record<string, Pending>>({});
+  const [failedId, setFailedId] = useState<Record<string, string>>({});
+  const held = work.retry.filter((e) => e.heldSince);
+  const other = work.retry.filter((e) => !e.heldSince);
+  const commit = useRef<(e: ContactEvent, kind: Pending['kind']) => Promise<void>>(async () => {});
+  const started = useRef(new Set<string>()); // carried out already: leaving the page must not do it twice
+
+  // A held SMS goes with today's wording, filled in again for its customer and arrival day; a failed one as it was.
+  const textOf = (e: ContactEvent) => {
+    const parcel = parcels.find((p) => p.code === e.parcelCodes[0]);
+    return e.heldSince && parcel ? composeMessage(parcel.recipient, e.parcelCodes, parcel.arrivalDate, templates) : (e.message ?? '');
+  };
+  commit.current = async (e, kind) => {
+    if (started.current.has(e.id)) return;
+    started.current.add(e.id);
+    try {
+      if (kind === 'told') await recordOutcome(e.phone, e.parcelCodes, 'other', 'answered');
+      else await queueSms(e.phone, e.parcelCodes, textOf(e), { retryOf: e.id });
+    } catch (err) {
+      started.current.delete(e.id); // not done: it can be tried again
+      setFailedId((f) => ({ ...f, [e.id]: (err as Error).message }));
+    } finally {
+      setPending(({ [e.id]: _done, ...rest }) => rest);
+    }
+  };
+  const act = (list: ContactEvent[], kind: Pending['kind']) =>
+    setPending((p) => {
+      const next = { ...p };
+      for (const e of list) {
+        if (next[e.id]) continue;
+        next[e.id] = { kind, timer: setTimeout(() => void commit.current(e, kind), UNDO_MS) };
+      }
+      return next;
+    });
+  const undo = (id: string) =>
+    setPending(({ [id]: gone, ...rest }) => {
+      if (gone) clearTimeout(gone.timer);
+      return rest;
+    });
+
+  // Leaving the page carries out what is still waiting for its Undo to end, rather than dropping it.
+  const latest = useRef({ pending, events });
+  latest.current = { pending, events };
+  useEffect(
+    () => () => {
+      for (const [id, p] of Object.entries(latest.current.pending)) {
+        clearTimeout(p.timer);
+        const e = latest.current.events.find((x) => x.id === id);
+        if (e) void commit.current(e, p.kind);
+      }
+    },
+    [],
+  );
+
+  const since = held.map((e) => e.heldSince!).sort()[0];
+  const row = (e: ContactEvent, tone: 'warning' | 'destructive') => (
+    <TodoRow
+      key={e.id}
+      event={e}
+      tone={tone}
+      name={nameOf(e.parcelCodes[0])}
+      message={textOf(e)}
+      pending={pending[e.id]?.kind}
+      error={failedId[e.id]}
+      onMain={() => (e.smsStatus === 'unconfirmed' ? onRetry(e) : act([e], 'send'))}
+      onTold={() => act([e], 'told')}
+      onUndo={() => undo(e.id)}
+    />
+  );
+  return (
+    <>
+      {held.length > 0 && (
+        <div>
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              {t('n.att.held', { day: formatDate(new Date(`${since}T12:00:00Z`), t.locale, { weekday: 'short', day: 'numeric', month: 'short' }) })}
+            </h3>
+            {held.filter((e) => !pending[e.id]).length > 1 && (
+              <button
+                type="button"
+                onClick={() => act(held, 'send')}
+                className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 hover:underline sm:min-h-0"
+              >
+                <Send className="size-3.5" aria-hidden />
+                {t('n.att.sendAll', { count: held.filter((e) => !pending[e.id]).length })}
+              </button>
+            )}
+          </div>
+          <ul className="@container mt-1 divide-y">{held.map((e) => row(e, 'warning'))}</ul>
+        </div>
+      )}
+      {other.length > 0 && (
+        <div>
+          <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{t('n.att.failed')}</h3>
+          <ul className="@container mt-1 divide-y">{other.map((e) => row(e, e.smsStatus === 'failed' ? 'destructive' : 'warning'))}</ul>
+        </div>
+      )}
+    </>
+  );
+}
+
+type Ask = keyof typeof ASK;
+
+function TodoRow({
+  event: e,
+  tone,
+  name,
+  message,
+  pending,
+  error,
+  onMain,
+  onTold,
+  onUndo,
+}: {
+  event: ContactEvent;
+  tone: 'warning' | 'destructive';
+  name: string;
+  message: string;
+  pending?: Pending['kind'];
+  error?: string;
+  onMain: () => void;
+  onTold: () => void;
+  onUndo: () => void;
+}) {
+  const t = useT();
+  const [asked, setAsked] = useState<Ask | null>(null);
+  const [saving, setSaving] = useState(false);
+  const held = !!e.heldSince;
+  const main = held ? t('n.att.sendAgain') : t('n.att.retry');
+
+  async function answer(outcome: Outcome) {
+    setSaving(true);
+    try {
+      await recordOutcome(e.phone, e.parcelCodes, CHANNEL_OF[asked!], outcome);
+      setAsked(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <li className="relative py-4 pl-4">
+      {/* The status colour carries urgency on a thin bar, so the row itself stays calm. */}
+      <span aria-hidden className={cn('absolute inset-y-4 left-0 w-1 rounded-full', pending ? 'bg-border' : tone === 'destructive' ? 'bg-destructive' : 'bg-warning')} />
+      <div className="flex flex-col gap-2 @2xl:flex-row @2xl:items-center @2xl:gap-5">
+        <div className={cn('flex min-w-0 flex-1 items-start gap-2', pending && 'opacity-60')}>
+          <div className="min-w-0 flex-1">
+            <p className="flex flex-wrap items-baseline gap-x-2">
+              <span className="font-semibold">{name}</span>
+              <span className="font-mono text-sm text-muted-foreground">{formatPhone(e.phone)}</span>
+            </p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {t('sms.scope', { count: e.parcelCodes.length })} · {held ? e.parcelCodes.join(', ') : (e.result ?? '')}
+            </p>
+            {error && <p role="alert" className="mt-1 text-sm text-destructive">{t('n.r.notQueued', { error })}</p>}
+          </div>
+          {!pending && !asked && (
+            <span className="-mt-2 -mr-2 @2xl:hidden">
+              <ContactMenu phone={e.phone} name={name} message={message} onAsk={setAsked} />
+            </span>
+          )}
+        </div>
+
+        {pending ? (
+          <p role="status" className="flex items-center gap-3 text-sm">
+            <span className="inline-flex items-center gap-1.5">
+              {pending === 'send' ? <Send className="size-4 text-primary" aria-hidden /> : <Check className="size-4 text-success" aria-hidden />}
+              {pending === 'send' ? t(held ? 'n.att.sendingAgain' : 'n.att.retrying') : t('n.att.cleared')}
+            </span>
+            <button type="button" onClick={onUndo} className="min-h-11 font-medium text-primary underline-offset-4 hover:underline sm:min-h-0">
+              {t('n.att.undo')}
+            </button>
+          </p>
+        ) : asked ? (
+          <div role="group" aria-label={t(ASK[asked].question)} className="flex flex-wrap items-center gap-1 text-sm">
+            <span className="mr-1 text-muted-foreground">{t(ASK[asked].question)}</span>
+            {ASK[asked].options.map((o) => (
+              <Button key={o.outcome} size="sm" variant="ghost" disabled={saving} onClick={() => answer(o.outcome)} className="h-11 text-primary sm:h-8">
+                <o.Icon aria-hidden />
+                {t(o.label)}
+              </Button>
+            ))}
+            <Button size="sm" variant="ghost" onClick={() => setAsked(null)} className="h-11 text-muted-foreground sm:h-8">
+              {t(ASK[asked].dismiss)}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-1">
+            {!held && <SmsBadge status={e.smsStatus!} />}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onMain}
+              aria-label={`${main}: ${formatPhone(e.phone)}`}
+              className="h-11 text-primary hover:text-primary-hover sm:h-8"
+            >
+              <RotateCcw aria-hidden />
+              {main}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onTold} className="h-11 text-muted-foreground sm:h-8">
+              {t('n.att.alreadyTold')}
+            </Button>
+            <span className="hidden @2xl:block">
+              <ContactMenu phone={e.phone} name={name} message={message} onAsk={setAsked} />
+            </span>
+          </div>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/**
+ * Reaching the customer by hand: call, an SMS from this phone (phones only: a computer cannot send one), Telegram.
+ * Each opens the phone's own app, so the row then asks what happened.
+ */
+function ContactMenu({ phone, name, message, onAsk }: { phone: string; name: string; message: string; onAsk: (a: Ask) => void }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (ev: PointerEvent) => !box.current?.contains(ev.target as Node) && setOpen(false);
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [open]);
+  const item = 'flex min-h-11 w-full items-center gap-2.5 rounded-sm px-2.5 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none sm:min-h-9';
+  const pick = (a: Ask) => {
+    setOpen(false);
+    onAsk(a);
+  };
+  return (
+    <div ref={box} className="relative" onKeyDown={(ev) => ev.key === 'Escape' && setOpen(false)}>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={t('n.att.contactFor', { name: name || formatPhone(phone) })}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={() => setOpen((o) => !o)}
+        className={cn('size-11 sm:size-9', open && 'bg-secondary')}
+      >
+        <MoreHorizontal />
+      </Button>
+      {open && (
+        <div role="menu" className="absolute top-full right-0 z-20 mt-1 w-60 rounded-md border bg-card p-1.5 shadow-[0_8px_24px_-8px_rgb(27_32_51/0.25)]">
+          <a role="menuitem" href={`tel:${phone}`} onClick={() => pick('call')} className={item}>
+            <Phone className="size-4 text-muted-foreground" aria-hidden />
+            <span>
+              {t('contact.call')} <span className="font-mono text-muted-foreground">{formatPhone(phone)}</span>
+            </span>
+          </a>
+          {message && (
+            <a role="menuitem" href={smsLink(phone, message)} onClick={() => pick('sms')} className={cn(item, 'sm:hidden')}>
+              <Smartphone className="size-4 text-muted-foreground" aria-hidden />
+              {t('n.att.smsFromPhone')}
+            </a>
+          )}
+          <a
+            role="menuitem"
+            href={telegramLink(phone)}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => {
+              if (message) void navigator.clipboard.writeText(message).catch(() => undefined); // t.me cannot carry the text
+              pick('telegram');
+            }}
+            className={item}
+          >
+            <MessageSquare className="size-4 text-muted-foreground" aria-hidden />
+            {t('n.att.telegram')}
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AttentionItem({
   tone,
   title,
@@ -349,26 +635,6 @@ function AttentionItem({
         {children}
       </div>
     </li>
-  );
-}
-
-function ReachLinks({ phone }: { phone: string }) {
-  const t = useT();
-  return (
-    <>
-      <Button asChild size="sm" variant="ghost">
-        <a href={`tel:${phone}`} aria-label={t('n.callFor', { phone: formatPhone(phone) })}>
-          <Phone aria-hidden />
-          {t('contact.call')}
-        </a>
-      </Button>
-      <Button asChild size="sm" variant="ghost">
-        <a href={telegramLink(phone)} target="_blank" rel="noreferrer" aria-label={t('n.telegramFor', { phone: formatPhone(phone) })}>
-          <MessageSquare aria-hidden />
-          {t('contact.telegram')}
-        </a>
-      </Button>
-    </>
   );
 }
 
@@ -1105,6 +1371,7 @@ function History({
 function channelText(e: ContactEvent, t: T) {
   if (e.channel === 'sms')
     return `${e.parcelCodes.length > 1 ? t('n.h.combined', { count: e.parcelCodes.length }) : t('n.channel.sms')}${e.sim ? t('n.day.sim', { sim: e.sim }) : ''}`;
+  if (e.channel === 'other' && e.outcome === 'answered') return t('event.alreadyTold');
   if (!e.outcome || e.channel === 'other') return t(CHANNEL[e.channel].label);
   return e.channel === 'call' ? t('n.h.callOutcome', { outcome: t(OUTCOME[e.outcome]) }) : t(OUTCOME[e.outcome]);
 }

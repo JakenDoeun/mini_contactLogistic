@@ -26,26 +26,25 @@ const rows: DayTotal[] = [
 test('weeks run Monday to Sunday, newest last, zero-filled, the current one marked partial', () => {
   const w = periods(rows, 'week', '2026-10-29', 3);
   assert.deepEqual(w.map((p) => [p.start, p.end, p.total, p.partial]), [
-    ['2026-10-12', '2026-10-18', 190, false],
-    ['2026-10-19', '2026-10-25', 200, false],
-    ['2026-10-26', '2026-11-01', 10, true],
+    ['2026-10-12', '2026-10-18', 90, false],
+    ['2026-10-19', '2026-10-25', 100, false],
+    ['2026-10-26', '2026-11-01', 5, true],
   ]);
-  assert.deepEqual(w[0].parts, { 1: 100, 2: 90 });
-  assert.equal(w[0].sms, 90);
+  assert.deepEqual(w[0].bySim, { 1: 50, 2: 40 }, 'SMS by SIM, not parts');
   assert.equal(w[1].failed, 2);
 });
 
 test('months are calendar months; the plan is the usual to the busiest, only with enough history', () => {
   const m = periods(rows, 'month', '2026-11-03', 3);
   assert.deepEqual(m.map((p) => [p.start, p.end]), [['2026-09-01', '2026-09-30'], ['2026-10-01', '2026-10-31'], ['2026-11-01', '2026-11-30']]);
-  assert.equal(m[1].total, 420);
+  assert.equal(m[1].total, 205); // 10 + 50 + 40 + 100 + 5
   assert.equal(plan(m, 'month'), null, 'one month with SMS is not enough to plan by');
 
   const m2 = periods([...rows, { day: '2026-09-20', sim: 1, sms: 1, parts: 2, failed: 0 }], 'month', '2026-11-03', 3);
   assert.equal(plan(m2, 'month', '2026-09-20'), null, 'September began before the first total: only partly counted, so left out');
-  assert.deepEqual(plan(m2, 'month', '2026-09-01'), { lo: 210, hi: 420, from: 2 });
+  assert.deepEqual(plan(m2, 'month', '2026-09-01'), { lo: 100, hi: 210, from: 2 }); // (1 + 205) / 2 = 103; 205 rounds to 210
 
   const w = periods(rows, 'week', '2026-10-29', 5);
-  // Complete weeks with SMS: 5 Oct (20), 12 Oct (190), 19 Oct (200); the empty week and this week do not count.
-  assert.deepEqual(plan(w, 'week'), { lo: 140, hi: 200, from: 3 }); // (20 + 190 + 200) / 3 = 136.7 → 140
+  // Complete weeks with SMS: 5 Oct (10), 12 Oct (90), 19 Oct (100); the empty week and this week do not count.
+  assert.deepEqual(plan(w, 'week'), { lo: 70, hi: 100, from: 3 }); // (10 + 90 + 100) / 3 = 66.7 → 70
 });

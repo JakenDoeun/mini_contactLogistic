@@ -1,5 +1,6 @@
-// The Dashboard's SMS sent (v0.2.1, owner 2026-10-29): SMS parts as the carrier counts them, and the daily totals
-// grouped into weeks (Monday to Sunday) or calendar months, with a range to plan the next one by.
+// The Dashboard's SMS sent (v0.2.1, owner 2026-10-29): the daily SMS totals grouped into weeks (Monday to Sunday) or
+// calendar months, with a range to plan the next one by. It counts SMS, not parts (owner, 2026-10-29); the parts the
+// carrier counts are still saved with each day.
 
 // The GSM-7 alphabet a plain SMS uses; the extension characters take two places. Anything else (Khmer, emoji) makes
 // the whole SMS UCS-2, which fits far fewer characters.
@@ -29,9 +30,8 @@ export interface Period {
   start: string;
   end: string; // last day, inclusive
   partial: boolean; // contains today
-  parts: Record<number, number>; // by SIM
-  total: number; // parts, all SIMs
-  sms: number;
+  bySim: Record<number, number>; // SMS sent, by SIM
+  total: number; // SMS sent, all SIMs
   failed: number;
 }
 export type PeriodKind = 'week' | 'month';
@@ -56,15 +56,14 @@ export function periods(rows: DayTotal[], kind: PeriodKind, today: string, count
   const out: Period[] = [];
   let { start, end } = periodOf(today, kind);
   for (let i = 0; i < count; i++) {
-    out.unshift({ start, end, partial: i === 0, parts: {}, total: 0, sms: 0, failed: 0 });
+    out.unshift({ start, end, partial: i === 0, bySim: {}, total: 0, failed: 0 });
     ({ start, end } = periodOf(toDay(new Date(toDate(start).getTime() - DAY_MS)), kind));
   }
   for (const r of rows) {
     const p = out.find((x) => r.day >= x.start && r.day <= x.end);
     if (!p) continue;
-    p.parts[r.sim] = (p.parts[r.sim] ?? 0) + r.parts;
-    p.total += r.parts;
-    p.sms += r.sms;
+    p.bySim[r.sim] = (p.bySim[r.sim] ?? 0) + r.sms;
+    p.total += r.sms;
     p.failed += r.failed;
   }
   return out;

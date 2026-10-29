@@ -25,7 +25,7 @@ const COUNT: Record<PeriodKind, number> = { week: 8, month: 6 };
 const ROOM = 0.16;
 
 /**
- * The Dashboard's SMS sent (v0.2.1, owner 2026-10-29): parts sent per week or month as horizontal stacked bars, one row
+ * The Dashboard's SMS sent (v0.2.1, owner 2026-10-29): SMS sent per week or month as horizontal stacked bars, one row
  * per period, a forecast card beside it, and the detailed table below. One list of periods feeds all three.
  */
 export function SmsSent({ sims }: { sims: SimInfo[] | null }) {
@@ -65,18 +65,17 @@ export function SmsSent({ sims }: { sims: SimInfo[] | null }) {
           {now && prev && (
             <dl className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-sm">
               <Stat label={t(week ? 'dash.sms.thisWeek' : 'dash.sms.thisMonth')}>
-                <span className="font-mono font-medium">{n(now.total)}</span> {t('dash.sms.partsWord')}{' '}
-                <span className="text-muted-foreground">({t('dash.sms.smsCount', { count: n(now.sms) })})</span>
+                <span className="font-mono font-medium">{n(now.total)}</span> {t('dash.sms.smsWord')}
               </Stat>
               <Stat label={t(week ? 'dash.sms.lastWeek' : 'dash.sms.lastMonth')}>
-                <span className="font-mono">{n(prev.total)}</span> {t('dash.sms.partsWord')}
+                <span className="font-mono">{n(prev.total)}</span> {t('dash.sms.smsWord')}
               </Stat>
               {next && (
                 <Stat label={t('dash.sms.forecast')}>
                   <span className="font-mono">
                     {n(next.lo)}–{n(next.hi)}
                   </span>{' '}
-                  {t(week ? 'dash.sms.partsNextWeek' : 'dash.sms.partsNextMonth')}
+                  {t(week ? 'dash.sms.smsNextWeek' : 'dash.sms.smsNextMonth')}
                 </Stat>
               )}
             </dl>
@@ -145,10 +144,9 @@ export function SmsSent({ sims }: { sims: SimInfo[] | null }) {
                 <tr className="text-left text-xs text-muted-foreground">
                   <th scope="col" className="px-5 py-2 font-medium">{t(week ? 'dash.sms.weekCol' : 'dash.sms.monthCol')}</th>
                   {slots.map((sim) => (
-                    <th key={sim} scope="col" className="px-3 py-2 text-right font-medium">{t('dash.sms.partsOf', { sim: simName(sim) })}</th>
+                    <th key={sim} scope="col" className="px-3 py-2 text-right font-medium">{t('dash.sms.smsOf', { sim: simName(sim) })}</th>
                   ))}
-                  <th scope="col" className="px-3 py-2 text-right font-medium">{t('dash.sms.allParts')}</th>
-                  <th scope="col" className="px-3 py-2 text-right font-medium">{t('dash.sms.smsCol')}</th>
+                  <th scope="col" className="px-3 py-2 text-right font-medium">{t('dash.sms.allSms')}</th>
                   <th scope="col" className="px-5 py-2 text-right font-medium">{t('dash.sms.failedCol')}</th>
                 </tr>
               </thead>
@@ -167,10 +165,9 @@ export function SmsSent({ sims }: { sims: SimInfo[] | null }) {
                         {p.partial && <span className="ml-1.5 text-xs text-muted-foreground">{t('dash.sms.soFar')}</span>}
                       </th>
                       {slots.map((sim) => (
-                        <td key={sim} className="px-3 py-2 text-right">{n(p.parts[sim] ?? 0)}</td>
+                        <td key={sim} className="px-3 py-2 text-right">{n(p.bySim[sim] ?? 0)}</td>
                       ))}
                       <td className="px-3 py-2 text-right font-medium">{n(p.total)}</td>
-                      <td className="px-3 py-2 text-right text-muted-foreground">{n(p.sms)}</td>
                       <td className={cn('px-5 py-2 text-right', p.failed ? 'text-foreground' : 'text-muted-foreground')}>{p.failed}</td>
                     </tr>
                   );
@@ -236,7 +233,7 @@ function Bars({
           </div>
         </div>
         {list.map((p, i) => {
-          const parts = slots.filter((s) => (p.parts[s] ?? 0) > 0);
+          const parts = slots.filter((s) => (p.bySim[s] ?? 0) > 0);
           return (
             <div
               key={p.start}
@@ -247,7 +244,7 @@ function Bars({
               <span className={cn('truncate text-right font-mono text-xs', hover === i ? 'text-foreground' : 'text-muted-foreground')}>{label(p)}</span>
               <div className={cn('flex h-5 gap-0.5', p.partial && 'opacity-70')}>
                 {parts.map((sim, k) => {
-                  const v = p.parts[sim]!;
+                  const v = p.bySim[sim]!;
                   return (
                     <div
                       key={sim}
@@ -292,10 +289,10 @@ function Bars({
             <p key={sim} className="mt-1 flex items-center gap-2">
               <span className="size-2 rounded-[2px]" style={{ background: slotOf(sim).fill }} />
               {simName(sim)}
-              <span className="ml-auto pl-4 font-mono">{n(h.parts[sim] ?? 0)}</span>
+              <span className="ml-auto pl-4 font-mono">{n(h.bySim[sim] ?? 0)}</span>
             </p>
           ))}
-          <p className="mt-1 border-t pt-1 text-muted-foreground">{t('dash.sms.tip', { sms: n(h.sms), failed: h.failed })}</p>
+          <p className="mt-1 border-t pt-1 text-muted-foreground">{t('dash.sms.tip', { sms: n(h.total), failed: h.failed })}</p>
         </div>
       )}
     </div>
@@ -318,7 +315,7 @@ function Forecast({ kind, next }: { kind: PeriodKind; next: ReturnType<typeof pl
             <span className="font-mono">
               {next.lo.toLocaleString('en-US')}–{next.hi.toLocaleString('en-US')}
             </span>{' '}
-            <span className="text-sm font-normal text-muted-foreground">{t('dash.sms.partsWord')}</span>
+            <span className="text-sm font-normal text-muted-foreground">{t('dash.sms.smsWord')}</span>
           </p>
           <p className="mt-1 text-xs text-muted-foreground">{t(week ? 'dash.sms.forecastNoteWeek' : 'dash.sms.forecastNoteMonth', { count: next.from })}</p>
         </>

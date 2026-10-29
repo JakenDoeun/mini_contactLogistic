@@ -41,6 +41,10 @@ test('months are calendar months; the plan is the usual to the busiest, only wit
   assert.equal(m[1].total, 420);
   assert.equal(plan(m, 'month'), null, 'one month with SMS is not enough to plan by');
 
+  const m2 = periods([...rows, { day: '2026-09-20', sim: 1, sms: 1, parts: 2, failed: 0 }], 'month', '2026-11-03', 3);
+  assert.equal(plan(m2, 'month', '2026-09-20'), null, 'September began before the first total: only partly counted, so left out');
+  assert.deepEqual(plan(m2, 'month', '2026-09-01'), { lo: 210, hi: 420, from: 2 });
+
   const w = periods(rows, 'week', '2026-10-29', 5);
   // Complete weeks with SMS: 5 Oct (20), 12 Oct (190), 19 Oct (200); the empty week and this week do not count.
   assert.deepEqual(plan(w, 'week'), { lo: 140, hi: 200, from: 3 }); // (20 + 190 + 200) / 3 = 136.7 → 140

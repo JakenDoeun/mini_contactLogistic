@@ -73,10 +73,11 @@ export function periods(rows: DayTotal[], kind: PeriodKind, today: string, count
 /**
  * What to plan the next period for: from the usual (the mean) to the busiest of the last complete periods that had
  * SMS (4 weeks or 3 months), rounded to tens. Parcels are not steady, so it is a range, not one number; null until
- * there are at least two such periods to go by.
+ * there are at least two such periods to go by. A period that began before `firstDay`, the first day with any total,
+ * is only partly counted (the totals started then), so it is left out.
  */
-export function plan(list: Period[], kind: PeriodKind) {
-  const done = list.filter((p) => !p.partial && p.total > 0).slice(kind === 'week' ? -4 : -3);
+export function plan(list: Period[], kind: PeriodKind, firstDay = '') {
+  const done = list.filter((p) => !p.partial && p.total > 0 && p.start >= firstDay).slice(kind === 'week' ? -4 : -3);
   if (done.length < 2) return null;
   const round = (n: number) => Math.round(n / 10) * 10;
   const totals = done.map((p) => p.total);

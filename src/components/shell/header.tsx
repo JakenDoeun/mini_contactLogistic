@@ -14,7 +14,7 @@ import { useLocale, useT } from '@/lib/i18n-react';
 import { NAV } from './nav';
 import { Brand, SidebarNav } from './sidebar-nav';
 
-export function Header({ username, isAdmin }: { username: string; isAdmin: boolean }) {
+export function Header({ username, isAdmin, version }: { username: string; isAdmin: boolean; version: string }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const t = useT();
@@ -47,7 +47,7 @@ export function Header({ username, isAdmin }: { username: string; isAdmin: boole
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <LanguageSwitch />
-        <Profile username={username} isAdmin={isAdmin} />
+        <Profile username={username} isAdmin={isAdmin} version={version} />
         <Button
           variant="ghost"
           size="icon"
@@ -66,7 +66,7 @@ export function Header({ username, isAdmin }: { username: string; isAdmin: boole
 }
 
 /** The signed-in account. Opens on mouse hover; a tap or Enter toggles it, since phones and keyboards have no hover. */
-function Profile({ username, isAdmin }: { username: string; isAdmin: boolean }) {
+function Profile({ username, isAdmin, version }: { username: string; isAdmin: boolean; version: string }) {
   const [open, setOpen] = useState(false);
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
@@ -103,6 +103,7 @@ function Profile({ username, isAdmin }: { username: string; isAdmin: boolean }) 
             <p className="text-xs text-muted-foreground">{t('header.signedInAsLabel')}</p>
             <p className="truncate font-medium">{username}</p>
             <p className="mt-2 text-muted-foreground">{isAdmin ? t('header.roleAdmin') : t('header.roleStaff')}</p>
+            <p className="mt-2 border-t pt-2 font-mono text-xs text-muted-foreground">{t('header.version', { version })}</p>
           </div>
         </div>
       )}

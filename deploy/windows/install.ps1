@@ -411,7 +411,10 @@ w32tm /resync /nowait | Out-Null
 Step 'Starting Campus Branch'
 # Wait for the sign-in page itself; showing it also creates the one-time code on a new install.
 function Wait-App {
-  for ($i = 0; $i -lt 60; $i++) {
+  # A deadline, not a count: on Windows each refused connection itself takes about two seconds. Generous, since rolling
+  # back a good version that a slow computer starts late is worse than noticing a broken one a little later.
+  $deadline = (Get-Date).AddMinutes(5)
+  while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 2
     try {
       if ((Invoke-WebRequest "http://127.0.0.1:$Port/login" -UseBasicParsing -TimeoutSec 10).StatusCode -eq 200) { return $true }
@@ -423,7 +426,7 @@ Start-ScheduledTask -TaskName $TaskName
 $up = Wait-App
 if (-not $up -and (Test-Path "$AppDir.old\scripts\serve.ts")) {
   $script:Retry = $false
-  Write-Host 'The new version did not answer within 2 minutes; putting the previous version back.' -ForegroundColor Yellow
+  Write-Host 'The new version did not answer within 5 minutes; putting the previous version back.' -ForegroundColor Yellow
   if (Test-Path $LogFile) { Get-Content $LogFile -Tail 40 }
   Stop-App
   # If the new version already changed the database, the previous one cannot open it: put back the copy the new
@@ -462,7 +465,7 @@ if (-not $up) {
   if ($result -eq 2147943785) {
     throw "Windows refused to start the task as $Account (no 'Log on as a batch job' right). On Windows Pro: secpol.msc > Local Policies > User Rights Assignment > Log on as a batch job > add $Account, then run this again."
   }
-  throw "Campus Branch did not answer within 2 minutes (task result $result). The log lines above say why."
+  throw "Campus Branch did not answer within 5 minutes (task result $result). The log lines above say why."
 }
 Write-Host "The app answers on http://127.0.0.1:$Port"
 if ($Unattended -and (Test-Path $StatusFile)) { Remove-Item $StatusFile -Force } # the pages reload on the new version

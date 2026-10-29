@@ -295,7 +295,7 @@ asks GitHub whether a newer **published release** exists. If so, and the charger
 2. waits until no SMS batch is sending and no SMS is being handed to the phone;
 3. stops the app, saves a backup, switches to the new version (a few seconds; open pages show "Back in a moment" and
    reload by themselves) and starts it;
-4. if the new version does not answer within 2 minutes, puts the previous version back, with the database copy from
+4. if the new version does not answer within 5 minutes, puts the previous version back, with the database copy from
    just before the new version changed it, if it did. Admins then see "The update did not work" at the top of the page.
 
 The data folder (`C:\ProgramData\CampusBranch`: database, backups, accounts, gateway setup) is never replaced. Without
